@@ -20,7 +20,7 @@ endif
 
 # Macro definitions
 DEFS  = -D_GNU_SOURCE
-DEFS += -DKL_MALLOC           # overload malloc funcs to use klmalloc funcs
+#DEFS += -DKL_MALLOC           # overload malloc funcs to use klmalloc funcs
 #DEFS += -DKL_WITH_HMAP        # use hash map instead of splay tree
 #DEFS += -DKL_WITH_STDMALLOC   # use malloc in klmalloc funcs instead of mmap
 #DEFS += -DKL_DPQ_REV          # free entry from back of dpq instead of front
