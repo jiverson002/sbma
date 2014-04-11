@@ -37,26 +37,26 @@ RANLIB = ranlib
 #RANLIB =
 
 %.o : %.c
-	@$(LD) -c $*.c
+	$(LD) -c $*.c
 
 default: $(LIBDIR)/libklmalloc.a $(BINDIR)/klmalloc_test  \
   $(BINDIR)/klmalloc_test_cc
 
 $(BINDIR)/klmalloc_test: klmalloc_test.c $(LIBDIR)/libklmalloc.a
-	@$(LD) -I../src -o $@ $< $(LIBS) -lklmalloc
+	$(LD) -I../src -o $@ $< $(LIBS) -lklmalloc
 
 $(BINDIR)/klmalloc_test_cc: klmalloc_test.cc
-	@g++ $(CFLAGS) -I../src -o $@ $^
+	g++ $(CFLAGS) -I../src -o $@ $^
 
 $(LIBDIR)/libklmalloc.a: klmalloc.o kldpq.o klhmap.o klsplay.o klutil.o
-	@$(AR) $(LIBDIR)/libklmalloc$(VERNUM).a $^
-	@$(RANLIB) $(LIBDIR)/libklmalloc$(VERNUM).a
-	@ln -sf libklmalloc$(VERNUM).a $(LIBDIR)/libklmalloc.a
+	$(AR) $(LIBDIR)/libklmalloc$(VERNUM).a $^
+	$(RANLIB) $(LIBDIR)/libklmalloc$(VERNUM).a
+	ln -sf libklmalloc$(VERNUM).a $(LIBDIR)/libklmalloc.a
 
 clean:
-	@rm -f *.o
+	rm -vf *.o
 
 distclean: clean
-	@rm -f $(LIBDIR)/libklmalloc$(VERNUM).a $(LIBDIR)/libklmalloc.a
-	@rm -f $(BINDIR)/kldpq $(BINDIR)/klhmap $(BINDIR)/klsplay $(BINDIR)/klmalloc
-	@rm -f $(BINDIR)/klmalloc_test $(BINDIR)/klmalloc_test_cc
+	rm -vf $(LIBDIR)/libklmalloc$(VERNUM).a $(LIBDIR)/libklmalloc.a
+	rm -vf $(BINDIR)/kldpq $(BINDIR)/klhmap $(BINDIR)/klsplay $(BINDIR)/klmalloc
+	rm -vf $(BINDIR)/klmalloc_test $(BINDIR)/klmalloc_test_cc
