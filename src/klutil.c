@@ -81,7 +81,7 @@ kl_mmap_aligned(
   size_t const sz
 )
 {
-#ifdef KL_WITH_DEBUG
+#ifdef KL_WITH_STDMALLOC
   void * ptr;
   if (posix_memalign(&ptr, KL_PAGESIZE, sz)) {
     fprintf(stderr, "posix_memalign() failed... now exiting\n");
@@ -90,10 +90,6 @@ kl_mmap_aligned(
   memset(ptr, 0, sz);
   return ptr;
 #else
-  /*void * ptr = mmap(NULL, sz, PROT_READ | PROT_WRITE,
-                    MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-  printf("[%p %lu]\n", ptr, sz);
-  return ptr;*/
   /*return mmap(NULL, kl_multup(sz, KL_PAGESIZE), PROT_READ | PROT_WRITE,
               MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);*/
   return mmap(NULL, sz, PROT_READ | PROT_WRITE,
@@ -107,7 +103,7 @@ kl_munmap_aligned(
   size_t const sz
 )
 {
-#ifdef KL_WITH_DEBUG
+#ifdef KL_WITH_STDMALLOC
   free(ptr);
   if (sz) {}
 #else

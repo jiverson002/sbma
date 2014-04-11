@@ -8,20 +8,6 @@
 #include <sys/mman.h>
 #include <unistd.h>
 
-#ifdef KL_WITH_MAIN
-  #include <stdio.h>
-  #include <stdlib.h>
-#endif
-
-#ifdef KL_WITH_DEBUG
-  #include <assert.h>
-  #include <stdlib.h>
-#else
-  #ifndef assert
-    #define assert(X)
-  #endif
-#endif
-
 #define KL_PAGESIZE   ((size_t)(sysconf(_SC_PAGESIZE)))
 
 #define KL_VMEMADD(N)                                     \
@@ -40,7 +26,5 @@ typedef unsigned char uchar;
 
 extern  size_t        KL_VMEM;
 extern  size_t        KL_MXVMEM;
-
-struct klmallinfo;
 
 #endif

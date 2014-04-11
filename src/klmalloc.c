@@ -148,13 +148,13 @@ the possibly moved allocated space.
 
 #include "kl.h"
 #include "kldpq.h"
-#include "klhmap.h"
+#if defined(KL_WITH_HMAP)
+  #include "klhmap.h"
+#else
+  #include "klsplay.h"
+#endif
 #include "klmallinfo.h"
-#include "klsplay.h"
 #include "klutil.h"
-
-
-/*#define WITH_KLHMAP*/
 
 
 /*****************************************************************************/
@@ -162,7 +162,6 @@ the possibly moved allocated space.
 /*****************************************************************************/
 #define MPOOL_INIT 17 /* must be <= 24 */
 #define BPOOL_INIT (KL_PAGESIZE/sizeof(block_t))
-#define MPOOL_CHNK (KL_PAGESIZE)
 #define BPOOL_TRSH 0.50
 
 
@@ -214,7 +213,7 @@ typedef struct {
 typedef struct {
   size_t          poolCtr;             /* number of active allocations */
   bpool_t         bpool[MPOOL_INIT+1]; /* array of block pools         */
-#ifdef WITH_KLHMAP
+#ifdef KL_WITH_HMAP
   kl_hmap_t       blockMap;
 #else
   kl_splay_tree_t blockMap;            /* map from blockID --> block   */
@@ -282,11 +281,11 @@ bpool_shrink(
   for (j=0, i=0; i<bp->poolSiz; ++i) {
     if (bp->blockMap[i]->k) {
       /* the splay insert will overwrite the value it previously had */
-#ifdef WITH_KLHMAP
-      kl_hmap_insert(&mpool.blockMap, (uptr)bp->block[i].blockPtr/MPOOL_CHNK,
+#ifdef KL_WITH_HMAP
+      kl_hmap_insert(&mpool.blockMap, (uptr)bp->block[i].blockPtr/KL_PAGESIZE,
                       pid, j);
 #else
-      kl_splay_insert(&mpool.blockMap, (uptr)bp->block[i].blockPtr/MPOOL_CHNK,
+      kl_splay_insert(&mpool.blockMap, (uptr)bp->block[i].blockPtr/KL_PAGESIZE,
                       pid, j);
 #endif
       bp->blockMap[j] = bp->blockMap[i];
@@ -324,7 +323,7 @@ mpool_init()
   num_tbl[MPOOL_INIT] = 1;
 
   mpool.poolCtr = 0;
-#ifdef WITH_KLHMAP
+#ifdef KL_WITH_HMAP
   kl_hmap_init(&mpool.blockMap);
 #else
   kl_splay_init(&mpool.blockMap);
@@ -383,7 +382,7 @@ mpool_free()
     bp->poolCap = 0;
   }
 
-#ifdef WITH_KLHMAP
+#ifdef KL_WITH_HMAP
   kl_hmap_free(&mpool.blockMap);
 #else
   kl_splay_free(&mpool.blockMap);
@@ -430,10 +429,10 @@ mpool_find_id(
   u32 * const bid
 )
 {
-#ifdef WITH_KLHMAP
-  return kl_hmap_find(&mpool.blockMap, p/MPOOL_CHNK, pid, bid);
+#ifdef KL_WITH_HMAP
+  return kl_hmap_find(&mpool.blockMap, p/KL_PAGESIZE, pid, bid);
 #else
-  return kl_splay_find(&mpool.blockMap, p/MPOOL_CHNK, pid, bid);
+  return kl_splay_find(&mpool.blockMap, p/KL_PAGESIZE, pid, bid);
 #endif
 }
 
@@ -522,10 +521,10 @@ klmalloc(
   memset(ptr+asz, 0, num);  /* unset all mark bits */
   bset(ptr+asz, 0);         /* mark the first bit  */
 
-#ifdef WITH_KLHMAP
-  kl_hmap_insert(&mpool.blockMap, (uptr)(ptr)/MPOOL_CHNK, pid, bp->poolSiz);
+#ifdef KL_WITH_HMAP
+  kl_hmap_insert(&mpool.blockMap, (uptr)(ptr)/KL_PAGESIZE, pid, bp->poolSiz);
 #else
-  kl_splay_insert(&mpool.blockMap, (uptr)(ptr)/MPOOL_CHNK, pid, bp->poolSiz);
+  kl_splay_insert(&mpool.blockMap, (uptr)(ptr)/KL_PAGESIZE, pid, bp->poolSiz);
 #endif
   bp->blockMap[bp->poolSiz] = kl_dpq_new(&bp->blockQ, bp->poolSiz);
   kl_dpq_inc(&bp->blockQ, bp->blockMap[bp->poolSiz]);
@@ -675,7 +674,7 @@ klmallinfo()
   ovrhd    += sizeof(mpool_t);
 
   /* blockMap */
-#ifdef WITH_KLHMAP
+#ifdef KL_WITH_HMAP
 #else
   splaySiz += mpool.blockMap.ssz;
   splayCap += mpool.blockMap.scap;
@@ -729,7 +728,7 @@ klstats()
   ovrhd    += sizeof(mpool_t);
 
   /* blockMap */
-#ifdef WITH_KLHMAP
+#ifdef KL_WITH_HMAP
 #else
   splaySiz += mpool.blockMap.ssz;
   splayCap += mpool.blockMap.scap;
@@ -774,7 +773,8 @@ klstats()
   fprintf(stderr, "\n");
 }
 
-/*void *
+#if defined(KL_MALLOC)
+void *
 malloc(
   size_t sz
 )
@@ -806,4 +806,5 @@ free(
 )
 {
   klfree(ptr);
-}*/
+}
+#endif

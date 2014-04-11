@@ -1,10 +1,11 @@
 # config vars
 CC       = gcc
+CPP      = g++
 INCLUDES = -I.
 LIBS     =
 LIBDIR   = ../lib
 BINDIR   = ../bin
-VERNUM   = 0.0.1
+VERNUM   = 0.0.2
 
 # Compiler options
 ifeq ($(debug),yes)
@@ -19,13 +20,14 @@ endif
 
 # Macro definitions
 DEFS  = -D_GNU_SOURCE
-#DEFS += -DKL_WITH_DEBUG
-#DEFS += -DKL_WITH_MALLOC
-#DEFS += -DKL_DPQ_REV
-#DEFS += -DKL_WITH_AGGRESSIVE
+DEFS += -DKL_MALLOC           # overload malloc funcs to use klmalloc funcs
+#DEFS += -DKL_WITH_HMAP        # use hash map instead of splay tree
+#DEFS += -DKL_WITH_STDMALLOC   # use malloc in klmalloc funcs instead of mmap
+#DEFS += -DKL_DPQ_REV          # free entry from back of dpq instead of front
+#DEFS += -DKL_WITH_AGGRESSIVE  # release memory immediately after use
 
 # Set up commands and flags
-CFLAGS = $(OPTFLAGS) $(DEFS) $(INCLUDES) -L$(LIBDIR)
+CFLAGS = $(OPTFLAGS) $(DEFS) $(INCLUDES)
 LD     = $(CC) $(CFLAGS)
 
 # What archiving to use
@@ -43,10 +45,10 @@ default: $(LIBDIR)/libklmalloc.a $(BINDIR)/klmalloc_test  \
   $(BINDIR)/klmalloc_test_cc
 
 $(BINDIR)/klmalloc_test: klmalloc_test.c $(LIBDIR)/libklmalloc.a
-	$(LD) -I../src -o $@ $< $(LIBS) -lklmalloc
+	$(CC) $(OPTFLAGS) -I../src -L$(LIBDIR) -o $@ $< $(LIBS) -lklmalloc
 
 $(BINDIR)/klmalloc_test_cc: klmalloc_test.cc
-	g++ $(CFLAGS) -I../src -o $@ $^
+	$(CPP) $(OPTFLAGS) -I../src -o $@ $^
 
 $(LIBDIR)/libklmalloc.a: klmalloc.o kldpq.o klhmap.o klsplay.o klutil.o
 	$(AR) $(LIBDIR)/libklmalloc$(VERNUM).a $^

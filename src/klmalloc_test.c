@@ -1,16 +1,11 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <sys/time.h>
 #include <time.h>
 
-#include "klutil.h"
 #include "klmalloc.h"
 #include "klmallinfo.h"
-
-/*#ifdef KL_WITH_MALLOC
-  #define klmalloc malloc
-  #define klfree free
-#endif*/
 
 /* probability for each type of allocation (must sum to 100) */
 #define PER_BIG_ALLOC 5
@@ -20,11 +15,34 @@
 /* probability to free a previous allocation */
 #define PER_FREE      30
 
-/*size_t NUM_ALLOCS     = 1<<17;*/
-size_t NUM_ALLOCS     = 1<<12;
+size_t NUM_ALLOCS     = 1<<17;
+/*size_t NUM_ALLOCS     = 1<<12;*/
 size_t BIG_ALLOC_SIZE = 1<<25; /* 16MB */
 size_t MED_ALLOC_SIZE = 1<<15; /* 16KB */
 size_t SML_ALLOC_SIZE = 1<<11; /* 1KB  */
+
+size_t
+getvmem()
+{
+  int                pid, ppid, pgrp, session, tty_nr, tpgid;
+  char               state;
+  unsigned           flags;
+  long int           cutime, cstime, priority, nice, num_threads, itrealvalue;
+  long unsigned      minflt, cminflt, majflt, cmajflt, utime, stime, vsize;
+  /*long */long unsigned starttime;
+  char               comm[1024];
+
+  FILE * f = fopen("/proc/self/stat", "r");
+  
+  if(fscanf(f, "%d %s %c %d %d %d %d %d %u %lu %lu %lu %lu %lu %lu %ld %ld "
+               "%ld %ld %ld %ld %lu %lu", &pid, comm, &state, &ppid, &pgrp,
+                &session, &tty_nr, &tpgid, &flags, &minflt, &cminflt, &majflt,
+                &cmajflt, &utime, &stime, &cutime, &cstime, &priority, &nice,
+                &num_threads, &itrealvalue, &starttime, &vsize) != 23) {}
+  fclose(f);
+
+  return vsize;
+}
 
 int
 main()
@@ -44,8 +62,8 @@ main()
   ta     = 0;
   tf     = 0;
   mxvmem = 0;
-  alloc  = (void **) klmalloc(NUM_ALLOCS*sizeof(void *));
-  buf    = klmalloc(BIG_ALLOC_SIZE);
+  alloc  = (void **) malloc(NUM_ALLOCS*sizeof(void *));
+  buf    = malloc(BIG_ALLOC_SIZE);
 
   for (i=0; i<NUM_ALLOCS; ++i) {
     j = rand()%100; /* indicator for big/med/sml alloc */
@@ -60,7 +78,7 @@ main()
     }
     sz++;
     gettimeofday(&ts, NULL);
-    alloc[i] = klmalloc(sz);
+    alloc[i] = malloc(sz);
     gettimeofday(&te, NULL);
     ta += (te.tv_sec-ts.tv_sec)*1000000 + te.tv_usec-ts.tv_usec;
 
@@ -78,7 +96,7 @@ main()
       }
       if (alloc[l]) {
         gettimeofday(&ts, NULL);
-        klfree(alloc[l]);
+        free(alloc[l]);
         gettimeofday(&te, NULL);
         tf += (te.tv_sec-ts.tv_sec)*1000000 + te.tv_usec-ts.tv_usec;
         alloc[l] = NULL;
@@ -88,18 +106,18 @@ main()
           l++;
         }
         gettimeofday(&ts, NULL);
-        klfree(alloc[l]);
+        free(alloc[l]);
         gettimeofday(&te, NULL);
         tf += (te.tv_sec-ts.tv_sec)*1000000 + te.tv_usec-ts.tv_usec;
         alloc[l] = NULL;
       }
     }
 
-    vmem = kl_vmem();
+    vmem = getvmem();
     mxvmem = vmem > mxvmem ? vmem : mxvmem;
   }
 
-#ifndef KL_WITH_MALLOC
+#if defined(KL_MALLOC)
   klstats();
 #endif
 
@@ -107,7 +125,7 @@ main()
   for (i=0; i<NUM_ALLOCS; ++i) {
     if (alloc[i]) {
       gettimeofday(&ts, NULL);
-      klfree(alloc[i]);
+      free(alloc[i]);
       gettimeofday(&te, NULL);
       tf += (te.tv_sec-ts.tv_sec)*1000000 + te.tv_usec-ts.tv_usec;
       alloc[i] = NULL;
@@ -118,8 +136,8 @@ main()
   fprintf(stderr, "free:   %.2f us\n", tf*1.0/NUM_ALLOCS);
   fprintf(stderr, "vmem:   %.2f mB\n", mxvmem/1000000.0);
 
-  klfree(alloc);
-  klfree(buf);
+  free(alloc);
+  free(buf);
 
   return EXIT_SUCCESS;
 }
