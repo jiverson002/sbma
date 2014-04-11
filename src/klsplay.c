@@ -260,29 +260,3 @@ kl_splay_delete(
   sp->root = t;
   return;                         /* It wasn't there */
 }
-
-#ifdef KL_WITH_MAIN
-
-size_t KL_VMEM = 0, KL_MXVMEM = 0;
-
-int
-main()
-{
-  kl_splay_tree_t sp;
-
-  kl_splay_init(&sp);
-
-  kl_splay_insert(&sp, 1, 2, 3);
-
-  fprintf(stderr, "KL_PAGESIZE: %lu\n", KL_PAGESIZE);
-  fprintf(stderr, "sp.cap: %lu\n", sp.cap);
-  fprintf(stderr, "sp.scap: %lu\n", sp.scap);
-  fprintf(stderr, "sp.root->k: %lu\n", sp.root->k);
-  fprintf(stderr, "sp.root->p: %u\n", sp.root->p);
-  fprintf(stderr, "sp.root->b: %u\n", sp.root->b);
-
-  kl_splay_free(&sp);
-
-  return EXIT_SUCCESS;
-}
-#endif

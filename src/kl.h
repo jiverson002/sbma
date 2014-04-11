@@ -41,4 +41,6 @@ typedef unsigned char uchar;
 extern  size_t        KL_VMEM;
 extern  size_t        KL_MXVMEM;
 
+struct klmallinfo;
+
 #endif

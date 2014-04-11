@@ -5,11 +5,12 @@
 
 #include "klutil.h"
 #include "klmalloc.h"
+#include "klmallinfo.h"
 
-#ifdef KL_WITH_MALLOC
+/*#ifdef KL_WITH_MALLOC
   #define klmalloc malloc
   #define klfree free
-#endif
+#endif*/
 
 /* probability for each type of allocation (must sum to 100) */
 #define PER_BIG_ALLOC 5
@@ -43,8 +44,8 @@ main()
   ta     = 0;
   tf     = 0;
   mxvmem = 0;
-  alloc  = (void **) malloc(NUM_ALLOCS*sizeof(void *));
-  buf    = malloc(BIG_ALLOC_SIZE);
+  alloc  = (void **) klmalloc(NUM_ALLOCS*sizeof(void *));
+  buf    = klmalloc(BIG_ALLOC_SIZE);
 
   for (i=0; i<NUM_ALLOCS; ++i) {
     j = rand()%100; /* indicator for big/med/sml alloc */
@@ -117,8 +118,8 @@ main()
   fprintf(stderr, "free:   %.2f us\n", tf*1.0/NUM_ALLOCS);
   fprintf(stderr, "vmem:   %.2f mB\n", mxvmem/1000000.0);
 
-  free(alloc);
-  free(buf);
+  klfree(alloc);
+  klfree(buf);
 
   return EXIT_SUCCESS;
 }

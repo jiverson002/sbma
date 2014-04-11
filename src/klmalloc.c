@@ -149,6 +149,7 @@ the possibly moved allocated space.
 #include "kl.h"
 #include "kldpq.h"
 #include "klhmap.h"
+#include "klmallinfo.h"
 #include "klsplay.h"
 #include "klutil.h"
 
@@ -497,7 +498,6 @@ klmalloc(
         KL_OVER += (esz - sz);
         bset(ptr, i);
         kl_dpq_inc(&bp->blockQ, bp->blockMap[bid]);
-        memset(b->blockPtr+(i*esz), 0, sz);
         return (void *) (b->blockPtr + (i*esz));
       }
     }
@@ -533,7 +533,6 @@ klmalloc(
   bp->poolSiz++;
   bp->poolAct++;
 
-  memset(ptr, 0, sz);
   return ptr;
 }
 
@@ -664,6 +663,61 @@ klrealloc(
 /*****************************************************************************/
 /* output imalloc structure statistics */
 /*****************************************************************************/
+struct klmallinfo
+klmallinfo()
+{
+  unsigned long i, poolSiz=0, poolAct=0, poolCap=0, ovrhd=0;
+  unsigned long dpqSiz=0, dpqCap=0;
+  unsigned long splaySiz=0, splayCap=0;
+  struct klmallinfo klmi;
+
+  /* mpool */
+  ovrhd    += sizeof(mpool_t);
+
+  /* blockMap */
+#ifdef WITH_KLHMAP
+#else
+  splaySiz += mpool.blockMap.ssz;
+  splayCap += mpool.blockMap.scap;
+  ovrhd    += mpool.blockMap.ssz*mpool.blockMap.cap*sizeof(kl_splay_t);
+  ovrhd    += mpool.blockMap.scap*sizeof(kl_splay_t *);
+#endif
+
+  for(i=0; i<MPOOL_INIT+1; ++i) {
+    /* block */
+    poolAct += mpool.bpool[i].poolAct;
+    poolSiz += mpool.bpool[i].poolSiz;
+    poolCap += mpool.bpool[i].poolCap;
+    ovrhd   += mpool.bpool[i].poolCap*sizeof(block_t);
+
+    /* blockMap */
+    ovrhd   += mpool.bpool[i].poolCap*sizeof(kl_dpq_node_t *);
+
+    /* blockQ */
+    dpqSiz  += mpool.bpool[i].blockQ.ssz;
+    dpqCap  += mpool.bpool[i].blockQ.scap;
+    ovrhd   += mpool.bpool[i].blockQ.ssz*
+                mpool.bpool[i].blockQ.cap*sizeof(kl_dpq_node_t);
+    ovrhd   += mpool.bpool[i].blockQ.scap*sizeof(kl_dpq_node_t *);
+    ovrhd   += KL_DPQ_SIZE*sizeof(kl_dpq_bucket_t);
+  }
+
+  klmi.pgsz     = KL_PAGESIZE; klmi.init     = mpool_is_init;
+  klmi.splaysz  = splaySiz;
+  klmi.splaycap = splayCap;
+  klmi.poolact  = poolAct;
+  klmi.poolsz   = poolSiz;
+  klmi.poolcap  = poolCap;
+  klmi.dpqsz    = dpqSiz;
+  klmi.dpqcap   = dpqCap;
+  klmi.ovrhd    = ovrhd;
+  klmi.vmem     = KL_MXVMEM;
+  klmi.rmem     = KL_MXREQ;
+  klmi.over     = KL_OVER;
+
+  return klmi;
+}
+
 void
 klstats()
 {
@@ -720,26 +774,36 @@ klstats()
   fprintf(stderr, "\n");
 }
 
-#ifdef KL_WITH_KLMAIN
-int
-main()
+/*void *
+malloc(
+  size_t sz
+)
 {
-  char * p1, * p2, * p3, * p4, * p5;
-
-  p1 = (char *) klmalloc(1);
-  p2 = (char *) klmalloc(4);
-  p3 = (char *) klmalloc(4097);
-  p4 = (char *) klmalloc(40978943);
-  p5 = (char *) klmalloc(50958329);
-
-  klstats();
-
-  klfree(p1);
-  klfree(p2);
-  klfree(p3);
-  klfree(p4);
-  klfree(p5);
-
-  return EXIT_SUCCESS;
+  return klmalloc(sz);
 }
-#endif
+
+void *
+calloc(
+  size_t num,
+  size_t sz
+)
+{
+  return klcalloc(num, sz);
+}
+
+void *
+realloc(
+  void * ptr,
+  size_t sz
+)
+{
+  return klrealloc(ptr, sz);
+}
+
+void
+free(
+  void * ptr
+)
+{
+  klfree(ptr);
+}*/
