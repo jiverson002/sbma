@@ -2,7 +2,6 @@
 CC       = gcc
 CPP      = g++
 INCLUDES = -I.
-LIBS     =
 LIBDIR   = ../lib
 BINDIR   = ../bin
 VERNUM   = 0.0.2
@@ -12,7 +11,8 @@ ifeq ($(debug),yes)
   OPTFLAGS = -O0 -g -Wall -Wextra -ansi -pedantic
 else
   ifeq ($(profile),yes)
-    OPTFLAGS = -O2 -pg -Wall -Wextra -ansi -pedantic
+    OPTFLAGS = -O2 -pg -fprofile-arcs -ftest-coverage -Wall -Wextra -ansi \
+               -pedantic
   else
     OPTFLAGS = -O2 -Wall -Wextra -ansi -pedantic
   endif
@@ -20,7 +20,7 @@ endif
 
 # Macro definitions
 DEFS  = -D_GNU_SOURCE
-#DEFS += -DKL_MALLOC           # overload malloc funcs to use klmalloc funcs
+DEFS += -DKL_MALLOC           # overload malloc funcs to use klmalloc funcs
 #DEFS += -DKL_WITH_HMAP        # use hash map instead of splay tree
 #DEFS += -DKL_WITH_STDMALLOC   # use malloc in klmalloc funcs instead of mmap
 #DEFS += -DKL_DPQ_REV          # free entry from back of dpq instead of front
@@ -45,7 +45,7 @@ default: $(LIBDIR)/libklmalloc.a $(BINDIR)/klmalloc_test  \
   $(BINDIR)/klmalloc_test_cc
 
 $(BINDIR)/klmalloc_test: klmalloc_test.c $(LIBDIR)/libklmalloc.a
-	$(CC) $(OPTFLAGS) -I../src -L$(LIBDIR) -o $@ $< $(LIBS) -lklmalloc
+	$(CC) $(OPTFLAGS) -I../src -L$(LIBDIR) -o $@ $< -lklmalloc
 
 $(BINDIR)/klmalloc_test_cc: klmalloc_test.cc
 	$(CPP) $(OPTFLAGS) -I../src -o $@ $^

@@ -251,13 +251,11 @@ kl_dpq_inc(
   }
 
   /* check if this bucket is empty, if so, remove it from the bucket
-     configuration, handled by one of the following four cases:
+     configuration, handled by one of the following three cases:
       1) DPQHEAD ?? K
         IS)  DPQHEAD -> K+1
         NOT) K-M <-> K *, becomes K-M <-> *
-      2) DPQTAIL ?? K
-        IS)  K-M <- DPQTAIL
-        NOT) * <-> K <-> K+N, becomes * <-> K+N
+      2) * <-> K <-> K+N, becomes * <-> K+N
    */
   if (!dpq->bucket[k].hd) {
     if (dpq->hd == dpq->bucket+k) {
@@ -268,14 +266,7 @@ kl_dpq_inc(
     }else {
       dpq->bucket[k].p->n = dpq->bucket[k].n;
     }
-    if (dpq->tl == dpq->bucket+k) {
-      dpq->tl = dpq->bucket[k].p;
-      if (dpq->tl) {
-        dpq->tl->n = NULL;
-      }
-    }else {
-      dpq->bucket[k].n->p = dpq->bucket[k].p;
-    }
+    dpq->bucket[k].n->p = dpq->bucket[k].p;
   }
 
   /* update the node and make it head of the correct bucket */
@@ -336,23 +327,14 @@ kl_dpq_dec(
   }
 
   /* check if this bucket is empty, if so, remove it from the bucket
-     configuration, handled by one of the following four cases:
-      1) DPQHEAD ?? K
-        IS)  DPQHEAD -> K+1
-        NOT) K-M <-> K *, becomes K-M <-> *
+     configuration, handled by one of the following three cases:
+      1) K-M <-> K *, becomes K-M <-> *
       2) DPQTAIL ?? K
         IS)  K-M <- DPQTAIL
         NOT) * <-> K <-> K+N, becomes * <-> K+N
    */
   if (!dpq->bucket[k].hd) {
-    if (dpq->hd == dpq->bucket+k) {
-      dpq->hd = dpq->bucket[k].n;
-      if (dpq->hd) {
-        dpq->hd->p = NULL;
-      }
-    }else {
-      dpq->bucket[k].p->n = dpq->bucket[k].n;
-    }
+    dpq->bucket[k].p->n = dpq->bucket[k].n;
     if (dpq->tl == dpq->bucket+k) {
       dpq->tl = dpq->bucket[k].p;
       if (dpq->tl) {

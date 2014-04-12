@@ -233,7 +233,7 @@ size_t KL_VMEM = 0, KL_MXVMEM = 0;
 static size_t KL_REQ = 0, KL_MXREQ = 0, KL_OVER = 0;
 static mpool_t mpool;
 static int mpool_is_init = 0;
-/* size of block allocations   */
+/* size of block allocations (assume 4096 page size) */
 static size_t asz_tbl[] = { 3640, 3854, 3968, 4032, 4064, 4064, 4032, 3968,
                             3840, 3584, 3072, 1<<12, 1<<13, 1<<14, 1<<15,
                             1<<16, 1<<17, 1<<18, 1<<19, 1<<20, 1<<21, 1<<22,
@@ -280,11 +280,11 @@ bpool_shrink(
 
   for (j=0, i=0; i<bp->poolSiz; ++i) {
     if (bp->blockMap[i]->k) {
-      /* the splay insert will overwrite the value it previously had */
 #ifdef KL_WITH_HMAP
       kl_hmap_insert(&mpool.blockMap, (uptr)bp->block[i].blockPtr/KL_PAGESIZE,
                       pid, j);
 #else
+      /* the splay insert will overwrite the value it previously had */
       kl_splay_insert(&mpool.blockMap, (uptr)bp->block[i].blockPtr/KL_PAGESIZE,
                       pid, j);
 #endif
@@ -302,10 +302,8 @@ bpool_shrink(
     bp->cand = NULL;
     kl_dpq_reset(&bp->blockQ);
   }else {
-    if (bp->cand && !bp->cand->k) {
-      /* pick the block which is least full */
-      bp->cand = kl_dpq_peek(&bp->blockQ);
-    }
+    /* pick the block which is least full, if any exists */
+    bp->cand = kl_dpq_peek(&bp->blockQ);
   }
 }
 
@@ -400,14 +398,14 @@ bpool_find_free(
   bpool_t * const bp
 )
 {
+  if (bp->cand && bp->cand->k >= num_tbl[pid]) {  /* cand block is full      */
+    bp->cand = NULL;
+  }
 #ifdef KL_DPQ_REV
   if(!bp->cand && !kl_dpq_rempty(&bp->blockQ)) {
     bp->cand = kl_dpq_rpeek(&bp->blockQ);
   }
 #else
-  if (bp->cand && bp->cand->k >= num_tbl[pid]) {  /* cand block is full      */
-    bp->cand = NULL;
-  }
   if (!bp->cand && !kl_dpq_empty(&bp->blockQ)) { /* get next block from dpq */
     bp->cand = kl_dpq_peek(&bp->blockQ);
   }
@@ -601,7 +599,7 @@ klfree(
         KLFREE(pid, b->blockPtr, asz_tbl[pid]+bbyt(num_tbl[pid]));
         b->blockPtr = NULL;
       }else if (bp->poolSiz > 1 &&
-          (double)bp->poolAct/bp->poolSiz <= BPOOL_TRSH)
+        (double)bp->poolAct/bp->poolSiz <= BPOOL_TRSH)
       {
         bpool_shrink(pid);
       }
