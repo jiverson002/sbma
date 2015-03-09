@@ -50,7 +50,7 @@ $(BINDIR)/klmalloc_test: klmalloc_test.c $(LIBDIR)/libklmalloc.a
 $(BINDIR)/klmalloc_test_cc: klmalloc_test.cc
 	$(CPP) $(OPTFLAGS) -I../src -o $@ $^
 
-$(LIBDIR)/libklmalloc.a: klmalloc.o kldpq.o klhmap.o klsplay.o klutil.o
+$(LIBDIR)/libklmalloc.a: klmalloc.o kldpq.o
 	$(AR) $(LIBDIR)/libklmalloc$(VERNUM).a $^
 	$(RANLIB) $(LIBDIR)/libklmalloc$(VERNUM).a
 	ln -sf libklmalloc$(VERNUM).a $(LIBDIR)/libklmalloc.a
@@ -60,5 +60,5 @@ clean:
 
 distclean: clean
 	rm -vf $(LIBDIR)/libklmalloc$(VERNUM).a $(LIBDIR)/libklmalloc.a
-	rm -vf $(BINDIR)/kldpq $(BINDIR)/klhmap $(BINDIR)/klsplay $(BINDIR)/klmalloc
+	rm -vf $(BINDIR)/kldpq $(BINDIR)/klmalloc
 	rm -vf $(BINDIR)/klmalloc_test $(BINDIR)/klmalloc_test_cc
