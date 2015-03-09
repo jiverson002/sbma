@@ -153,9 +153,7 @@ the possibly moved allocated space.
 #include <sys/mman.h>
 #include <unistd.h>
 
-#include "kl.h"
 #include "kldpq.h"
-#include "klutil.h"
 
 
 /*****************************************************************************/
