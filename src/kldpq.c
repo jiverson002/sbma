@@ -4,6 +4,13 @@
 
 
 /****************************************************************************/
+/* Lookup tables to convert between size and bin number */
+/****************************************************************************/
+static u16 kl_bin2size[KLMAXBIN+1];
+static int kl_size2bin[KLMAXSIZE+1];
+
+
+/****************************************************************************/
 /* Internal node addition routine */
 /****************************************************************************/
 static int
@@ -55,7 +62,39 @@ kl_dpq_ad_int(kl_dpq_t * const dpq, kl_dpq_node_t * const n, u16 const bidx)
 extern int
 kl_dpq_init(kl_dpq_t * const dpq)
 {
-  u16 i;
+  int i;
+
+  kl_bin2size[0] = 8;
+  for (i=1; i<=KLMAXBIN; ++i) {
+    if (i <= 7)
+      kl_bin2size[i] = kl_bin2size[i-1]+8;
+    else if (i <  20)
+      kl_bin2size[i] = kl_bin2size[i-1]+16;
+    else if (i <  44)
+      kl_bin2size[i] = kl_bin2size[i-1]+32;
+    else if (i <  92)
+      kl_bin2size[i] = kl_bin2size[i-1]+64;
+    else if (i < 188)
+      kl_bin2size[i] = kl_bin2size[i-1]+128;
+    else if (i < 380)
+      kl_bin2size[i] = kl_bin2size[i-1]+256;
+  }
+
+  kl_size2bin[0] = -1;
+  for (i=1; i<=KLMAXSIZE; ++i) {
+    if (i <= 64)
+      kl_size2bin[i] = (i-1)/8;
+    else if (i <=   256)
+      kl_size2bin[i] = 8+(i-65)/16;
+    else if (i <=  1024)
+      kl_size2bin[i] = 20+(i-257)/32;
+    else if (i <=  4096)
+      kl_size2bin[i] = 44+(i-1025)/64;
+    else if (i <= 16384)
+      kl_size2bin[i] = 92+(i-4097)/128;
+    else if (i <= 65536)
+      kl_size2bin[i] = 188+(i-16385)/256;
+  }
 
   for (i=0; i<=KLMAXBIN; ++i) {
     dpq->bin[i].p  = NULL;
@@ -168,162 +207,35 @@ kl_dpq_move(kl_dpq_t * const dpq, kl_dpq_node_t * const n, int const bidx)
 }
 
 
-#if 0
 /****************************************************************************/
-/* Increment a node */
+/* Find the node with the smallest size >= size parameter */
 /****************************************************************************/
-extern void
-kl_dpq_incr(kl_dpq_t * const dpq, kl_dpq_node_t * const n)
+extern int
+kl_dpq_find(kl_dpq_t * const dpq, size_t const size)
 {
-  /* undefined if increase key past KL_DPQ_SIZE-1 */
+  int bidx;
+  kl_dpq_bin_t * bin;
 
-  u32 k = n->k;
+  bidx = KLSIZE2BIN(size);
 
-  /* there are two cases which need to be handled to ensure that the
-     dpq->bucket gets configured correctly:
-      1) * <-> K -> NULL, becomes * <-> K <-> K+1 -> NULL
-      2) * <-> K <-> K+N, becomes * <-> K <-> K+1 <-> K+N
-     where N != 1 and K+N != NULL, but * can be anything valid, even NULL.
-   */
-  if (!dpq->bucket[k].n) {
-    dpq->bucket[k+1].p  = dpq->bucket+k;
-    dpq->bucket[k+1].n  = NULL;
+  /* size is > threshold */
+  if (-1 == bidx)
+    return -1;
 
-    dpq->bucket[k].n    = dpq->bucket+(k+1);
+  bin = &(dpq->bin[bidx++]);
 
-    dpq->tl             = dpq->bucket+(k+1);
-  }else if (dpq->bucket[k].n != dpq->bucket+(k+1)) {
-    dpq->bucket[k].n->p = dpq->bucket+(k+1);
+  /* if bin is inactive, check next bin */
+  while (bidx <= KLMAXBIN && NULL == bin->p && NULL == bin->n)
+    bin = &(dpq->bin[bidx++]);
 
-    dpq->bucket[k+1].p  = dpq->bucket+k;
-    dpq->bucket[k+1].n  = dpq->bucket[k].n;
-
-    dpq->bucket[k].n    = dpq->bucket+(k+1);
-  }
-
-  /* shift head of this bucket three cases to handle:
-      1) NODE-M <-> NODE <-> *, becomes NODE-M -> NULL
-      2) * <-> NODE <-> NODE+N, becomes * <-> NODE+N
-      3) HEAD -> NODE <-> *, becomes HEAD -> *
-     where NODE-M != NULL and NODE+N != NULL, but * can be anything valid or
-     NULL.
-   */
-  if (dpq->bucket[k].hd == n) {
-    dpq->bucket[k].hd = n->n;
-  }else {
-    n->p->n = n->n;
-  }
-  if (n->n) {
-    n->n->p = n->p;
-  }
-
-  /* check if this bucket is empty, if so, remove it from the bucket
-     configuration, handled by one of the following three cases:
-      1) DPQHEAD ?? K
-        IS)  DPQHEAD -> K+1
-        NOT) K-M <-> K *, becomes K-M <-> *
-      2) * <-> K <-> K+N, becomes * <-> K+N
-   */
-  if (!dpq->bucket[k].hd) {
-    if (dpq->hd == dpq->bucket+k) {
-      dpq->hd = dpq->bucket[k].n;
-      if (dpq->hd) {
-        dpq->hd->p = NULL;
-      }
-    }else {
-      dpq->bucket[k].p->n = dpq->bucket[k].n;
-    }
-    dpq->bucket[k].n->p = dpq->bucket[k].p;
-  }
-
-  /* update the node and make it head of the correct bucket */
-  n->k = k+1;
-  n->n = dpq->bucket[k+1].hd;
-  if (n->n) {
-    n->n->p = n;
-  }
-  dpq->bucket[k+1].hd = n;
+  /* return the index of the bin with the smallest size >= size parameter */
+  return bidx > KLMAXBIN ? -1 : bidx-1;
 }
 
 
 /****************************************************************************/
-/* Decrement a node */
+/* Main routine for testing */
 /****************************************************************************/
-extern void
-kl_dpq_decr(kl_dpq_t * const dpq, kl_dpq_node_t * const n)
-{
-  /* undefined if decrease key past 0 */
-
-  u32 k = n->k;
-
-  /* there are two cases which need to be handled to ensure that the
-     dpq->bucket gets configured correctly:
-      1) NULL <- K <-> *, becomes NULL <- K-1 <-> K <-> *
-      2) K-M <-> K <-> *, becomes K-M <-> K-1 <-> K <-> *
-     where M != 1 and K-M != NULL, but * can be anything valid, even NULL.
-   */
-  if (!dpq->bucket[k].p) {
-    dpq->bucket[k-1].p  = NULL;
-    dpq->bucket[k-1].n  = dpq->bucket+k;
-
-    dpq->bucket[k].p    = dpq->bucket+(k-1);
-
-    dpq->hd             = dpq->bucket+(k-1);
-  }else if (dpq->bucket[k].p != dpq->bucket+(k-1)) {
-    dpq->bucket[k].p->n = dpq->bucket+(k-1);
-
-    dpq->bucket[k-1].p  = dpq->bucket[k].p;
-    dpq->bucket[k-1].n  = dpq->bucket+k;
-
-    dpq->bucket[k].p    = dpq->bucket+(k-1);
-  }
-
-  /* shift head of this bucket three cases to handle:
-      1) NODE-M <-> NODE <-> *, becomes NODE-M -> NULL
-      2) * <-> NODE <-> NODE+N, becomes * <-> NODE+N
-      3) HEAD -> NODE <-> *, becomes HEAD -> *
-     where NODE-M != NULL and NODE+N != NULL, but * can be anything valid or
-     NULL.
-   */
-  if (dpq->bucket[k].hd == n) {
-    dpq->bucket[k].hd = n->n;
-  }else {
-    n->p->n = n->n;
-  }
-  if (n->n) {
-    n->n->p = n->p;
-  }
-
-  /* check if this bucket is empty, if so, remove it from the bucket
-     configuration, handled by one of the following three cases:
-      1) K-M <-> K *, becomes K-M <-> *
-      2) DPQTAIL ?? K
-        IS)  K-M <- DPQTAIL
-        NOT) * <-> K <-> K+N, becomes * <-> K+N
-   */
-  if (!dpq->bucket[k].hd) {
-    dpq->bucket[k].p->n = dpq->bucket[k].n;
-    if (dpq->tl == dpq->bucket+k) {
-      dpq->tl = dpq->bucket[k].p;
-      if (dpq->tl) {
-        dpq->tl->n = NULL;
-      }
-    }else {
-      dpq->bucket[k].n->p = dpq->bucket[k].p;
-    }
-  }
-
-  /* update the node and make it head of the correct bucket */
-  n->k = k-1;
-  n->n = dpq->bucket[k-1].hd;
-  if (n->n) {
-    n->n->p = n;
-  }
-  dpq->bucket[k-1].hd = n;
-}
-#endif
-
-
 #include <stdlib.h>
 
 int main(void)

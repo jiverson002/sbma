@@ -42,21 +42,11 @@ typedef uint16_t u16;
 /****************************************************************************/
 /* Macros to convert between size and bin number */
 /****************************************************************************/
-#define KLMAXBIN  378   /* zero indexed, so there are 379 bins */
+#define KLMAXBIN  379   /* zero indexed, so there are 379 bins */
 #define KLMAXSIZE 65536 /* ... */
 
-static u16 kl_bin2size[KLMAXBIN+1]=
-{
-  8, 16, 24, 32, 48, 56
-};
-
-static u16 kl_size2bin[KLMAXSIZE+1]=
-{
- 0, 0, 0, 0, 0
-};
-
-#define KLBIN2SIZE(B) ((B) >= 0 && (B) <=  KLMAXBIN ? kl_bin2size[(B)] : 0)
-#define KLSIZE2BIN(S) ((S) >= 0 && (S) <= KLMAXSIZE ? kl_size2bin[(S)] : 0)
+#define KLBIN2SIZE(B) ((B) >=  0 && (B) <=  KLMAXBIN ? kl_bin2size[(B)] :  0)
+#define KLSIZE2BIN(S) ((S) >= -1 && (S) <= KLMAXSIZE ? kl_size2bin[(S)] : -1)
 
 
 /****************************************************************************/
@@ -107,6 +97,7 @@ int kl_dpq_ad(kl_dpq_t * const dpq, kl_dpq_node_t * const n);
 int kl_dpq_rm(kl_dpq_t * const dpq, kl_dpq_node_t * const n);
 
 int kl_dpq_move(kl_dpq_t * const dpq, kl_dpq_node_t * const n, int const bidx);
+int kl_dpq_find(kl_dpq_t * const dpq, size_t const size);
 
 #ifdef __cplusplus
 }

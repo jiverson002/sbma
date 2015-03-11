@@ -15,7 +15,7 @@
   free entries and can be (re-)allocated.
 */
 
-/******************************************************************************
+/*****************************************************************************
 From Wikipedia
 While the x86 architecture originally did not require aligned memory
 access and still works without it, SSE2 instructions on x86 CPUs do
@@ -53,7 +53,7 @@ Description
 
    The calloc function allocates space for an array of nmemb objects,
 each of whose size is size .  The space is initialized to all bits
-zero./114/
+zero.
 
 Returns
 
@@ -127,68 +127,41 @@ Returns
 
    The realloc function returns either a null pointer or a pointer to
 the possibly moved allocated space.
-******************************************************************************/
-
-/******************************************************************************
-* TODO:
-*   recode dpq so that free blocks are those returned which are almost full. it
-*   the nearly empty blocks are always returned, then blocks will rarely become
-*   empty and their memory will not be released.
-*
-*   recode this so that instead of block sizes being in powers of two, they are
-*   in multiples of KL_PAGESIZE. this way, the memory can utilized with less
-*   wasteage. what will this look like for blocks with size < KL_PAGESIZE?
-*
-* NOTE:
-*   this code relies heavily on the fact that mmap returns page aligned memory
-*   addresses. if this is not the case, then this code will have unspecified
-*   results.
-******************************************************************************/
+*****************************************************************************/
 
 
-#include <limits.h>
-#include <stdint.h>
-#include <stdlib.h>
-#include <string.h>
-#include <sys/mman.h>
-#include <unistd.h>
+#ifndef _BSD_SOURCE
+# define _BSD_SOURCE
+#endif
+#include <sys/mman.h> /* mmap */
+#undef _BSD_SOURCE
+
+#include <assert.h>   /* assert */
+#include <stdint.h>   /* uint*_t */
+#include <stddef.h>   /* size_t */
 
 #include "kldpq.h"
 
 
-/*****************************************************************************/
-/* marco defs */
-/*****************************************************************************/
-#define KL_PAGESIZE   ((size_t)(sysconf(_SC_PAGESIZE)))
+/****************************************************************************/
+/* System memory allocation related macros */
+/****************************************************************************/
+#define KL_MMAP_FAIL        MAP_FAILED
+#define KL_CALL_MMAP(S)     mmap(NULL, S, PROT_READ|PROT_WRITE, \
+                              MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
+#define KL_CALL_MUNMAP(P,S) munmap(P, S)
 
-#define KL_MMAP(SZ)         kl_mmap_aligned(SZ)
-#define KL_MUNMAP(PTR, SZ)  kl_munmap_aligned(PTR, SZ)
 
-
-/*****************************************************************************/
-/* marco defs */
-/*****************************************************************************/
-typedef uint32_t      u32;
-typedef int32_t       i32;
-typedef uintptr_t     uptr;
+/****************************************************************************/
+/* Relevant types */
+/****************************************************************************/
+typedef uintptr_t uptr;
 typedef unsigned char uchar;
 
 
-/*****************************************************************************/
-/* marco defs */
-/*****************************************************************************/
-#define MPOOL_INIT 17 /* must be <= 24 */
-#define BPOOL_INIT (KL_PAGESIZE/sizeof(block_t))
-#define BPOOL_TRSH 0.50
-
-
-/*****************************************************************************/
-/* marcos */
-/*****************************************************************************/
-#define MPOOL_INIT_CHECK                                                      \
-if (0 == mpool_is_init)                                                       \
-  mpool_init()                                                                \
-
+/****************************************************************************/
+/* Bit-set */
+/****************************************************************************/
 #define B1         (1)
 #define BSIZ       (sizeof(uchar)*CHAR_BIT)
 #define bsiz(N)    ((N+BSIZ-1)/BSIZ)
@@ -198,435 +171,88 @@ if (0 == mpool_is_init)                                                       \
 #define buns(B, I) (((B)[(I)/BSIZ])&=~(B1<<((I)%BSIZ)))
 
 
-#if !defined(__INTEL_COMPILER) && !defined(__GNUC__)
-  static int kl_builtin_popcountl(size_t v) {
-    int c = 0;
-    for (; v; c++) {
-      v &= v-1;
-    }
-    return c;
-  }
-  static int kl_builtin_clzl(size_t v) {
-    /* result will be nonsense if v is 0 */
-    int i;
-    for (i=sizeof(size_t)*CHAR_BIT-1; i>=0; --i) {
-      if (v & (1ul << i)) {
-        break;
-      }
-    }
-    return sizeof(size_t)*CHAR_BIT-i-1;
-  }
-  static int kl_builtin_ctzl(size_t v) {
-    /* result will be nonsense if v is 0 */
-    int i;
-    for (i=0; i<sizeof(size_t)*CHAR_BIT; ++i) {
-      if (v & (1ul << i)) {
-        return i;
-      }
-    }
-    return i;
-  }
-  #define kl_popcount(V)  kl_builtin_popcountl(V)
-  #define kl_clz(V)       kl_builtin_clzl(V)
-  #define kl_ctz(V)       kl_builtin_ctzl(V)
-#else
-  #define kl_popcount(V)  __builtin_popcountl(V)
-  #define kl_clz(V)       __builtin_clzl(V)
-  #define kl_ctz(V)       __builtin_ctzl(V)
-#endif
+/****************************************************************************/
+/* Access macros for a memory allocation block */
+/****************************************************************************/
+#define KLMEMMSIZE     KLMAXSIZE
+#define KLMEMASIZE     (8+sizeof(kl_dpq_node_t)+(KLMEMSIZE/8)+KLMEMMSIZE)
+#define KLMEMFLAG(MEM) (*(uchar*)(MEM))
+#define KLMEMPTR(MEM)  ((kl_dpq_node_t*)((uintptr_t)(MEM)+8))
+#define KLMEMBIT(MEM)  ((uchar*)((uintptr_t)KLMEMPTR(MEM)+sizeof(kl_dpq_node_t)))
+#define KLMEMMEM(MEM)  ((void*)((uintptr_t)KLMEMBIT(MEM)++KLMEMSIZE/8))
 
 
-#define KLFREE(PID, PTR, NUM)             \
-  if(PID == MPOOL_INIT) {                 \
-    (PTR) = (uchar *)((size_t *)(PTR)-1); \
-    KL_MUNMAP(PTR, *((size_t *)(PTR)));     \
-  }else {                                 \
-    KL_MUNMAP(PTR, NUM);                  \
-  }
+static kl_dpq_t dpq;
 
 
-/*****************************************************************************/
-/* structs */
-/*****************************************************************************/
-typedef struct {
-  u32     blockCtr; /* number of entries in block */
-  uptr    blockID;  /* id of memory block         */
-  uchar * blockPtr; /* pointer to block memory    */
-} block_t;
-
-typedef struct {
-  size_t           poolSiz;  /* current block pool size          */
-  size_t           poolAct;  /* current block pool active blocks */
-  size_t           poolCap;  /* current block pool capacity      */
-  block_t        * block;    /* array of blocks                  */
-  kl_dpq_node_t  * cand;     /* pointer to candidate node        */
-  kl_dpq_node_t ** blockMap; /* map from bid --> node(bid)       */
-  kl_dpq_t         blockQ;   /* priority queue on blockCtr       */
-} bpool_t;
-
-typedef struct {
-  size_t          poolCtr;             /* number of active allocations */
-  bpool_t         bpool[MPOOL_INIT+1]; /* array of block pools         */
-#ifdef KL_WITH_HMAP
-  kl_hmap_t       blockMap;
-#else
-  kl_splay_tree_t blockMap;            /* map from blockID --> block   */
-#endif
-} mpool_t;
-
-
-/*****************************************************************************/
-/* static variables */
-/*****************************************************************************/
-static mpool_t mpool;
-static int mpool_is_init = 0;
-/* size of block allocations (assume 4096 page size) */
-static size_t asz_tbl[]=
-{ 3640, 3854, 3968, 4032, 4064, 4064, 4032, 3968,
-  3840, 3584, 3072, 1<<12, 1<<13, 1<<14, 1<<15,
-  1<<16, 1<<17, 1<<18, 1<<19, 1<<20, 1<<21, 1<<22,
-  1<<23, 1<<24, 1<<25 };
-/* number of entries per block */
-static size_t num_tbl[] =
-{ 3640, 1927, 992, 504, 254, 127, 63, 31, 15, 7, 3,
-  1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1 };
-
-
-/*****************************************************************************/
-/* compute integer base 2 logarithm of v */
-/*****************************************************************************/
-static size_t
-kl_ilog2(size_t v)
-{
-  return sizeof(size_t)*CHAR_BIT-1-__builtin_clzl(v);
-}
-
-
-/*****************************************************************************/
-/* compute next power of 2 greater than or equal to v */
-/*****************************************************************************/
-static size_t
-kl_pow2up(size_t v)
-{
-  /* assumes that sizeof(size_t) == __WORDSIZE/8 */
-  v--;
-  v |= v >> 1;
-  v |= v >> 2;
-  v |= v >> 4;
-  v |= v >> 8;
-  v |= v >> 16;
-#if defined(__WORDSIZE) && __WORDSIZE == 64
-  v |= v >> 32;
-#endif
-  return v+1;
-}
-
-
-/*****************************************************************************/
-/* compute next multiple of m greater than or equal to v */
-/*****************************************************************************/
-static size_t
-kl_multup(size_t v, size_t m)
-{
-  if (m == 0)
-    return 0;
-
-  return (v+m-1)/m*m;
-}
-
-
-/*****************************************************************************/
-/* request aligned mapping */
-/*****************************************************************************/
+/****************************************************************************/
+/* System allocate aligned memory */
+/****************************************************************************/
 static void *
-kl_mmap_aligned(size_t const sz)
+kl_sys_alloc_aligned(size_t const size, size_t const align)
 {
-#ifdef KL_WITH_STDMALLOC
-  void * ptr;
-  if (posix_memalign(&ptr, KL_PAGESIZE, sz)) {
-    fprintf(stderr, "posix_memalign() failed... now exiting\n");
-    exit(EXIT_FAILURE);
-  }
-  memset(ptr, 0, sz);
-  return ptr;
-#else
-  /*return mmap(NULL, kl_multup(sz, KL_PAGESIZE), PROT_READ | PROT_WRITE,
-              MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);*/
-  return mmap(NULL, sz, PROT_READ | PROT_WRITE,
-              MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-#endif
-}
+  uintptr_t mask;
+  void * mem, * ptr;
 
+  assert(0 == (align&(align-1)));
 
-/*****************************************************************************/
-/* release aligned mapping */
-/*****************************************************************************/
-static void
-kl_munmap_aligned(void * const ptr, size_t const sz)
-{
-#ifdef KL_WITH_STDMALLOC
-  free(ptr);
-  if (sz) {}
-#else
-  /*printf("[%p %lu]\n", ptr, sz);*/
-  /*munmap(ptr, kl_multup(sz, KL_PAGESIZE));*/
-  munmap(ptr, sz);
-#endif
-}
+  mask = ~(uintptr_t)(align-1);
+  mem  = KL_CALL_MMAP(size+align-1);
 
-
-/*****************************************************************************/
-/* double size of block pool */
-/*****************************************************************************/
-static void
-bpool_grow(bpool_t * const bp)
-{
-  void * tmp;
-
-  tmp = KL_MMAP(bp->poolCap*2*sizeof(block_t));
-  memcpy(tmp, bp->block, bp->poolCap*sizeof(block_t));
-  KL_MUNMAP(bp->block, bp->poolCap*sizeof(block_t));
-  bp->block = (block_t *) tmp;
-
-  tmp = KL_MMAP(bp->poolCap*2*sizeof(kl_dpq_node_t *));
-  memcpy(tmp, bp->blockMap, bp->poolCap*sizeof(kl_dpq_node_t *));
-  KL_MUNMAP(bp->blockMap, bp->poolCap*sizeof(kl_dpq_node_t *));
-  bp->blockMap = (kl_dpq_node_t **) tmp;
-
-  bp->poolCap *= 2;
-}
-
-
-/*****************************************************************************/
-/* compact a block pool and release unused memory */
-/*****************************************************************************/
-static void
-bpool_shrink(u32 const pid)
-{
-  size_t    i, j;
-  bpool_t * bp = mpool.bpool+pid;
-
-  for (j=0, i=0; i<bp->poolSiz; ++i) {
-    if (bp->blockMap[i]->k) {
-#ifdef KL_WITH_HMAP
-      kl_hmap_insert(&mpool.blockMap, (uptr)bp->block[i].blockPtr/KL_PAGESIZE,
-                      pid, j);
-#else
-      /* the splay insert will overwrite the value it previously had */
-      kl_splay_insert(&mpool.blockMap, (uptr)bp->block[i].blockPtr/KL_PAGESIZE,
-                      pid, j);
-#endif
-      bp->blockMap[j] = bp->blockMap[i];
-      bp->blockMap[j]->bid = j;
-      bp->block[j++] = bp->block[i];
-    }else {
-      kl_dpq_del(&bp->blockQ, bp->blockMap[i]);
-      bp->blockMap[i] = NULL;
-      KLFREE(pid, bp->block[i].blockPtr, asz_tbl[pid]+bbyt(num_tbl[pid]));
-    }
-  }
-  bp->poolSiz = j;
-  if (!j) {
-    bp->cand = NULL;
-    kl_dpq_reset(&bp->blockQ);
-  }else {
-    /* pick the block which is least full, if any exists */
-    bp->cand = kl_dpq_peek(&bp->blockQ);
-  }
-}
-
-
-/*****************************************************************************/
-/* initialize memory pool */
-/*****************************************************************************/
-static void
-mpool_init(void)
-{
-  size_t i;
-
-  /* give correct values to the large pool */
-  asz_tbl[MPOOL_INIT] = 0;
-  num_tbl[MPOOL_INIT] = 1;
-
-  mpool.poolCtr = 0;
-
-  for (i=0; i<=MPOOL_INIT; ++i) {
-    mpool.bpool[i].poolAct = 0;
-    mpool.bpool[i].poolSiz = 0;
-    mpool.bpool[i].poolCap = BPOOL_INIT;
-    mpool.bpool[i].block   = (block_t *) KL_MMAP(BPOOL_INIT*sizeof(block_t));
-    mpool.bpool[i].cand     = NULL;
-    mpool.bpool[i].blockMap =
-      (kl_dpq_node_t **) KL_MMAP(BPOOL_INIT*sizeof(kl_dpq_node_t *));
-    kl_dpq_init(&mpool.bpool[i].blockQ, num_tbl[i]);
-  }
-
-  mpool_is_init = 1;
-}
-
-
-/*****************************************************************************/
-/* destroy memory pool, free'ing memory */
-/*****************************************************************************/
-static void
-mpool_free(void)
-{
-  size_t  i, j;
-  bpool_t * bp;
-
-  if (0 == mpool_is_init)
-    return;
-
-  for (i=0; i<=MPOOL_INIT; ++i) {
-    bp = mpool.bpool+i;
-
-    for (j=0; j<bp->poolSiz; ++j) {
-      /* has not been free'd in bpool_shrink */
-      if (NULL != bp->blockMap[j])
-        KLFREE(i, bp->block[j].blockPtr, asz_tbl[i]+bbyt(num_tbl[i]));
-    }
-    KL_MUNMAP(bp->block, bp->poolCap*sizeof(block_t));
-    KL_MUNMAP(bp->blockMap, bp->poolCap*sizeof(kl_dpq_node_t *));
-    kl_dpq_free(&bp->blockQ);
-    bp->poolSiz = 0;
-    bp->poolCap = 0;
-  }
-
-  mpool_is_init = 0;
-}
-
-
-/*****************************************************************************/
-/* find block with free entry */
-/*****************************************************************************/
-static i32
-bpool_find_free(u32 const pid, bpool_t * const bp)
-{
-  /* cand block is full */
-  if (bp->cand && bp->cand->k >= num_tbl[pid])
-    bp->cand = NULL;
-
-  /* get next block from dpq, if not empty */
-#ifdef KL_DPQ_REV
-  if(NULL == bp->cand && 0 == kl_dpq_rempty(&bp->blockQ))
-    bp->cand = kl_dpq_rpeek(&bp->blockQ);
-#else
-  if (NULL == bp->cand && 0 == kl_dpq_empty(&bp->blockQ))
-    bp->cand = kl_dpq_peek(&bp->blockQ);
-#endif
-
-  /* return block if exists */
-  if (NULL != bp->cand)
-    return bp->cand->bid;
-
-  /* no free blocks exist */
-  return -1;
-}
-
-
-/*****************************************************************************/
-/* find block id of a given ptr */
-/*****************************************************************************/
-static int
-mpool_find_id(uptr const p, u32 * const pid, u32 * const bid)
-{
-#ifdef KL_WITH_HMAP
-  return kl_hmap_find(&mpool.blockMap, p/KL_PAGESIZE, pid, bid);
-#else
-  return kl_splay_find(&mpool.blockMap, p/KL_PAGESIZE, pid, bid);
-#endif
-}
-
-
-/*****************************************************************************/
-/* allocate memory block of sz bytes */
-/*****************************************************************************/
-extern void *
-klmalloc(size_t const sz)
-{
-  size_t    i, asz, esz, num;
-  i32       bid;
-  u32       pid;
-  uchar   * ptr;
-  bpool_t * bp;
-  block_t * b;
-
-  MPOOL_INIT_CHECK
-
-  /* return NULL for zero sz allocations */
-  if (0 == sz)
+  if (KL_MMAP_FAIL == mem)
     return NULL;
 
-  mpool.poolCtr++;
+  ptr = (void *)(((uintptr_t)mem+align-1)&mask);
+  assert(0 == ((uintptr_t)ptr&align));
 
-  /* calculate required info about request size */
-  esz = kl_pow2up(sz);
-  pid = kl_ilog2(esz);
-  ptr = NULL;
-
-  if (pid >= MPOOL_INIT) {
-    /* all large entries go into same pool, bid is -1 so we will always
-     * allocate a new block */
-    pid = MPOOL_INIT;
-    bp  = mpool.bpool+pid;
-    asz = sz;
-    num = 1;
-    bid = -1;
-  }
-  else {
-    /* small entries must determine correct pool and block */
-    bp  = mpool.bpool+pid;
-    asz = asz_tbl[pid];
-    num = num_tbl[pid];
-    bid = bpool_find_free(pid, bp);
-  }
-
-  if (-1 != bid) {
-    /* find free entry in block f of block pool pid */
-    b = bp->block+bid;
-
-    if (!bp->blockMap[bid]->k) {
-      /* reactivating this block, so increase active block counter */
-      bp->poolAct++;
-    }
-    ptr = b->blockPtr+asz;
-    for (i=0; i<num; ++i) { /* find free entry in a block which is known to
-                               have free entries */
-      if (0 == bget(ptr, i)) {
-        bset(ptr, i);
-        kl_dpq_inc(&bp->blockQ, bp->blockMap[bid]);
-        return (void *)(b->blockPtr + (i*esz));
-      }
-    }
-  }
-
-  /* check size of memory pool */
-  if (bp->poolSiz >= bp->poolCap)
-    bpool_grow(bp);
-
-  /* allocate new block */
-  num = bbyt(num);
-  if (MPOOL_INIT == pid) {
-    ptr = KL_MMAP(sizeof(size_t) + asz + num);
-    *((size_t *)ptr) = sizeof(size_t) + asz + num;
-    ptr = (void *)((size_t *)ptr + 1);
-  }
-  else {
-    ptr = KL_MMAP(asz + num);
-  }
-  memset(ptr+asz, 0, num);  /* unset all mark bits */
-  bset(ptr+asz, 0);         /* mark the first bit  */
-
-  bp->blockMap[bp->poolSiz] = kl_dpq_new(&bp->blockQ, bp->poolSiz);
-  kl_dpq_inc(&bp->blockQ, bp->blockMap[bp->poolSiz]);
-  bp->block[bp->poolSiz].blockPtr = ptr;
-  bp->poolSiz++;
-  bp->poolAct++;
+  /* unmap memory up to ptr and anything after ptr+size */
+  /* TODO: this will break xmmalloc */
+  if (mem != ptr)
+    KL_CALL_MUNMAP(mem, (uintptr_t)ptr-(uintptr_t)mem);
+  KL_CALL_MUNMAP((void*)((uintptr_t)ptr+size),
+    (uintptr_t)mem+size+align-1-(uintptr_t)ptr);
 
   return ptr;
 }
 
 
+/****************************************************************************/
+/* Allocate size bytes of memory */
+/****************************************************************************/
+extern void *
+klmalloc(size_t const size)
+{
+  int bidx;
+  void * ptr, * mem;
+
+  if (size > KLMAXSIZE) {
+    /* large allocations are serviced directly by system */
+    return kl_sys_alloc_aligned(size, KLMEMMSIZE);
+  }
+  else {
+    /* try to get a previously allocated block of memory */
+    if (-1 != (bidx=kl_dpq_find(&dpq, size))) {
+      /* if no previously allocated block of memory can support this
+       * allocation, then allocate a new block */
+      mem = kl_sys_alloc_aligned(size, KLMEMMSIZE);
+      if (NULL == mem)
+        return NULL;
+
+      /* add new block to DPQ */
+      kl_dpq_ad(&dpq, KLMEMPTR(mem));
+
+      bidx = KLMAXBIN;
+    }
+
+    /* get a pointer from bin[bidx] in the DPQ */
+  }
+
+  //return ptr;
+  return NULL;
+}
+
+
+#if 0
 /*****************************************************************************/
 /* allocate and zero-initalize an array of num*size bytes */
 /*****************************************************************************/
@@ -636,6 +262,47 @@ klcalloc(size_t const num, size_t const size)
   void * ptr = klmalloc(num*size);
   memset(ptr, 0, num*size);
   return ptr;
+}
+
+
+/*****************************************************************************/
+/* resize memory block pointed to by ptr to be sz bytes */
+/*****************************************************************************/
+extern void *
+klrealloc(void * const ptr, size_t const sz)
+{
+  size_t   esz, besz;
+  u32      pid, bid;
+  void   * nptr;
+
+  MPOOL_INIT_CHECK
+
+  if (!ptr) {
+    return klmalloc(sz);
+  }
+
+  if (mpool_find_id((uptr)ptr, &pid, &bid)) {
+    if (pid == MPOOL_INIT) {
+      esz  = sz;
+      besz = *((size_t *)ptr - 1);
+    }else {
+      esz  = kl_pow2up(sz);
+      besz = 1lu << pid;
+    }
+
+    if (esz == besz) {
+      /* allocation can be left in same entry */
+      return ptr;
+    }
+
+    nptr = klmalloc(sz);
+    memcpy(nptr, ptr, (esz < besz ? esz : besz));
+    klfree(ptr);
+    return nptr;
+  }
+
+  /* ptr was invalid */
+  return NULL;
 }
 
 
@@ -695,44 +362,4 @@ klfree(void * const ptr)
       mpool_free();
   }
 }
-
-
-/*****************************************************************************/
-/* resize memory block pointed to by ptr to be sz bytes */
-/*****************************************************************************/
-extern void *
-klrealloc(void * const ptr, size_t const sz)
-{
-  size_t   esz, besz;
-  u32      pid, bid;
-  void   * nptr;
-
-  MPOOL_INIT_CHECK
-
-  if (!ptr) {
-    return klmalloc(sz);
-  }
-
-  if (mpool_find_id((uptr)ptr, &pid, &bid)) {
-    if (pid == MPOOL_INIT) {
-      esz  = sz;
-      besz = *((size_t *)ptr - 1);
-    }else {
-      esz  = kl_pow2up(sz);
-      besz = 1lu << pid;
-    }
-
-    if (esz == besz) {
-      /* allocation can be left in same entry */
-      return ptr;
-    }
-
-    nptr = klmalloc(sz);
-    memcpy(nptr, ptr, (esz < besz ? esz : besz));
-    klfree(ptr);
-    return nptr;
-  }
-
-  /* ptr was invalid */
-  return NULL;
-}
+#endif
