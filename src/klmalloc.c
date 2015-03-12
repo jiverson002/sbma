@@ -153,6 +153,12 @@ the possibly moved allocated space.
 
 
 /****************************************************************************/
+/* Memory block flags */
+/****************************************************************************/
+#define KL_SYS_DIRECT 1
+
+
+/****************************************************************************/
 /* Relevant types */
 /****************************************************************************/
 typedef uintptr_t uptr;
@@ -174,14 +180,20 @@ typedef unsigned char uchar;
 /****************************************************************************/
 /* Access macros for a memory allocation block */
 /****************************************************************************/
-#define KLMEMMSIZE     KLMAXSIZE
-#define KLMEMASIZE     (8+sizeof(kl_dpq_node_t)+(KLMEMSIZE/8)+KLMEMMSIZE)
+#define KL_ALLOC_SIZE  KLMAXSIZE
+#define KL_META_SIZE   (1+sizeof(kl_dpq_node_t)+KLMEMSIZE/8)
+#define KL_MAX_SIZE    ((KL_ALLOC_SIZE-KL_META_SIZE)&0xf)
+
+#define KLMEMSIZE      KLMAXSIZE
 #define KLMEMFLAG(MEM) (*(uchar*)(MEM))
-#define KLMEMPTR(MEM)  ((kl_dpq_node_t*)((uintptr_t)(MEM)+8))
-#define KLMEMBIT(MEM)  ((uchar*)((uintptr_t)KLMEMPTR(MEM)+sizeof(kl_dpq_node_t)))
-#define KLMEMMEM(MEM)  ((void*)((uintptr_t)KLMEMBIT(MEM)++KLMEMSIZE/8))
+#define KLMEMPTR(MEM)  ((kl_dpq_node_t*)((uintptr_t)(MEM)+1))
+#define KLMEMBIT(MEM)  ((uchar*)((uintptr_t)(MEM)+1+sizeof(kl_dpq_node_t)))
+#define KLMEMMEM(MEM)  ((void*)((uintptr_t)(MEM)+KL_ALLOC_SIZE-KL_MAX_SIZE))
 
 
+/****************************************************************************/
+/* Global DPQ */
+/****************************************************************************/
 static kl_dpq_t dpq;
 
 
@@ -224,27 +236,38 @@ klmalloc(size_t const size)
 {
   int bidx;
   void * ptr, * mem;
+  kl_dpq_node_t * block;
 
-  if (size > KLMAXSIZE) {
+  if (size > KLMEMSIZE) {
     /* large allocations are serviced directly by system */
-    return kl_sys_alloc_aligned(size, KLMEMMSIZE);
+    mem = kl_sys_alloc_aligned(1+size, KLMEMSIZE);
+
+    /* set direct mmap flag */
+    KLMEMFLAG(mem) |= KL_SYS_DIRECT;
+
+    return (void*)((uintptr_t)mem+1);
   }
   else {
     /* try to get a previously allocated block of memory */
-    if (-1 != (bidx=kl_dpq_find(&dpq, size))) {
+    if (-1 == (bidx=kl_dpq_find(&dpq, size))) {
       /* if no previously allocated block of memory can support this
        * allocation, then allocate a new block */
-      mem = kl_sys_alloc_aligned(size, KLMEMMSIZE);
+      mem = kl_sys_alloc_aligned(KLMEMSIZE, KLMEMSIZE);
       if (NULL == mem)
         return NULL;
 
       /* add new block to DPQ */
-      kl_dpq_ad(&dpq, KLMEMPTR(mem));
+      if (0 != kl_dpq_ad(&dpq, KLMEMPTR(mem)))
+        return NULL;
 
       bidx = KLMAXBIN;
     }
 
     /* get a pointer from bin[bidx] in the DPQ */
+    if (0 != kl_dpq_head(&dpq, bidx, &block))
+      return NULL;
+
+    /* get sufficiently large chunk of memory from block */
   }
 
   //return ptr;

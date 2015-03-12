@@ -54,9 +54,9 @@ typedef uint16_t u16;
 /****************************************************************************/
 typedef struct kl_dpq_node
 {
-  u16 bidx;               /* bin index */
   struct kl_dpq_node * p; /* previous node */
   struct kl_dpq_node * n; /* next node */
+  u16 bidx;               /* bin index */
 } kl_dpq_node_t;
 
 
@@ -98,6 +98,8 @@ int kl_dpq_rm(kl_dpq_t * const dpq, kl_dpq_node_t * const n);
 
 int kl_dpq_move(kl_dpq_t * const dpq, kl_dpq_node_t * const n, int const bidx);
 int kl_dpq_find(kl_dpq_t * const dpq, size_t const size);
+int kl_dpq_head(kl_dpq_t * const dpq, int const bidx,
+                kl_dpq_node_t ** const node);
 
 #ifdef __cplusplus
 }

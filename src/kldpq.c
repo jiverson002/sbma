@@ -208,7 +208,7 @@ kl_dpq_move(kl_dpq_t * const dpq, kl_dpq_node_t * const n, int const bidx)
 
 
 /****************************************************************************/
-/* Find the node with the smallest size >= size parameter */
+/* Find the bin with the smallest size >= size parameter */
 /****************************************************************************/
 extern int
 kl_dpq_find(kl_dpq_t * const dpq, size_t const size)
@@ -230,6 +230,19 @@ kl_dpq_find(kl_dpq_t * const dpq, size_t const size)
 
   /* return the index of the bin with the smallest size >= size parameter */
   return bidx > KLMAXBIN ? -1 : bidx-1;
+}
+
+
+/****************************************************************************/
+/* Retrieve head pointer from a bin */
+/****************************************************************************/
+extern int
+kl_dpq_head(kl_dpq_t * const dpq, int const bidx, kl_dpq_node_t ** const node)
+{
+  assert(NULL != dpq->bin[bidx].p || NULL != dpq->bin[bidx].n ||
+         dpq->hd == &(dpq->bin[bidx]));
+  node = dpq->bin[bidx].hd;
+  return NULL == node ? -1 : 0;
 }
 
 
