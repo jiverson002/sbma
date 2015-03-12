@@ -1,18 +1,9 @@
 /*
                 An implementation of dynamic memory allocator
-                     J. Iverson <jiverson@cs.cmu.edu>
-                       Wed Mar 26 00:31:59 CDT 2014
+                     J. Iverson <jiverson@cs.umn.edu>
+                       Thu Mar 12 14:17:25 CDT 2015
 
-  Dynamic memory allocator which keeps pools of memory. Each pool has
-  a fixed entry size, except for the last pool, which is a catch-all
-  pool. In this pool, memory is allocated by request size and the size
-  of the allocation is recorded as part of the allocation. The keys to
-  this allocator are 1) page-sized block allocations in all memory pools
-  except the last, which helps to reduce memory overhead, 2) splay-tree
-  block maps, which allow for pointer lookup for memory free'ing in
-  O(log n) time, and 3) discrete priority queues, which map blocks
-  within memory pools to allow for O(1) locating of blocks which have
-  free entries and can be (re-)allocated.
+  ...
 */
 
 /*****************************************************************************
@@ -130,259 +121,363 @@ the possibly moved allocated space.
 *****************************************************************************/
 
 
-#ifndef _BSD_SOURCE
-# define _BSD_SOURCE
+#ifndef _POSIX_C_SOURCE
+# define _POSIX_C_SOURCE 200112L
+#elif _POSIX_C_SOURCE < 200112L
+# undef _POSIX_C_SOURCE
+# define _POSIX_C_SOURCE 200112L
 #endif
-#include <sys/mman.h> /* mmap */
-#undef _BSD_SOURCE
+#include <stdlib.h> /* posix_memalign, size_t */
+#undef _POSIX_C_SOURCE
 
 #include <assert.h>   /* assert */
 #include <stdint.h>   /* uint*_t */
-#include <stddef.h>   /* size_t */
+#include <string.h>   /* memset */
 
-#include "kldpq.h"
+/* This alignment should be a power of 2. */
+#ifdef MEMORY_ALLOCATION_ALIGNMENT
+# define KL_MEMORY_ALLOCATION_ALIGNMENT MEMORY_ALLOCATION_ALIGNMENT
+#else
+# define KL_MEMORY_ALLOCATION_ALIGNMENT 16
+#endif
+
+#ifndef KL_EXPORT
+# define KL_EXPORT extern
+#endif
+
+/****************************************************************************/
+/****************************************************************************/
+/* Free chunk data structure */
+/****************************************************************************/
+/****************************************************************************/
+
+/****************************************************************************/
+/* Base 2 integer logarithm */
+/****************************************************************************/
+#if !defined(__INTEL_COMPILER) && !defined(__GNUC__)
+  static int kl_builtin_popcountl(size_t v) {
+    int c = 0;
+    for (; v; c++) {
+      v &= v-1;
+    }
+    return c;
+  }
+  static int kl_builtin_clzl(size_t v) {
+    /* result will be nonsense if v is 0 */
+    int i;
+    for (i=sizeof(size_t)*CHAR_BIT-1; i>=0; --i) {
+      if (v & (1ul << i)) {
+        break;
+      }
+    }
+    return sizeof(size_t)*CHAR_BIT-i-1;
+  }
+  static int kl_builtin_ctzl(size_t v) {
+    /* result will be nonsense if v is 0 */
+    int i;
+    for (i=0; i<sizeof(size_t)*CHAR_BIT; ++i) {
+      if (v & (1ul << i)) {
+        return i;
+      }
+    }
+    return i;
+  }
+  #define kl_popcount(V)  kl_builtin_popcountl(V)
+  #define kl_clz(V)       kl_builtin_clzl(V)
+  #define kl_ctz(V)       kl_builtin_ctzl(V)
+#else
+  #define kl_popcount(V)  __builtin_popcountl(V)
+  #define kl_clz(V)       __builtin_clzl(V)
+  #define kl_ctz(V)       __builtin_ctzl(V)
+#endif
+
+#define KLLOG2(V) (sizeof(size_t)*CHAR_BIT-1-kl_clz(v))
 
 
 /****************************************************************************/
-/* System memory allocation related macros */
+/* Lookup tables to convert between size and bin number */
 /****************************************************************************/
-#define KL_MMAP_FAIL        MAP_FAILED
-#define KL_CALL_MMAP(S)     mmap(NULL, S, PROT_READ|PROT_WRITE, \
-                              MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
-#define KL_CALL_MUNMAP(P,S) munmap(P, S)
+#define KLMAXBIN  379   /* zero indexed, so there are 379 bins */
+#define KLMAXSIZE 65536 /* ... */
+
+#define KLSIZE2BIN(S2B,S) ((S) <= KLMAXSIZE ? (S2B)[(S)] : -1)
 
 
 /****************************************************************************/
-/* Memory block flags */
+/* Free chunk data structure node */
 /****************************************************************************/
-#define KL_SYS_DIRECT 1
+typedef struct kl_bin_node
+{
+  struct kl_bin_node * n; /* next node */
+} kl_bin_node_t;
 
+
+/****************************************************************************/
+/* Free chunk data structure bin */
+/****************************************************************************/
+typedef struct kl_bin_bin
+{
+  struct kl_bin_node * hd; /* head node */
+} kl_bin_bin_t;
+
+
+/****************************************************************************/
+/* Free chunk data structure */
+/****************************************************************************/
+typedef struct kl_bin
+{
+  int init;
+  int size2bin[KLMAXSIZE+1];
+  struct kl_bin_bin bin[KLMAXBIN+1];
+} kl_bin_t;
+
+
+/****************************************************************************/
+/* Initialize free chunk data structure */
+/****************************************************************************/
+static int
+kl_bin_init(kl_bin_t * const bin)
+{
+  int i;
+
+  bin->size2bin[0] = -1;
+  for (i=1; i<=KLMAXSIZE; ++i) {
+    if (i <= 64)
+      bin->size2bin[i] = (i-1)/8;
+    else if (i <=   256)
+      bin->size2bin[i] = 8+(i-65)/16;
+    else if (i <=  1024)
+      bin->size2bin[i] = 20+(i-257)/32;
+    else if (i <=  4096)
+      bin->size2bin[i] = 44+(i-1025)/64;
+    else if (i <= 16384)
+      bin->size2bin[i] = 92+(i-4097)/128;
+    else if (i <= 65536)
+      bin->size2bin[i] = 188+(i-16385)/256;
+  }
+
+  for (i=0; i<=KLMAXBIN; ++i)
+    bin->bin[i].hd = NULL;
+
+  return 0;
+}
+
+
+/****************************************************************************/
+/* Add a node to a free chunk data structure */
+/****************************************************************************/
+static int
+kl_bin_ad(kl_bin_t * const bin, kl_bin_node_t * const n, size_t const size)
+{
+  int bidx = KLSIZE2BIN(bin->size2bin, size);
+
+  /* prepend n to front of bin[bidx] linked-list */
+  n->n = bin->bin[bidx].hd;
+  bin->bin[bidx].hd = n;
+
+  return 0;
+}
+
+
+/****************************************************************************/
+/* Find the bin with the smallest size >= size parameter */
+/****************************************************************************/
+static void *
+kl_bin_find(kl_bin_t * const bin, size_t const size)
+{
+  int bidx;
+  kl_bin_node_t * hd;
+
+  bidx = KLSIZE2BIN(bin->size2bin, size);
+
+  /* Find first bin with a node and size >= size parameter. */
+  hd = bin->bin[bidx].hd;
+  while (NULL == hd && bidx < KLMAXBIN)
+    hd = bin->bin[++bidx].hd;
+
+  /* Remove head of bin[bidx]. */
+  if (NULL != hd)
+    bin->bin[bidx].hd = hd->n;
+
+  return hd;
+}
+
+
+/****************************************************************************/
+/****************************************************************************/
+/* KL API */
+/****************************************************************************/
+/****************************************************************************/
 
 /****************************************************************************/
 /* Relevant types */
 /****************************************************************************/
 typedef uintptr_t uptr;
-typedef unsigned char uchar;
 
 
 /****************************************************************************/
-/* Bit-set */
+/* Free chunk data structure */
 /****************************************************************************/
-#define B1         (1)
-#define BSIZ       (sizeof(uchar)*CHAR_BIT)
-#define bsiz(N)    ((N+BSIZ-1)/BSIZ)
-#define bbyt(N)    (bsiz(N)*sizeof(uchar))
-#define bget(B, I) (((B)[(I)/BSIZ])&(B1<<((I)%BSIZ)))
-#define bset(B, I) (((B)[(I)/BSIZ])|=(B1<<((I)%BSIZ)))
-#define buns(B, I) (((B)[(I)/BSIZ])&=~(B1<<((I)%BSIZ)))
+static kl_bin_t bin={.init=0};
 
 
 /****************************************************************************/
-/* Access macros for a memory allocation block */
+/* Initialize static variables and data structures */
 /****************************************************************************/
-#define KL_ALLOC_SIZE  KLMAXSIZE
-#define KL_META_SIZE   (1+sizeof(kl_dpq_node_t)+KLMEMSIZE/8)
-#define KL_MAX_SIZE    ((KL_ALLOC_SIZE-KL_META_SIZE)&0xf)
-
-#define KLMEMSIZE      KLMAXSIZE
-#define KLMEMFLAG(MEM) (*(uchar*)(MEM))
-#define KLMEMPTR(MEM)  ((kl_dpq_node_t*)((uintptr_t)(MEM)+1))
-#define KLMEMBIT(MEM)  ((uchar*)((uintptr_t)(MEM)+1+sizeof(kl_dpq_node_t)))
-#define KLMEMMEM(MEM)  ((void*)((uintptr_t)(MEM)+KL_ALLOC_SIZE-KL_MAX_SIZE))
+#define KL_INIT_CHECK                                                       \
+do {                                                                        \
+  if (0 == bin.init)                                                        \
+    kl_bin_init(&bin);                                                      \
+} while (0)
 
 
 /****************************************************************************/
-/* Global DPQ */
+/* Align an unsigned integer value to a power supplied power of 2 */
 /****************************************************************************/
-static kl_dpq_t dpq;
+#define KL_ALIGN(LEN, ALIGN) \
+  (assert(0 == ((ALIGN)&((ALIGN)-1))), (((LEN)+((ALIGN)-1))&(~((ALIGN-1)))))
 
 
 /****************************************************************************/
-/* System allocate aligned memory */
+/* System memory allocation related macros */
 /****************************************************************************/
-static void *
-kl_sys_alloc_aligned(size_t const size, size_t const align)
-{
-  uintptr_t mask;
-  void * mem, * ptr;
+#define KL_SYS_ALLOC_FAIL               NULL
+#define KL_CALL_SYS_ALLOC(P,S)          (P)=malloc(S)
+#define KL_CALL_SYS_ALLOC_ALIGN(P,A,S)  posix_memalign(&(P),A,S)
+#define KL_CALL_SYS_FREE(P,S)           free(P)
 
-  assert(0 == (align&(align-1)));
 
-  mask = ~(uintptr_t)(align-1);
-  mem  = KL_CALL_MMAP(size+align-1);
+/****************************************************************************/
+/* Relevant macros for a memory allocation block */
+/****************************************************************************/
+#define KL_BLOCK_SIZE     65536
+#define KL_BLOCK_META \
+  KL_ALIGN(sizeof(size_t)+sizeof(size_t), KL_MEMORY_ALLOCATION_ALIGNMENT)
+#define KL_BLOCK_ALIGN    KL_BLOCK_SIZE
+#define KL_BLOCK_SIZ(BLK) (*(size_t*)(BLK))
+#define KL_BLOCK_CNT(BLK) (*(size_t*)((uptr)(BLK)+sizeof(size_t)))
 
-  if (KL_MMAP_FAIL == mem)
-    return NULL;
 
-  ptr = (void *)(((uintptr_t)mem+align-1)&mask);
-  assert(0 == ((uintptr_t)ptr&align));
+/****************************************************************************/
+/* Compute the size of a memory chunk given an initial size, adjusts for the
+ * extra memory required for meta info and alignment */
+/****************************************************************************/
+#define KL_CHUNK_SIZE(S) \
+  (KL_ALIGN(sizeof(void*)+sizeof(size_t)+(S), KL_MEMORY_ALLOCATION_ALIGNMENT))
 
-  /* unmap memory up to ptr and anything after ptr+size */
-  /* TODO: this will break xmmalloc */
-  if (mem != ptr)
-    KL_CALL_MUNMAP(mem, (uintptr_t)ptr-(uintptr_t)mem);
-  KL_CALL_MUNMAP((void*)((uintptr_t)ptr+size),
-    (uintptr_t)mem+size+align-1-(uintptr_t)ptr);
 
-  return ptr;
-}
+/****************************************************************************/
+/* Access macros for a memory chunk */
+/****************************************************************************/
+#define KL_CHUNK_SIZ(MEM) (*(size_t*)((uptr)(MEM)+sizeof(void*)))
+#define KL_CHUNK_PTR(MEM) (void*)((uptr)(MEM)+sizeof(void*)+sizeof(size_t))
+#define KL_CHUNK_MEM(PTR) (void*)((uptr)(PTR)-sizeof(void*)-sizeof(size_t))
+#define KL_CHUNK_BLK(MEM) (void*)((uptr)(MEM)&(~(KL_BLOCK_SIZE-1)))
 
 
 /****************************************************************************/
 /* Allocate size bytes of memory */
 /****************************************************************************/
-extern void *
+KL_EXPORT void *
 klmalloc(size_t const size)
 {
-  int bidx;
-  void * ptr, * mem;
-  kl_dpq_node_t * block;
+  int ret;
+  size_t msize;
+  void * mem;
 
-  if (size > KLMEMSIZE) {
-    /* large allocations are serviced directly by system */
-    mem = kl_sys_alloc_aligned(1+size, KLMEMSIZE);
+  KL_INIT_CHECK;
 
-    /* set direct mmap flag */
-    KLMEMFLAG(mem) |= KL_SYS_DIRECT;
+  /* Try to get a previously allocated block of memory. */
+  /* kl_bin_find() will remove chunk from free chunk data structure. */
+  if (NULL == (mem=kl_bin_find(&bin, size))) {
+    /* If no previously allocated block of memory can support this allocation,
+     * then allocate a new block.  If requested size is less than
+     * KL_BLOCK_MAX-KL_BLOCK_META, then allocate a new block.  Otherwise,
+     * directly allocate the required amount of memory. */
+    if (KL_CHUNK_SIZE(size) <= KL_BLOCK_SIZE-KL_BLOCK_META)
+      msize = KL_BLOCK_SIZE;
+    else
+      msize = KL_BLOCK_META+KL_CHUNK_SIZE(size);
 
-    return (void*)((uintptr_t)mem+1);
-  }
-  else {
-    /* try to get a previously allocated block of memory */
-    if (-1 == (bidx=kl_dpq_find(&dpq, size))) {
-      /* if no previously allocated block of memory can support this
-       * allocation, then allocate a new block */
-      mem = kl_sys_alloc_aligned(KLMEMSIZE, KLMEMSIZE);
-      if (NULL == mem)
-        return NULL;
-
-      /* add new block to DPQ */
-      if (0 != kl_dpq_ad(&dpq, KLMEMPTR(mem)))
-        return NULL;
-
-      bidx = KLMAXBIN;
-    }
-
-    /* get a pointer from bin[bidx] in the DPQ */
-    if (0 != kl_dpq_head(&dpq, bidx, &block))
+    /* Get system memory */
+    ret = KL_CALL_SYS_ALLOC_ALIGN(mem, KL_BLOCK_ALIGN, msize);
+    if (-1 == ret)
+      return NULL;
+    if (KL_SYS_ALLOC_FAIL == mem)
       return NULL;
 
-    /* get sufficiently large chunk of memory from block */
+    /* Set block size */
+    KL_BLOCK_SIZ(mem) = msize;
+
+    /* Set mem to be the chunk to be returned */
+    mem = (void*)((uptr)mem+KL_BLOCK_META);
+
+    /* Set chunk size */
+    KL_CHUNK_SIZ(mem) = KL_CHUNK_SIZE(size);
   }
 
-  //return ptr;
-  return NULL;
+  /* Conceptually break mem into two chunks:
+   *   mem[0..KL_CHUNK_SIZE(size)-1], mem[KL_CHUNK_SIZE(size)..msize]
+   * Add the second chunk to free chunk data structure, when applicable. */
+  if (KL_CHUNK_SIZE(size) < KL_CHUNK_SIZE(KL_CHUNK_SIZ(mem))) {
+    if (0 != kl_bin_ad(&bin, (void*)((uptr)mem+KL_CHUNK_SIZE(size)),
+        KL_CHUNK_SIZE(KL_CHUNK_SIZ(mem))-KL_CHUNK_SIZE(size)))
+    {
+      return NULL;
+    }
+    KL_CHUNK_SIZ((void*)((uptr)mem+KL_CHUNK_SIZE(size))) =
+      KL_CHUNK_SIZE(KL_CHUNK_SIZ(mem))-KL_CHUNK_SIZE(size);
+  }
+
+  /* Increment count for containing block. */
+  KL_BLOCK_CNT(KL_CHUNK_BLK(mem))++;
+
+  return KL_CHUNK_PTR(mem);
 }
 
 
-#if 0
-/*****************************************************************************/
-/* allocate and zero-initalize an array of num*size bytes */
-/*****************************************************************************/
-extern void *
+/****************************************************************************/
+/* Allocate num*size bytes of zeroed memory */
+/****************************************************************************/
+KL_EXPORT void *
 klcalloc(size_t const num, size_t const size)
 {
-  void * ptr = klmalloc(num*size);
-  memset(ptr, 0, num*size);
+  KL_INIT_CHECK;
+
+  void * ptr=klmalloc(num*size);
+  if (NULL != ptr)
+    memset(ptr, 0, num*size);
   return ptr;
 }
 
 
-/*****************************************************************************/
-/* resize memory block pointed to by ptr to be sz bytes */
-/*****************************************************************************/
-extern void *
-klrealloc(void * const ptr, size_t const sz)
-{
-  size_t   esz, besz;
-  u32      pid, bid;
-  void   * nptr;
-
-  MPOOL_INIT_CHECK
-
-  if (!ptr) {
-    return klmalloc(sz);
-  }
-
-  if (mpool_find_id((uptr)ptr, &pid, &bid)) {
-    if (pid == MPOOL_INIT) {
-      esz  = sz;
-      besz = *((size_t *)ptr - 1);
-    }else {
-      esz  = kl_pow2up(sz);
-      besz = 1lu << pid;
-    }
-
-    if (esz == besz) {
-      /* allocation can be left in same entry */
-      return ptr;
-    }
-
-    nptr = klmalloc(sz);
-    memcpy(nptr, ptr, (esz < besz ? esz : besz));
-    klfree(ptr);
-    return nptr;
-  }
-
-  /* ptr was invalid */
-  return NULL;
-}
-
-
-/*****************************************************************************/
-/* deallocate memory block */
-/*****************************************************************************/
-extern void
+/****************************************************************************/
+/* Release size bytes of memory */
+/****************************************************************************/
+KL_EXPORT void
 klfree(void * const ptr)
 {
-  size_t    asz, esz;
-  u32       pid, bid, eid;
-  uptr      p;
-  bpool_t * bp;
-  block_t * b;
+  /* TODO: one issue with current implementation is the following.  When a
+   * large block gets split into smaller blocks, the ability to use the
+   * KL_CHUNK_BLK() macro goes away, since the large block could get split up
+   * such that a chunk beyond the KL_BLOCK_SIZE limit is allocated, thus when
+   * KL_CHUNK_BLK() is called it will return a memory location of something
+   * which is not a block. */
+  KL_INIT_CHECK;
 
-  MPOOL_INIT_CHECK
+  /* Sanity check to make sure the containing block is somewhat valid. */
+  assert(0 != KL_BLOCK_CNT(KL_CHUNK_BLK(KL_CHUNK_MEM(ptr))));
 
-  p   = (uptr) ptr;
-  pid = 0;
-  if (mpool_find_id(p, &pid, &bid)) {
-    bp = mpool.bpool+pid;
-    b  = bp->block+bid;
-
-    esz = (1ul<<pid);
-    asz = asz_tbl[pid];
-    eid = (p-(uptr)b->blockPtr)/esz;
-
-    buns(b->blockPtr+asz, eid);
-
-    kl_dpq_dec(&bp->blockQ, bp->blockMap[bid]);
-    if (0 == bp->blockMap[bid]->k) {
-#ifdef KL_WITH_AGGRESSIVE
-      /* release memory for block bid */
-      kl_dpq_del(&bp->blockQ, bp->blockMap[bid]);
-      bp->blockMap[bid] = NULL;
-      KLFREE(pid, b->blockPtr, asz_tbl[pid]+bbyt(num_tbl[pid]));
-      b->blockPtr = NULL;
-      bp->cand = NULL;
-#else
-      bp->poolAct--;
-      /* if the allocation was from the large pool, or the allocation was from
-       * a pool whose current size is > 1 and whose active percent is less than
-       * BPOOL_TRSH */
-      if (pid == MPOOL_INIT) {
-        kl_dpq_del(&bp->blockQ, bp->blockMap[bid]);
-        bp->blockMap[bid] = NULL;
-        KLFREE(pid, b->blockPtr, asz_tbl[pid]+bbyt(num_tbl[pid]));
-        b->blockPtr = NULL;
-      }
-      else if (bp->poolSiz > 1 && bp->poolAct*1.0/bp->poolSiz <= BPOOL_TRSH) {
-        bpool_shrink(pid);
-      }
-#endif
-    }
-
-    if (0 == (--mpool.poolCtr))
-      mpool_free();
+  /* Decrement count for containing block and release entire block if it is
+   * empty. */
+  if (0 == --KL_BLOCK_CNT(KL_CHUNK_BLK(KL_CHUNK_MEM(ptr)))) {
+    KL_CALL_SYS_FREE(KL_CHUNK_BLK(KL_CHUNK_MEM(ptr)),
+      KL_BLOCK_SIZ(KL_CHUNK_BLK(KL_CHUNK_MEM(ptr))));
+  }
+  /* Otherwise, add the chunk back into free chunk data structure. */
+  else {
+    /* TODO: check to see if chunk can be coalesced */
+    if (0 != kl_bin_ad(&bin, KL_CHUNK_MEM(ptr), KL_CHUNK_SIZ(KL_CHUNK_MEM(ptr))))
+      return;
   }
 }
-#endif
