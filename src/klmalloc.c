@@ -131,6 +131,7 @@ the possibly moved allocated space.
 #undef _POSIX_C_SOURCE
 
 #include <assert.h>   /* assert */
+#include <limits.h>   /* CHAR_BIT */
 #include <stdint.h>   /* uint*_t */
 #include <string.h>   /* memset */
 
@@ -145,169 +146,16 @@ the possibly moved allocated space.
 # define KL_EXPORT extern
 #endif
 
-/****************************************************************************/
-/****************************************************************************/
-/* Free chunk data structure */
-/****************************************************************************/
-/****************************************************************************/
 
-/****************************************************************************/
-/* Base 2 integer logarithm */
-/****************************************************************************/
-#if !defined(__INTEL_COMPILER) && !defined(__GNUC__)
-  static int kl_builtin_popcountl(size_t v) {
-    int c = 0;
-    for (; v; c++) {
-      v &= v-1;
-    }
-    return c;
-  }
-  static int kl_builtin_clzl(size_t v) {
-    /* result will be nonsense if v is 0 */
-    int i;
-    for (i=sizeof(size_t)*CHAR_BIT-1; i>=0; --i) {
-      if (v & (1ul << i)) {
-        break;
-      }
-    }
-    return sizeof(size_t)*CHAR_BIT-i-1;
-  }
-  static int kl_builtin_ctzl(size_t v) {
-    /* result will be nonsense if v is 0 */
-    int i;
-    for (i=0; i<sizeof(size_t)*CHAR_BIT; ++i) {
-      if (v & (1ul << i)) {
-        return i;
-      }
-    }
-    return i;
-  }
-  #define kl_popcount(V)  kl_builtin_popcountl(V)
-  #define kl_clz(V)       kl_builtin_clzl(V)
-  #define kl_ctz(V)       kl_builtin_ctzl(V)
+#define KL_DEBUG
+#ifdef KL_DEBUG
+# include <stdio.h>
+# define KL_PRINT printf
 #else
-  #define kl_popcount(V)  __builtin_popcountl(V)
-  #define kl_clz(V)       __builtin_clzl(V)
-  #define kl_ctz(V)       __builtin_ctzl(V)
+# define KL_NOOP(...)
+# define KL_PRINT KL_NOOP
 #endif
 
-#define KLLOG2(V) (sizeof(size_t)*CHAR_BIT-1-kl_clz(v))
-
-
-/****************************************************************************/
-/* Lookup tables to convert between size and bin number */
-/****************************************************************************/
-#define KLMAXBIN  379   /* zero indexed, so there are 379 bins */
-#define KLMAXSIZE 65536 /* ... */
-
-#define KLSIZE2BIN(S2B,S) ((S) <= KLMAXSIZE ? (S2B)[(S)] : -1)
-
-
-/****************************************************************************/
-/* Free chunk data structure node */
-/****************************************************************************/
-typedef struct kl_bin_node
-{
-  struct kl_bin_node * n; /* next node */
-} kl_bin_node_t;
-
-
-/****************************************************************************/
-/* Free chunk data structure bin */
-/****************************************************************************/
-typedef struct kl_bin_bin
-{
-  struct kl_bin_node * hd; /* head node */
-} kl_bin_bin_t;
-
-
-/****************************************************************************/
-/* Free chunk data structure */
-/****************************************************************************/
-typedef struct kl_bin
-{
-  int init;
-  int size2bin[KLMAXSIZE+1];
-  struct kl_bin_bin bin[KLMAXBIN+1];
-} kl_bin_t;
-
-
-/****************************************************************************/
-/* Initialize free chunk data structure */
-/****************************************************************************/
-static int
-kl_bin_init(kl_bin_t * const bin)
-{
-  int i;
-
-  bin->size2bin[0] = -1;
-  for (i=1; i<=KLMAXSIZE; ++i) {
-    if (i <= 64)
-      bin->size2bin[i] = (i-1)/8;
-    else if (i <=   256)
-      bin->size2bin[i] = 8+(i-65)/16;
-    else if (i <=  1024)
-      bin->size2bin[i] = 20+(i-257)/32;
-    else if (i <=  4096)
-      bin->size2bin[i] = 44+(i-1025)/64;
-    else if (i <= 16384)
-      bin->size2bin[i] = 92+(i-4097)/128;
-    else if (i <= 65536)
-      bin->size2bin[i] = 188+(i-16385)/256;
-  }
-
-  for (i=0; i<=KLMAXBIN; ++i)
-    bin->bin[i].hd = NULL;
-
-  return 0;
-}
-
-
-/****************************************************************************/
-/* Add a node to a free chunk data structure */
-/****************************************************************************/
-static int
-kl_bin_ad(kl_bin_t * const bin, kl_bin_node_t * const n, size_t const size)
-{
-  int bidx = KLSIZE2BIN(bin->size2bin, size);
-
-  /* prepend n to front of bin[bidx] linked-list */
-  n->n = bin->bin[bidx].hd;
-  bin->bin[bidx].hd = n;
-
-  return 0;
-}
-
-
-/****************************************************************************/
-/* Find the bin with the smallest size >= size parameter */
-/****************************************************************************/
-static void *
-kl_bin_find(kl_bin_t * const bin, size_t const size)
-{
-  int bidx;
-  kl_bin_node_t * hd;
-
-  bidx = KLSIZE2BIN(bin->size2bin, size);
-
-  /* Find first bin with a node and size >= size parameter. */
-  hd = bin->bin[bidx].hd;
-  while (NULL == hd && bidx < KLMAXBIN)
-    hd = bin->bin[++bidx].hd;
-
-  /* Remove head of bin[bidx]. */
-  if (NULL != hd)
-    bin->bin[bidx].hd = hd->n;
-
-  return hd;
-}
-
-
-/****************************************************************************/
-/****************************************************************************/
-/* KL API */
-/****************************************************************************/
-/****************************************************************************/
 
 /****************************************************************************/
 /* Relevant types */
@@ -316,19 +164,57 @@ typedef uintptr_t uptr;
 
 
 /****************************************************************************/
-/* Free chunk data structure */
+/* Base 2 integer logarithm */
 /****************************************************************************/
-static kl_bin_t bin={.init=0};
+#if !defined(__INTEL_COMPILER) && !defined(__GNUC__)
+  static int kl_builtin_clzl(size_t v) {
+    /* result will be nonsense if v is 0 */
+    int i;
+    for (i=sizeof(size_t)*CHAR_BIT-1; i>=0; --i) {
+      if (v & ((size_t)1 << i))
+        break;
+    }
+    return sizeof(size_t)*CHAR_BIT-i-1;
+  }
+  #define kl_clz(V) kl_builtin_clzl(V)
+#else
+  #define kl_clz(V) __builtin_clzl(V)
+#endif
+
+#define KLLOG2(V) (sizeof(size_t)*CHAR_BIT-1-kl_clz(V))
 
 
 /****************************************************************************/
-/* Initialize static variables and data structures */
+/* Lookup tables to convert between size and bin number */
 /****************************************************************************/
-#define KL_INIT_CHECK                                                       \
-do {                                                                        \
-  if (0 == bin.init)                                                        \
-    kl_bin_init(&bin);                                                      \
-} while (0)
+#define KLNUMBIN   1576
+#define KLSMALLBIN 1532
+#define KLISSMALLBIN(B) (B < KLSMALLBIN)
+
+#define KLSIZE2BIN(S)                                                       \
+  (                                                                         \
+    (1==(S))                                                                \
+      ? (size_t)0                                                           \
+      : (KLLOG2((S)-1)<20)                                                  \
+        ? log2off[KLLOG2((S)-1)]+(S)/log2size[KLLOG2((S)-1)]                \
+        : log2off[KLLOG2((S)-1)]                                            \
+  )
+
+static size_t log2size[64]=
+{
+  8, 8, 8, 8, 8, 8, 16, 16, 32, 32, 64, 64, 128, 128, 256, 256, 512, 512,
+  1024, 1024, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+};
+
+static size_t log2off[64]=
+{
+  0, 0, 0, 0, 0, 0, 8, 8, 20, 20, 44, 44, 92, 92, 188, 188, 380, 380, 764,
+  764, 1532, 1533, 1534, 1535, 1536, 1537, 1538, 1539, 1540, 1541, 1542, 1543,
+  1544, 1545, 1546, 1547, 1548, 1549, 1550, 1551, 1552, 1553, 1554, 1555,
+  1556, 1557, 1558, 1559, 1560, 1561, 1562, 1563, 1564, 1565, 1566, 1567,
+  1568, 1569, 1570, 1571, 1572, 1573, 1574, 1575
+};
 
 
 /****************************************************************************/
@@ -376,6 +262,161 @@ do {                                                                        \
 
 
 /****************************************************************************/
+/****************************************************************************/
+/* Free chunk data structure API */
+/****************************************************************************/
+/****************************************************************************/
+
+/****************************************************************************/
+/* Free chunk data structure node */
+/****************************************************************************/
+typedef struct kl_bin_node
+{
+  struct kl_bin_node * n; /* next node */
+} kl_bin_node_t;
+
+
+/****************************************************************************/
+/* Free chunk data structure bin */
+/****************************************************************************/
+typedef struct kl_bin_bin
+{
+  struct kl_bin_node * hd; /* head node */
+} kl_bin_bin_t;
+
+
+/****************************************************************************/
+/* Free chunk data structure */
+/****************************************************************************/
+typedef struct kl_bin
+{
+  int init;
+  struct kl_bin_bin bin[KLNUMBIN];
+} kl_bin_t;
+
+
+/****************************************************************************/
+/* Initialize free chunk data structure */
+/****************************************************************************/
+static int
+kl_bin_init(kl_bin_t * const bin)
+{
+  int i;
+
+  for (i=0; i<KLNUMBIN; ++i)
+    bin->bin[i].hd = NULL;
+
+  return 0;
+}
+
+
+/****************************************************************************/
+/* Add a node to a free chunk data structure */
+/****************************************************************************/
+static int
+kl_bin_ad(kl_bin_t * const bin, kl_bin_node_t * const node, size_t const size)
+{
+  size_t bidx = KLSIZE2BIN(size);
+  kl_bin_node_t * p, * n;
+
+  /* Treat fixed size bins and large bins differently */
+  if (KLISSMALLBIN(bidx)) {
+    /* prepend n to front of bin[bidx] linked-list */
+    node->n = bin->bin[bidx].hd;
+    bin->bin[bidx].hd = node;
+  }
+  else {
+    /* this will keep large buckets sorted */
+    n = bin->bin[bidx].hd;
+    p = NULL;
+
+    while (NULL != n && KL_CHUNK_SIZ(n) < KL_CHUNK_SIZ(node)) {
+      p = n;
+      n = n->n;
+    }
+
+    if (NULL == p)
+      bin->bin[bidx].hd = node;
+    else
+      p->n = node;
+    node->n = n;
+  }
+
+  return 0;
+}
+
+
+/****************************************************************************/
+/* Find the bin with the smallest size >= size parameter */
+/****************************************************************************/
+static void *
+kl_bin_find(kl_bin_t * const bin, size_t const size)
+{
+  size_t bidx = KLSIZE2BIN(size);
+  kl_bin_node_t * p, * n;
+
+  if (KLISSMALLBIN(bidx)) {
+    /* Find first bin with a node. */
+    n = bin->bin[bidx].hd;
+    while (NULL == n && bidx < KLSMALLBIN)
+      n = bin->bin[++bidx].hd;
+
+    /* Remove head of bin[bidx]. */
+    if (NULL != n) {
+      bin->bin[bidx].hd = n->n;
+      n->n = NULL;
+    }
+  }
+  else {
+    /* Find first bin with a node. */
+    n = bin->bin[bidx].hd;
+    while (NULL == n && bidx < KLNUMBIN)
+      n = bin->bin[++bidx].hd;
+
+    /* Find first node in bin[bidx] with size >= size parameter. */
+    p = NULL;
+    while (NULL != n && KL_CHUNK_SIZ(n) < size) {
+      p = n;
+      n = n->n;
+    }
+
+    /* Remove n from bin[bidx]. */
+    if (NULL != n) {
+      if (NULL == p)
+        bin->bin[bidx].hd = n->n;
+      else
+        p->n = n->n;
+      n->n = NULL;
+    }
+  }
+
+  return n;
+}
+
+
+/****************************************************************************/
+/****************************************************************************/
+/* KL API */
+/****************************************************************************/
+/****************************************************************************/
+
+/****************************************************************************/
+/* Free chunk data structure */
+/****************************************************************************/
+static kl_bin_t bin={.init=0};
+
+
+/****************************************************************************/
+/* Initialize static variables and data structures */
+/****************************************************************************/
+#define KL_INIT_CHECK                                                       \
+do {                                                                        \
+  if (0 == bin.init)                                                        \
+    kl_bin_init(&bin);                                                      \
+} while (0)
+
+
+/****************************************************************************/
 /* Allocate size bytes of memory */
 /****************************************************************************/
 KL_EXPORT void *
@@ -394,10 +435,14 @@ klmalloc(size_t const size)
      * then allocate a new block.  If requested size is less than
      * KL_BLOCK_MAX-KL_BLOCK_META, then allocate a new block.  Otherwise,
      * directly allocate the required amount of memory. */
-    if (KL_CHUNK_SIZE(size) <= KL_BLOCK_SIZE-KL_BLOCK_META)
+    if (KL_CHUNK_SIZE(size) <= KL_BLOCK_SIZE-KL_BLOCK_META) {
+      KL_PRINT("klinfo: allocating a new fixed size block of memory\n");
       msize = KL_BLOCK_SIZE;
-    else
+    }
+    else {
+      KL_PRINT("klinfo: allocating a new variable size block of memory\n");
       msize = KL_BLOCK_META+KL_CHUNK_SIZE(size);
+    }
 
     /* Get system memory */
     ret = KL_CALL_SYS_ALLOC_ALIGN(mem, KL_BLOCK_ALIGN, msize);
@@ -406,8 +451,13 @@ klmalloc(size_t const size)
     if (KL_SYS_ALLOC_FAIL == mem)
       return NULL;
 
+    KL_PRINT("klinfo:   block start: %p\n", (void*)mem);
+    KL_PRINT("klinfo:   size start:  %p\n", (void*)&(KL_BLOCK_SIZ(mem)));
+    KL_PRINT("klinfo:   count start: %p\n", (void*)&(KL_BLOCK_CNT(mem)));
+    KL_PRINT("klinfo:   block size:  %zu\n", msize);
+
     /* Set block size */
-    KL_BLOCK_SIZ(mem) = msize;
+    KL_BLOCK_SIZ(mem) = msize-KL_BLOCK_META;
 
     /* Set mem to be the chunk to be returned */
     mem = (void*)((uptr)mem+KL_BLOCK_META);
@@ -419,18 +469,44 @@ klmalloc(size_t const size)
   /* Conceptually break mem into two chunks:
    *   mem[0..KL_CHUNK_SIZE(size)-1], mem[KL_CHUNK_SIZE(size)..msize]
    * Add the second chunk to free chunk data structure, when applicable. */
-  if (KL_CHUNK_SIZE(size) < KL_CHUNK_SIZE(KL_CHUNK_SIZ(mem))) {
-    if (0 != kl_bin_ad(&bin, (void*)((uptr)mem+KL_CHUNK_SIZE(size)),
-        KL_CHUNK_SIZE(KL_CHUNK_SIZ(mem))-KL_CHUNK_SIZE(size)))
+  if (KL_CHUNK_SIZ(mem) < KL_BLOCK_SIZ(KL_CHUNK_BLK(mem))) {
+    KL_PRINT("klinfo:\n");
+    KL_PRINT("klinfo:   splitting block into 2 chunk(s)\n");
+    KL_PRINT("klinfo:     chunk[0]:\n");
+    KL_PRINT("klinfo:       system address:  %p\n", mem);
+    KL_PRINT("klinfo:       system size:     %zu\n", KL_CHUNK_SIZ(mem));
+    KL_PRINT("klinfo:       program address: %p\n", KL_CHUNK_PTR(mem));
+    KL_PRINT("klinfo:       program size:    %zu\n", size);
+    KL_PRINT("klinfo:     chunk[1]:\n");
+    KL_PRINT("klinfo:       system address:  %p\n",
+      (void*)((uptr)mem+KL_CHUNK_SIZ(mem)));
+    KL_PRINT("klinfo:       system size:     %zu\n",
+      KL_BLOCK_SIZ(KL_CHUNK_BLK(mem))-KL_CHUNK_SIZ(mem));
+
+    if (0 != kl_bin_ad(&bin, (void*)((uptr)KL_CHUNK_PTR(mem)+KL_CHUNK_SIZ(mem)),
+        KL_BLOCK_SIZ(KL_CHUNK_BLK(mem))-KL_CHUNK_SIZ(mem)))
     {
       return NULL;
     }
-    KL_CHUNK_SIZ((void*)((uptr)mem+KL_CHUNK_SIZE(size))) =
-      KL_CHUNK_SIZE(KL_CHUNK_SIZ(mem))-KL_CHUNK_SIZE(size);
+    KL_CHUNK_SIZ((void*)((uptr)mem+KL_CHUNK_SIZ(mem))) =
+      KL_BLOCK_SIZ(mem)-KL_CHUNK_SIZ(mem);
+  }
+  else {
+    KL_PRINT("klinfo:\n");
+    KL_PRINT("klinfo:   splitting block into 1 chunk(s)\n");
+    KL_PRINT("klinfo:     chunk[0]:\n");
+    KL_PRINT("klinfo:       system address:  %p\n", mem);
+    KL_PRINT("klinfo:       system size:     %zu\n", KL_CHUNK_SIZ(mem));
+    KL_PRINT("klinfo:       program address: %p\n", KL_CHUNK_PTR(mem));
+    KL_PRINT("klinfo:       program size:    %zu\n", size);
   }
 
   /* Increment count for containing block. */
   KL_BLOCK_CNT(KL_CHUNK_BLK(mem))++;
+
+  KL_PRINT("klinfo:   incrementing block count: %zu\n",
+    KL_BLOCK_CNT(KL_CHUNK_BLK(mem)));
+  KL_PRINT("klinfo:\n");
 
   return KL_CHUNK_PTR(mem);
 }
@@ -472,7 +548,7 @@ klfree(void * const ptr)
    * empty. */
   if (0 == --KL_BLOCK_CNT(KL_CHUNK_BLK(KL_CHUNK_MEM(ptr)))) {
     KL_CALL_SYS_FREE(KL_CHUNK_BLK(KL_CHUNK_MEM(ptr)),
-      KL_BLOCK_SIZ(KL_CHUNK_BLK(KL_CHUNK_MEM(ptr))));
+      KL_BLOCK_SIZ(KL_CHUNK_BLK(KL_CHUNK_MEM(ptr))+KL_BLOCK_META));
   }
   /* Otherwise, add the chunk back into free chunk data structure. */
   else {

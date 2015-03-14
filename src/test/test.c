@@ -5,6 +5,8 @@
 #include <sys/time.h>
 #include <time.h>
 
+#include "klmalloc.h"
+
 /* probability for each type of allocation (must sum to 100) */
 #define PER_BIG_ALLOC 5
 #define PER_MED_ALLOC 35
@@ -21,10 +23,13 @@ size_t SML_ALLOC_SIZE = 1<<11; /* 1KB  */
 
 int main(void)
 {
+#if 0
   size_t i, j, k, l, sz;
   unsigned long ta, tf, seed;
+#endif
   void * buf;
   void ** alloc;
+#if 0
   struct timeval ts, te;
 
   seed = time(NULL);
@@ -34,12 +39,14 @@ int main(void)
 
   ta     = 0;
   tf     = 0;
-  alloc  = (void **) malloc(NUM_ALLOCS*sizeof(void *));
-  buf    = malloc(BIG_ALLOC_SIZE);
+#endif
+  alloc  = (void **) klmalloc(NUM_ALLOCS*sizeof(void *));
+  buf    = klmalloc(BIG_ALLOC_SIZE);
 
   assert(NULL != alloc);
   assert(NULL != buf);
 
+#if 0
   for (i=0; i<NUM_ALLOCS; ++i) {
     j = rand()%100; /* indicator for big/med/sml alloc */
     k = rand()%100; /* indicator for free              */
@@ -94,9 +101,10 @@ int main(void)
 
   fprintf(stderr, "malloc: %.2f us\n", ta*1.0/NUM_ALLOCS);
   fprintf(stderr, "free:   %.2f us\n", tf*1.0/NUM_ALLOCS);
+#endif
 
-  free(alloc);
-  free(buf);
+  klfree(alloc);
+  klfree(buf);
 
   return EXIT_SUCCESS;
 }

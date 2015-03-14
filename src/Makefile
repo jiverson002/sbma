@@ -91,6 +91,10 @@ $(LIB): $(UTD) $(LIB)(klmalloc.o)
 	$(RANLIB) $@
 	$(RM) klmalloc.o
 
+test/test: $(UTD) $(LIB) test/test.c
+	$(config_CC) $(CFLAGS_$(config_build)) $(LDFLAGS) -o $@ $@.c $(LDLIBS)
+	@$@
+
 test/check: $(UTD) $(LIB) test/check.c
 	$(config_CC) $(CFLAGS_$(config_build)) $(LDFLAGS) -o $@ $@.c $(LDLIBS)
 	@$@
