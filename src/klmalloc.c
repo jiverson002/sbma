@@ -147,14 +147,15 @@ the possibly moved allocated space.
 #endif
 
 
-#define KL_DEBUG
-#ifdef KL_DEBUG
+#define KL_DEBUG 0
+#if defined(KL_DEBUG) && KL_DEBUG > 0
 # include <stdio.h>
 # define KL_PRINT printf
 #else
 # define KL_NOOP(...)
 # define KL_PRINT KL_NOOP
 #endif
+#include <stdio.h>
 
 
 /****************************************************************************/
@@ -229,7 +230,7 @@ static size_t log2off[64]=
 /****************************************************************************/
 #define KL_SYS_ALLOC_FAIL               NULL
 #define KL_CALL_SYS_ALLOC(P,S)          (P)=malloc(S)
-#define KL_CALL_SYS_ALLOC_ALIGN(P,A,S)  posix_memalign(&(P),A,S)
+#define KL_CALL_SYS_ALLOC_ALIGN(P,A,S)  posix_memalign(&(P),A,S),memset(P,0,S)
 #define KL_CALL_SYS_FREE(P,S)           free(P)
 
 
@@ -255,10 +256,11 @@ static size_t log2off[64]=
 /****************************************************************************/
 /* Access macros for a memory chunk */
 /****************************************************************************/
-#define KL_CHUNK_SIZ(MEM) (*(size_t*)((uptr)(MEM)+sizeof(void*)))
-#define KL_CHUNK_PTR(MEM) (void*)((uptr)(MEM)+sizeof(void*)+sizeof(size_t))
-#define KL_CHUNK_MEM(PTR) (void*)((uptr)(PTR)-sizeof(void*)-sizeof(size_t))
-#define KL_CHUNK_BLK(MEM) (void*)((uptr)(MEM)&(~(KL_BLOCK_SIZE-1)))
+#define KL_CHUNK_SIZ(MEM)       (*(size_t*)((uptr)(MEM)+sizeof(void*)))
+#define KL_CHUNK_PTR(MEM)       (void*)((uptr)(MEM)+sizeof(void*)+sizeof(size_t))
+#define KL_CHUNK_MEM(PTR)       (void*)((uptr)(PTR)-sizeof(void*)-sizeof(size_t))
+#define KL_CHUNK_BLK(MEM)       (void*)((uptr)(MEM)&(~(KL_BLOCK_SIZE-1)))
+#define KL_CHUNK_TWO(MEM, SIZE) (void*)((uptr)(MEM)+KL_CHUNK_SIZE(SIZE))
 
 
 /****************************************************************************/
@@ -306,6 +308,8 @@ kl_bin_init(kl_bin_t * const bin)
   for (i=0; i<KLNUMBIN; ++i)
     bin->bin[i].hd = NULL;
 
+  bin->init = 1;
+
   return 0;
 }
 
@@ -314,18 +318,29 @@ kl_bin_init(kl_bin_t * const bin)
 /* Add a node to a free chunk data structure */
 /****************************************************************************/
 static int
-kl_bin_ad(kl_bin_t * const bin, kl_bin_node_t * const node, size_t const size)
+kl_bin_ad(kl_bin_t * const bin, kl_bin_node_t * const node)
 {
-  size_t bidx = KLSIZE2BIN(size);
+  size_t bidx = KLSIZE2BIN(KL_CHUNK_SIZ(node));
   kl_bin_node_t * p, * n;
 
   /* Treat fixed size bins and large bins differently */
   if (KLISSMALLBIN(bidx)) {
+    KL_PRINT("klinfo: adding available fixed size memory chunk\n");
+    KL_PRINT("klinfo:   chunk address: %p\n", (void*)node);
+    KL_PRINT("klinfo:   chunk size:    %zu\n", KL_CHUNK_SIZ(node));
+    KL_PRINT("klinfo:   bin index:     %zu\n", bidx);
+
     /* prepend n to front of bin[bidx] linked-list */
     node->n = bin->bin[bidx].hd;
     bin->bin[bidx].hd = node;
   }
   else {
+    KL_PRINT("klinfo: adding available variable size memory chunk\n");
+    KL_PRINT("klinfo:   chunk address: %p\n", (void*)node);
+    KL_PRINT("klinfo:   chunk size:    %zu\n",
+      KL_CHUNK_SIZ(KL_CHUNK_MEM(node)));
+    KL_PRINT("klinfo:   bin index:    %zu\n", bidx);
+
     /* this will keep large buckets sorted */
     n = bin->bin[bidx].hd;
     p = NULL;
@@ -342,6 +357,8 @@ kl_bin_ad(kl_bin_t * const bin, kl_bin_node_t * const node, size_t const size)
     node->n = n;
   }
 
+  KL_PRINT("klinfo:\n");
+
   return 0;
 }
 
@@ -356,18 +373,30 @@ kl_bin_find(kl_bin_t * const bin, size_t const size)
   kl_bin_node_t * p, * n;
 
   if (KLISSMALLBIN(bidx)) {
+    KL_PRINT("klinfo: searching for available fixed size memory chunk\n");
+    KL_PRINT("klinfo:   request size:    %zu\n", size);
+    KL_PRINT("klinfo:   bin index:       %zu\n", bidx);
+    KL_PRINT("klinfo:   head of bin:     %p\n", (void*)bin->bin[bidx].hd);
+
     /* Find first bin with a node. */
     n = bin->bin[bidx].hd;
     while (NULL == n && bidx < KLSMALLBIN)
       n = bin->bin[++bidx].hd;
 
+    KL_PRINT("klinfo:   final bin index: %zu\n", bidx);
+    KL_PRINT("klinfo:\n");
+
     /* Remove head of bin[bidx]. */
     if (NULL != n) {
+      assert(NULL != bin->bin[bidx].hd);
       bin->bin[bidx].hd = n->n;
       n->n = NULL;
     }
   }
   else {
+    KL_PRINT("klinfo: searching for available variable size memory chunk\n");
+    KL_PRINT("klinfo:   request size: %zu\n", size);
+
     /* Find first bin with a node. */
     n = bin->bin[bidx].hd;
     while (NULL == n && bidx < KLNUMBIN)
@@ -389,6 +418,16 @@ kl_bin_find(kl_bin_t * const bin, size_t const size)
       n->n = NULL;
     }
   }
+
+  if (NULL != n) {
+    KL_PRINT("klinfo:   available chunk found\n");
+    KL_PRINT("klinfo:     chunk address: %p\n", (void*)n);
+  }
+  else {
+    KL_PRINT("klinfo:   no available chunk found\n");
+  }
+
+  KL_PRINT("klinfo:\n");
 
   return n;
 }
@@ -428,6 +467,8 @@ klmalloc(size_t const size)
 
   KL_INIT_CHECK;
 
+  KL_PRINT("klinfo: klmalloc beg\n");
+
   /* Try to get a previously allocated block of memory. */
   /* kl_bin_find() will remove chunk from free chunk data structure. */
   if (NULL == (mem=kl_bin_find(&bin, size))) {
@@ -451,10 +492,12 @@ klmalloc(size_t const size)
     if (KL_SYS_ALLOC_FAIL == mem)
       return NULL;
 
+    printf("klinfo: [%8p] allocation\n", mem);
     KL_PRINT("klinfo:   block start: %p\n", (void*)mem);
     KL_PRINT("klinfo:   size start:  %p\n", (void*)&(KL_BLOCK_SIZ(mem)));
     KL_PRINT("klinfo:   count start: %p\n", (void*)&(KL_BLOCK_CNT(mem)));
     KL_PRINT("klinfo:   block size:  %zu\n", msize);
+    KL_PRINT("klinfo:\n");
 
     /* Set block size */
     KL_BLOCK_SIZ(mem) = msize-KL_BLOCK_META;
@@ -463,49 +506,57 @@ klmalloc(size_t const size)
     mem = (void*)((uptr)mem+KL_BLOCK_META);
 
     /* Set chunk size */
-    KL_CHUNK_SIZ(mem) = KL_CHUNK_SIZE(size);
+    KL_CHUNK_SIZ(mem) = KL_BLOCK_SIZE-KL_BLOCK_META;
   }
 
-  /* Conceptually break mem into two chunks:
-   *   mem[0..KL_CHUNK_SIZE(size)-1], mem[KL_CHUNK_SIZE(size)..msize]
-   * Add the second chunk to free chunk data structure, when applicable. */
-  if (KL_CHUNK_SIZ(mem) < KL_BLOCK_SIZ(KL_CHUNK_BLK(mem))) {
-    KL_PRINT("klinfo:\n");
-    KL_PRINT("klinfo:   splitting block into 2 chunk(s)\n");
-    KL_PRINT("klinfo:     chunk[0]:\n");
-    KL_PRINT("klinfo:       system address:  %p\n", mem);
-    KL_PRINT("klinfo:       system size:     %zu\n", KL_CHUNK_SIZ(mem));
-    KL_PRINT("klinfo:       program address: %p\n", KL_CHUNK_PTR(mem));
-    KL_PRINT("klinfo:       program size:    %zu\n", size);
-    KL_PRINT("klinfo:     chunk[1]:\n");
-    KL_PRINT("klinfo:       system address:  %p\n",
-      (void*)((uptr)mem+KL_CHUNK_SIZ(mem)));
-    KL_PRINT("klinfo:       system size:     %zu\n",
-      KL_BLOCK_SIZ(KL_CHUNK_BLK(mem))-KL_CHUNK_SIZ(mem));
+  /* TODO: need to prevent splitting of large blocks for the time being, since
+   * doing so arbitrarily will render the KL_CHUNK_BLK macro invalid, since a
+   * many chunks may be created from one large block, some of which my be
+   * beyond the KL_BLOCK_SIZE limit that associates a chunk with a block. */
+  if (KL_BLOCK_SIZ(mem) <= KL_BLOCK_SIZE-KL_BLOCK_META) {
+    /* Conceptually break mem into two chunks:
+     *   mem[0..KL_CHUNK_SIZE(size)-1], mem[KL_CHUNK_SIZE(size)..msize]
+     * Add the second chunk to free chunk data structure, when applicable. */
+    if (KL_CHUNK_SIZE(size) < KL_CHUNK_SIZ(mem)) {
+      KL_PRINT("klinfo:   splitting block into 2 chunk(s)\n");
+      KL_PRINT("klinfo:     chunk[0]:\n");
+      KL_PRINT("klinfo:       system address:  %p\n", mem);
+      KL_PRINT("klinfo:       system size:     %zu\n", KL_CHUNK_SIZE(size));
+      KL_PRINT("klinfo:       program address: %p\n", KL_CHUNK_PTR(mem));
+      KL_PRINT("klinfo:       program size:    %zu\n", size);
+      KL_PRINT("klinfo:     chunk[1]:\n");
+      KL_PRINT("klinfo:       system address:  %p\n", KL_CHUNK_TWO(mem, size));
+      KL_PRINT("klinfo:       system size:     %zu\n",
+        KL_CHUNK_SIZ(mem)-KL_CHUNK_SIZE(size));
+      KL_PRINT("klinfo:\n");
 
-    if (0 != kl_bin_ad(&bin, (void*)((uptr)KL_CHUNK_PTR(mem)+KL_CHUNK_SIZ(mem)),
-        KL_BLOCK_SIZ(KL_CHUNK_BLK(mem))-KL_CHUNK_SIZ(mem)))
-    {
-      return NULL;
+      /* set chunk[1] size and add it to free chunk data structure */
+      KL_CHUNK_SIZ(KL_CHUNK_TWO(mem, size)) = KL_CHUNK_SIZ(mem)-KL_CHUNK_SIZE(size);
+      if (0 != kl_bin_ad(&bin, KL_CHUNK_TWO(mem, size)))
+        return NULL;
+
+      /* update new chunk[0] size */
+      KL_CHUNK_SIZ(mem) = KL_CHUNK_SIZE(size);
     }
-    KL_CHUNK_SIZ((void*)((uptr)mem+KL_CHUNK_SIZ(mem))) =
-      KL_BLOCK_SIZ(mem)-KL_CHUNK_SIZ(mem);
-  }
-  else {
-    KL_PRINT("klinfo:\n");
-    KL_PRINT("klinfo:   splitting block into 1 chunk(s)\n");
-    KL_PRINT("klinfo:     chunk[0]:\n");
-    KL_PRINT("klinfo:       system address:  %p\n", mem);
-    KL_PRINT("klinfo:       system size:     %zu\n", KL_CHUNK_SIZ(mem));
-    KL_PRINT("klinfo:       program address: %p\n", KL_CHUNK_PTR(mem));
-    KL_PRINT("klinfo:       program size:    %zu\n", size);
+    else {
+      KL_PRINT("klinfo:   splitting block into 1 chunk(s)\n");
+      KL_PRINT("klinfo:     chunk[0]:\n");
+      KL_PRINT("klinfo:       system address:  %p\n", mem);
+      KL_PRINT("klinfo:       system size:     %zu\n", KL_CHUNK_SIZ(mem));
+      KL_PRINT("klinfo:       program address: %p\n", KL_CHUNK_PTR(mem));
+      KL_PRINT("klinfo:       program size:    %zu\n", size);
+      KL_PRINT("klinfo:\n");
+    }
   }
 
   /* Increment count for containing block. */
   KL_BLOCK_CNT(KL_CHUNK_BLK(mem))++;
 
-  KL_PRINT("klinfo:   incrementing block count: %zu\n",
+  printf("klinfo: [%8p] incrementing block count: %zu\n", KL_CHUNK_BLK(mem),
     KL_BLOCK_CNT(KL_CHUNK_BLK(mem)));
+  KL_PRINT("klinfo: incrementing block count: %zu\n",
+    KL_BLOCK_CNT(KL_CHUNK_BLK(mem)));
+  KL_PRINT("klinfo: klmalloc end\n");
   KL_PRINT("klinfo:\n");
 
   return KL_CHUNK_PTR(mem);
@@ -538,22 +589,55 @@ klfree(void * const ptr)
    * KL_CHUNK_BLK() macro goes away, since the large block could get split up
    * such that a chunk beyond the KL_BLOCK_SIZE limit is allocated, thus when
    * KL_CHUNK_BLK() is called it will return a memory location of something
-   * which is not a block. */
+   * which is not a block.  To address this, large blocks are not allowed to
+   * be split. */
+  /* TODO: another issue with current implementation is the following.  When a
+   * block count gets decremented to zero, its associated memory is freed.
+   * However, no where does the system account for any chunks that remain in
+   * the free chunk data structure.  This is espicially problematic becuase
+   * those chunks still in the free chunk data structure cannot be removed in
+   * place, due to the singly-linked nature of the data structure. */
+
   KL_INIT_CHECK;
+
+  KL_PRINT("klinfo: freeing from a block with %d chunk(s)\n",
+    KL_BLOCK_CNT(KL_CHUNK_BLK(KL_CHUNK_MEM(ptr))));
+  KL_PRINT("klinfo:   block address:  %p\n",
+    KL_CHUNK_BLK(KL_CHUNK_MEM(ptr)));
+  KL_PRINT("klinfo:   chunk address:  %p\n", KL_CHUNK_MEM(ptr));
 
   /* Sanity check to make sure the containing block is somewhat valid. */
   assert(0 != KL_BLOCK_CNT(KL_CHUNK_BLK(KL_CHUNK_MEM(ptr))));
 
+  /* TODO: Implicitly, the following rule prevents large allocations from
+   * going into the free chunk data structure.  Thus, it also prevents the
+   * limitation described above.  However, in many cases, it would be nice to
+   * keep large allocations around for quicker allocation time. */
+
+  printf("klinfo: [%8p] decrementing block count: %zu\n",
+    KL_CHUNK_BLK(KL_CHUNK_MEM(ptr)),
+    KL_BLOCK_CNT(KL_CHUNK_BLK(KL_CHUNK_MEM(ptr))));
   /* Decrement count for containing block and release entire block if it is
    * empty. */
   if (0 == --KL_BLOCK_CNT(KL_CHUNK_BLK(KL_CHUNK_MEM(ptr)))) {
+    KL_PRINT("klinfo:   releasing block back to system\n");
+
     KL_CALL_SYS_FREE(KL_CHUNK_BLK(KL_CHUNK_MEM(ptr)),
       KL_BLOCK_SIZ(KL_CHUNK_BLK(KL_CHUNK_MEM(ptr))+KL_BLOCK_META));
+
+    KL_PRINT("klinfo:\n");
   }
   /* Otherwise, add the chunk back into free chunk data structure. */
   else {
-    /* TODO: check to see if chunk can be coalesced */
-    if (0 != kl_bin_ad(&bin, KL_CHUNK_MEM(ptr), KL_CHUNK_SIZ(KL_CHUNK_MEM(ptr))))
+    KL_PRINT("klinfo:   adding chunk back into free chunk data structure\n");
+    KL_PRINT("klinfo:\n");
+
+    /* TODO: check to see if chunk can be coalesced.  Coalescing allocations
+     * could cause large allocations to exist in the free chunk data structure
+     * and thus, if coalescing is used, the system must then address the
+     * issure of splitting large allocations and its affect on the
+     * KL_CHUNK_BLK macro. */
+    if (0 != kl_bin_ad(&bin, KL_CHUNK_MEM(ptr)))
       return;
   }
 }

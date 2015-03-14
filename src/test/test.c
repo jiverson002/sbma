@@ -23,16 +23,17 @@ size_t SML_ALLOC_SIZE = 1<<11; /* 1KB  */
 
 int main(void)
 {
-#if 0
+#if 1
   size_t i, j, k, l, sz;
   unsigned long ta, tf, seed;
 #endif
   void * buf;
   void ** alloc;
-#if 0
+#if 1
   struct timeval ts, te;
 
   seed = time(NULL);
+  seed = 1426361468;
   srand(seed);
 
   fprintf(stderr, "seed:   %lu\n", seed);
@@ -43,10 +44,13 @@ int main(void)
   alloc  = (void **) klmalloc(NUM_ALLOCS*sizeof(void *));
   buf    = klmalloc(BIG_ALLOC_SIZE);
 
+#if 0
   assert(NULL != alloc);
   assert(NULL != buf);
 
-#if 0
+  alloc[0] = klmalloc(8192);
+  klfree(alloc[0]);
+#else
   for (i=0; i<NUM_ALLOCS; ++i) {
     j = rand()%100; /* indicator for big/med/sml alloc */
     k = rand()%100; /* indicator for free              */
@@ -60,7 +64,7 @@ int main(void)
     sz++;
 
     gettimeofday(&ts, NULL);
-    alloc[i] = malloc(sz);
+    alloc[i] = klmalloc(sz);
     gettimeofday(&te, NULL);
     ta += (te.tv_sec-ts.tv_sec)*1000000 + te.tv_usec-ts.tv_usec;
     assert(NULL != alloc[i]);
@@ -79,7 +83,7 @@ int main(void)
 
       if (NULL != alloc[l]) {
         gettimeofday(&ts, NULL);
-        free(alloc[l]);
+        klfree(alloc[l]);
         gettimeofday(&te, NULL);
         tf += (te.tv_sec-ts.tv_sec)*1000000 + te.tv_usec-ts.tv_usec;
 
@@ -92,7 +96,7 @@ int main(void)
   for (i=0; i<NUM_ALLOCS; ++i) {
     if (NULL != alloc[i]) {
       gettimeofday(&ts, NULL);
-      free(alloc[i]);
+      klfree(alloc[i]);
       gettimeofday(&te, NULL);
       tf += (te.tv_sec-ts.tv_sec)*1000000 + te.tv_usec-ts.tv_usec;
       alloc[i] = NULL;
