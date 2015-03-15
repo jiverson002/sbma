@@ -49,6 +49,9 @@ int main(void)
   assert(NULL != buf);
 
   alloc[0] = klmalloc(8192);
+
+  klfree(buf);
+
   klfree(alloc[0]);
 #else
   for (i=0; i<NUM_ALLOCS; ++i) {
@@ -108,7 +111,7 @@ int main(void)
 #endif
 
   klfree(alloc);
-  klfree(buf);
+  //klfree(buf);
 
   return EXIT_SUCCESS;
 }
