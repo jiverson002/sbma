@@ -147,13 +147,12 @@ the possibly moved allocated space.
 #endif
 
 
-#define KL_DEBUG 1
+#define KL_DEBUG 0
 #if defined(KL_DEBUG) && KL_DEBUG > 0
 # include <stdio.h>
-# define KL_PRINT printf
+# define KL_PRINT(...) printf(__VA_ARGS__); fflush(stdout);
 #else
-# define KL_NOOP(...)
-# define KL_PRINT KL_NOOP
+# define KL_PRINT(...)
 #endif
 #include <stdio.h>
 
@@ -221,6 +220,7 @@ the possibly moved allocated space.
 /****************************************************************************/
 /* Align an unsigned integer value to a power supplied power of 2 */
 /****************************************************************************/
+#define KL_CHUNK_SIZE_MINIMUM (2*sizeof(size_t)+2*sizeof(void*))
 #define KL_BLOCK_SIZE_ALIGNED 65536
 
 #define KL_BLOCK_META_ALIGNED \
@@ -290,8 +290,7 @@ static size_t log2off[64]=
 /****************************************************************************/
 /* System memory allocation related macros */
 /****************************************************************************/
-#define KL_SYS_ALLOC_FAIL                NULL
-#define KL_CALL_SYS_ALLOC(P,S)           (P)=malloc(S)
+#define KL_SYS_ALLOC_FAIL                -1
 #define KL_CALL_SYS_ALLOC_ALIGNED(P,A,S) posix_memalign(&(P),A,S)
 #define KL_CALL_SYS_FREE(P,S)            free(P)
 
@@ -351,18 +350,34 @@ kl_bin_ad(kl_bin_t * const bin, void * const chunk)
   /* Treat fixed size bins and large bins differently */
   if (KLISSMALLBIN(bidx)) {
     KL_PRINT("klinfo: adding available fixed size memory chunk\n");
-    KL_PRINT("klinfo:   chunk address: %p\n", (void*)node);
+    KL_PRINT("klinfo:   block address: %p\n", KL_C2B(chunk));
+    KL_PRINT("klinfo:   block size:    %zu\n", KL_B2S(KL_C2B(chunk)));
+    KL_PRINT("klinfo:   chunk address: %p\n", chunk);
     KL_PRINT("klinfo:   chunk size:    %zu\n", KL_D2S(node));
+    KL_PRINT("klinfo:   node address:  %p\n", (void*)node);
     KL_PRINT("klinfo:   bin index:     %zu\n", bidx);
+
+    /* Sanity check to make sure that bin->bin[bidx] and node are well formed.
+     * */
+    assert(NULL == bin->bin[bidx] || NULL == bin->bin[bidx]->p);
+    assert(node != bin->bin[bidx]);
+    assert(NULL == node->p);
+    assert(NULL == node->n);
+    assert(KL_C2S(chunk) == KL_C2F(chunk));
 
     /* Prepend n to front of bin[bidx] linked-list. */
     node->p = NULL;
     node->n = bin->bin[bidx];
-    if (NULL != bin->bin[bidx])
+    if (NULL != bin->bin[bidx]) {
+      assert(NULL == bin->bin[bidx]->p);
       bin->bin[bidx]->p = node;
+    }
     bin->bin[bidx] = node;
+
+    assert(NULL == bin->bin[bidx]->p);
   }
   else {
+    assert(0);
     KL_PRINT("klinfo: adding available variable size memory chunk\n");
     KL_PRINT("klinfo:   chunk address: %p\n", (void*)node);
     KL_PRINT("klinfo:   chunk size:    %zu\n", KL_D2S(node));
@@ -408,6 +423,44 @@ kl_bin_ad(kl_bin_t * const bin, void * const chunk)
 
 
 /****************************************************************************/
+/* Remove a node from a free chunk data structure */
+/****************************************************************************/
+static int
+kl_bin_rm(kl_bin_t * const bin, void * const chunk)
+{
+  size_t bidx = KLSIZE2BIN(KL_C2S(chunk));
+  kl_bin_node_t * node = KL_C2D(chunk);
+
+  KL_PRINT("klinfo: removing memory chunk\n");
+  KL_PRINT("klinfo:   block address: %p\n", KL_C2B(chunk));
+  KL_PRINT("klinfo:   block size:    %zu\n", KL_B2S(KL_C2B(chunk)));
+  KL_PRINT("klinfo:   chunk address: %p\n", chunk);
+  KL_PRINT("klinfo:   chunk size:    %zu\n", KL_D2S(node));
+  KL_PRINT("klinfo:   bin index:     %zu\n", bidx);
+  KL_PRINT("klinfo:   node address:  %p\n", (void*)node);
+  KL_PRINT("klinfo:   node previous: %p\n", (void*)node->p);
+  KL_PRINT("klinfo:   node next:     %p\n", (void*)node->n);
+
+  assert(NULL != node->p || NULL != node->n || bin->bin[bidx] == node);
+
+  /* Fixed and variable sized bins are treated the same, since removing a node
+   * from a variable sized bin will not cause it to become unsorted. */
+  if (NULL == node->p)
+    bin->bin[bidx] = node->n;
+  else
+    node->p->n = node->n;
+  if (NULL != node->n)
+    node->n->p = node->p;
+  node->n = NULL;
+  node->p = NULL;
+
+  assert(NULL == bin->bin[bidx] || NULL == bin->bin[bidx]->p);
+
+  return 0;
+}
+
+
+/****************************************************************************/
 /* Find the bin with the smallest size >= size parameter */
 /****************************************************************************/
 static void *
@@ -433,9 +486,15 @@ kl_bin_find(kl_bin_t * const bin, size_t const size)
     /* Remove head of bin[bidx]. */
     if (NULL != n) {
       assert(NULL != bin->bin[bidx]);
+      assert(NULL == n->p);
       bin->bin[bidx] = n->n;
-      n->n = NULL;
+      if (NULL != n->n) {
+        n->n->p = NULL;
+        n->n = NULL;
+      }
     }
+
+    assert(NULL == bin->bin[bidx] || NULL == bin->bin[bidx]->p);
   }
   else {
     KL_PRINT("klinfo: searching for available variable size memory chunk\n");
@@ -446,16 +505,24 @@ kl_bin_find(kl_bin_t * const bin, size_t const size)
     while (NULL == n && bidx < KLNUMBIN)
       n = bin->bin[++bidx];
 
+    assert(NULL == n);
+
     /* Find first node in bin[bidx] with size >= size parameter. */
     while (NULL != n && KL_D2S(n) < size)
       n = n->n;
 
     /* Remove n from bin[bidx]. */
     if (NULL != n) {
-      if (NULL == n->p)
+      if (NULL == n->p) {
         bin->bin[bidx] = n->n;
-      else
+        if (NULL != n->n)
+          n->n->p = NULL;
+      }
+      else {
         n->p->n = n->n;
+        if (NULL != n->n)
+          n->n->p = n->p;
+      }
       n->p = NULL;
       n->n = NULL;
     }
@@ -530,9 +597,7 @@ klmalloc(size_t const size)
 
     /* Get system memory */
     ret = KL_CALL_SYS_ALLOC_ALIGNED(block, KL_BLOCK_SIZE_ALIGNED, bsize);
-    if (0 != ret)
-      return NULL;
-    if (KL_SYS_ALLOC_FAIL == block)
+    if (0 != KL_SYS_ALLOC_FAIL)
       return NULL;
 
     /* Zero memory */
@@ -558,7 +623,9 @@ klmalloc(size_t const size)
    *   chunk[0..KL_CHUNK_SIZE_ALIGNED(size)-1],
    *   chunk[KL_CHUNK_SIZE_ALIGNED(size)..KL_C2S(chunk)-1]
    * Add the second chunk to free chunk data structure, when applicable. */
-  if (KL_CHUNK_SIZE_ALIGNED(size) < KL_C2S(chunk)) {
+  if (KL_C2S(chunk) > KL_CHUNK_SIZE_MINIMUM &&
+      KL_CHUNK_SIZE_ALIGNED(size) < KL_C2S(chunk)-KL_CHUNK_SIZE_MINIMUM)
+  {
     KL_PRINT("klinfo:   splitting block into 2 chunk(s)\n");
     KL_PRINT("klinfo:     chunk[0]:\n");
     KL_PRINT("klinfo:       system address:  %p\n", chunk);
@@ -586,9 +653,6 @@ klmalloc(size_t const size)
     assert((KL_C2F(chunk) = KL_CHUNK_SIZE_ALIGNED(size),
       chunk == KL_T2C(KL_CS2T(chunk, size))));
 
-    /* Set chunk as in use */
-    KL_C2F(chunk) = 0;
-
     //KL_PRINT("klinfo: footer0 address: %p\n", (void*)&(KL_C2F(chunk)));
     //KL_PRINT("klinfo: footer1 address: %p\n",
     //  (void*)&(KL_C2F(KL_CS2T(chunk, size))));
@@ -602,6 +666,9 @@ klmalloc(size_t const size)
     KL_PRINT("klinfo:       program size:    %zu\n", size);
     KL_PRINT("klinfo:\n");
   }
+
+  /* Set chunk as in use */
+  KL_C2F(chunk) = 0;
 
   /* Increment count for containing block. */
   KL_B2N(KL_C2B(chunk))++;
@@ -654,8 +721,7 @@ klfree(void * const ptr)
 
   KL_INIT_CHECK;
 
-  KL_PRINT("klinfo: freeing from a block with %d chunk(s)\n",
-    KL_B2N(block));
+  KL_PRINT("klinfo: freeing from a block with %zu chunk(s)\n", KL_B2N(block));
   KL_PRINT("klinfo:   block address:  %p\n", block);
   KL_PRINT("klinfo:   chunk address:  %p\n", chunk);
 
@@ -672,29 +738,43 @@ klfree(void * const ptr)
   if (0 == --KL_B2N(block)) {
     KL_PRINT("klinfo:   releasing block back to system\n");
 
+    assert(KL_ISLAST(chunk) || !KL_INUSE(KL_C2T(chunk)));
+
+    /* Remove following chunk from free chunk data structure. */
+    if (!KL_ISLAST(chunk) && 0 != kl_bin_rm(&bin, KL_C2T(chunk)))
+      return;
+
     KL_CALL_SYS_FREE(block, KL_B2S(block));
 
     KL_PRINT("klinfo:\n");
   }
   /* Otherwise, add the chunk back into free chunk data structure. */
   else {
-    KL_PRINT("klinfo:   adding chunk back into free chunk data structure\n");
-
     /* Coalesce with previous chunk. */
     if (!KL_ISFIRST(chunk) && !KL_INUSE(KL_T2C(chunk))) {
+      /* Remove previous chunk from free chunk data structure. */
+      if (0 != kl_bin_rm(&bin, KL_T2C(chunk)))
+        return;
+
       KL_PRINT("klinfo:   coalescing with previous chunk\n");
       KL_PRINT("klinfo:     previous chunk size:  %zu\n", KL_C2S(KL_T2C(chunk)));
       KL_PRINT("klinfo:     chunk size:           %zu\n", KL_C2S(chunk));
       KL_PRINT("klinfo:     new chunk size:       %zu\n",
         KL_C2S(KL_T2C(chunk))+KL_C2S(chunk));
 
-      /* Set chunk to point to previous chunk, then update chunk size. */
+      /* Set chunk to point to previous chunk. */
       chunk = KL_T2C(chunk);
+
+      /* Update chunk size. */
       KL_C2S(chunk) = KL_C2S(chunk) + KL_C2S(KL_C2T(chunk));
     }
 
     /* Coalesce with following chunk. */
     if (!KL_ISLAST(chunk) && !KL_INUSE(KL_C2T(chunk))) {
+      /* Remove following chunk from free chunk data structure. */
+      if (0 != kl_bin_rm(&bin, KL_C2T(chunk)))
+        return;
+
       KL_PRINT("klinfo:   coalescing with following chunk\n");
       KL_PRINT("klinfo:     chunk size:           %zu\n", KL_C2S(chunk));
       KL_PRINT("klinfo:     following chunk size: %zu\n", KL_C2S(KL_C2T(chunk)));
@@ -705,13 +785,14 @@ klfree(void * const ptr)
       KL_C2S(chunk) = KL_C2S(chunk) + KL_C2S(KL_C2T(chunk));
     }
 
-    KL_PRINT("klinfo:\n");
-
-    /* Set chunk as not in use */
+    /* Set chunk as not in use. */
     KL_C2F(chunk) = KL_C2S(chunk);
 
+    KL_PRINT("klinfo:   adding chunk back into free chunk data structure\n");
     /* Add chunk to free chunk data structure. */
     if (0 != kl_bin_ad(&bin, chunk))
       return;
+
+    KL_PRINT("klinfo:\n");
   }
 }
