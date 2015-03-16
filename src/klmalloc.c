@@ -199,15 +199,20 @@ the possibly moved allocated space.
 #define KL_B2S(B)    (*(size_t*)(B))
 #define KL_B2N(B)    (*(size_t*)((uintptr_t)(B)+sizeof(size_t)))
 #define KL_B2C(B)    (void*)((uintptr_t)(B)+2*sizeof(size_t))
-#define KL_C2S(C)    (*(size_t*)(C))
-#define KL_C2F(C)    (*(size_t*)((uintptr_t)(C)+KL_C2S(C)-sizeof(size_t)))
+
+#define KL_C2S(C)    (((kl_chunk_header_t*)(C))->size)
+#define KL_C2D(C)    (&(((kl_chunk_header_t*)(C))->node))
+
+#define KL_C2P(C)    (void*)((uintptr_t)(C)+KL_CHUNK_SIZE_HEADER)
 #define KL_C2B(C)    (void*)((uintptr_t)(C)&(~(KL_BLOCK_SIZE_ALIGNED-1)))
+
 #define KL_C2T(C)    (void*)((uintptr_t)(C)+KL_C2S(C))
-#define KL_C2P(C)    (void*)((uintptr_t)(C)+sizeof(size_t))
-#define KL_C2D(C)    (kl_bin_node_t*)((uintptr_t)(C)+sizeof(size_t))
+#define KL_C2F(C)    (*(size_t*)((uintptr_t)(C)+KL_C2S(C)-sizeof(size_t)))
+
 #define KL_D2C(D)    (void*)((uintptr_t)(D)-sizeof(size_t))
 #define KL_D2S(D)    (*(size_t*)((uintptr_t)(D)-sizeof(size_t)))
 #define KL_P2C(P)    (void*)((uintptr_t)(P)-sizeof(size_t))
+#define KL_P2S(P)    (*(size_t*)((uintptr_t)(P)-KL_CHUNK_SIZE_HEADER))
 #define KL_T2C(T)    (void*)((uintptr_t)(T)-(*(size_t*)((uintptr_t)(T)-sizeof(size_t))))
 #define KL_CS2T(C,S) (void*)((uintptr_t)(C)+KL_CHUNK_SIZE_ALIGNED(S))
 
@@ -226,11 +231,28 @@ the possibly moved allocated space.
 #define KL_BLOCK_META_ALIGNED \
   KL_SIZE_ALIGNED(2*sizeof(size_t), KL_MEMORY_ALLOCATION_ALIGNMENT)
 
+#define KL_CHUNK_SIZE_HEADER \
+  KL_SIZE_ALIGNED(sizeof(kl_chunk_header_t), KL_MEMORY_ALLOCATION_ALIGNMENT)
+
 #define KL_SIZE_ALIGNED(S,A) \
   (assert(0 == ((A)&((A)-1))), (((S)+((A)-1))&(~(((A)-1)))))
 
 #define KL_CHUNK_SIZE_ALIGNED(S) \
   KL_SIZE_ALIGNED(2*sizeof(size_t)+(S), KL_MEMORY_ALLOCATION_ALIGNMENT)
+
+
+/****************************************************************************/
+/* Sanity checks */
+/****************************************************************************/
+/* Sanity check to make sure that the returned pointer is valid in terms of
+ * alignment and points to a valid piece of memory. */
+#define KL_SANITY_VALID_POINTER(P)                                          \
+do {                                                                        \
+  assert(0 == ((uintptr_t)(P)&(KL_MEMORY_ALLOCATION_ALIGNMENT-1)));         \
+  assert((uintptr_t)(P)+KL_P2S(P) <=                                        \
+    (uintptr_t)KL_C2B(KL_P2C(P))+KL_B2S(KL_C2B(KL_P2C(P))));                \
+} while (0)
+
 
 
 /****************************************************************************/
@@ -319,6 +341,12 @@ typedef struct kl_bin
   int init;
   struct kl_bin_node * bin[KLNUMBIN];
 } kl_bin_t;
+
+typedef struct kl_chunk_header
+{
+  size_t size;
+  struct kl_bin_node node;
+} kl_chunk_header_t;
 
 
 /****************************************************************************/
@@ -597,7 +625,7 @@ klmalloc(size_t const size)
 
     /* Get system memory */
     ret = KL_CALL_SYS_ALLOC_ALIGNED(block, KL_BLOCK_SIZE_ALIGNED, bsize);
-    if (0 != KL_SYS_ALLOC_FAIL)
+    if (KL_SYS_ALLOC_FAIL == ret)
       return NULL;
 
     /* Zero memory */
@@ -676,6 +704,8 @@ klmalloc(size_t const size)
   KL_PRINT("klinfo: incrementing block count: %zu\n", KL_B2N(KL_C2B(chunk)));
   KL_PRINT("klinfo: klmalloc end\n");
   KL_PRINT("klinfo:\n");
+
+  KL_SANITY_VALID_POINTER(KL_C2P(chunk));
 
   return KL_C2P(chunk);
 }

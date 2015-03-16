@@ -44,10 +44,10 @@ int main(void)
   alloc  = (void **) klmalloc(NUM_ALLOCS*sizeof(void *));
   buf    = klmalloc(BIG_ALLOC_SIZE);
 
-#if 0
   assert(NULL != alloc);
   assert(NULL != buf);
 
+#if 0
   alloc[0] = klmalloc(8192);
 
   klfree(buf);
