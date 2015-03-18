@@ -147,7 +147,7 @@ the possibly moved allocated space.
 #endif
 
 
-#define KL_DEBUG 1
+#define KL_DEBUG 0
 #if defined(KL_DEBUG) && KL_DEBUG > 0
 # include <stdio.h>
 # define KL_PRINT(...) printf(__VA_ARGS__); fflush(stdout);
@@ -571,7 +571,7 @@ kl_bin_ad(kl_bin_t * const bin, void * const chunk)
     assert(NULL == bin->bin[bidx] || NULL == bin->bin[bidx]->p);
     /* Sanity check: node is not the head of bin[bidx]. */
     assert(node != bin->bin[bidx]);
-    /* Sanity check: node has not dangling pointers. */
+    /* Sanity check: node has no dangling pointers. */
     assert(NULL == node->p && NULL == node->n);
     /* Sanity check: node is not in use. */
     assert(KL_C2S(chunk) == KL_C2F(chunk));
