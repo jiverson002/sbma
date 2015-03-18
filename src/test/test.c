@@ -41,17 +41,16 @@ int main(void)
   ta     = 0;
   tf     = 0;
 #endif
-  alloc  = (void **) klmalloc(NUM_ALLOCS*sizeof(void *));
-  buf    = klmalloc(BIG_ALLOC_SIZE);
-
+  alloc = (void **) klmalloc(NUM_ALLOCS*sizeof(void *));
   assert(NULL != alloc);
+
+  buf = klmalloc(BIG_ALLOC_SIZE);
   assert(NULL != buf);
 
 #if 0
   alloc[0] = klmalloc(8192);
 
   klfree(buf);
-
   klfree(alloc[0]);
 #else
   for (i=0; i<NUM_ALLOCS; ++i) {
@@ -111,7 +110,7 @@ int main(void)
 #endif
 
   klfree(alloc);
-  //klfree(buf);
+  klfree(buf);
 
   return EXIT_SUCCESS;
 }
