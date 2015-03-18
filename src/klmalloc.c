@@ -316,7 +316,11 @@ static size_t log2off[64]=
     (1==(S))                                                                \
       ? (size_t)0                                                           \
       : (KLLOG2((S)-1)<20)                                                  \
-        ? log2off[KLLOG2((S)-1)]+(S)/log2size[KLLOG2((S)-1)]                \
+        ? ((S)>=(log2off[KLLOG2((S)-1)]*log2size[KLLOG2((S)-1)]))           \
+          ? log2off[KLLOG2((S)-1)] +                                        \
+            ((S)-(log2off[KLLOG2((S)-1)]*log2size[KLLOG2((S)-1)])) /        \
+            log2size[KLLOG2((S)-1)]                                         \
+          : log2off[KLLOG2((S)-1)]                                          \
         : log2off[KLLOG2((S)-1)]                                            \
   )
 
@@ -414,8 +418,23 @@ kl_bin_ad(kl_bin_t * const bin, void * const chunk)
      * bin, but has less bytes than required by the bin.
      * TODO: it should be possible to do this with an if statement, since it
      * should shift down by one bin at most. */
-    while (KL_P2S(node) < KLBIN2SIZE(bidx) && bidx > 0)
+    if (KL_C2S(chunk) < KLBIN2SIZE(bidx)) {
+      KL_PRINT("==klinfo==     bin index: %zu\n", bidx);
+      KL_PRINT("==klinfo==     log2off:   %zu\n",
+        log2off[KLLOG2(KL_C2S(chunk)-1)]);
+      KL_PRINT("==klinfo==     log2size:  %zu\n",
+        log2size[KLLOG2(KL_C2S(chunk)-1)]);
+      KL_PRINT("==klinfo==     bin size:  %zu\n", KLBIN2SIZE(bidx));
+#if 0
+      : (KLLOG2((S)-1)<20)                                                  \
+        ? log2off[KLLOG2((S)-1)]+(S)/log2size[KLLOG2((S)-1)]                \
+        : log2off[KLLOG2((S)-1)]
+#endif
+    }
+    while (KL_C2S(chunk) < KLBIN2SIZE(bidx) && bidx > 0)
       bidx--;
+
+    KL_PRINT("==klinfo==   bin index:     %zu\n", bidx);
 
     /* Prepend n to front of bin[bidx] linked-list. */
     node->p = NULL;
@@ -484,6 +503,7 @@ kl_bin_rm(kl_bin_t * const bin, void * const chunk)
   KL_PRINT("==klinfo==   chunk address: 0x%.16zx\n", (uptr)chunk);
   KL_PRINT("==klinfo==   chunk size:    0x%.16zx (%zu)\n", KL_C2S(chunk),
     KL_C2S(chunk));
+  KL_PRINT("==klinfo==   bin index:     %zu\n", bidx);
 
   /* Sanity check: node has correct pointer structure. */
   assert(NULL != node->p || NULL != node->n || bin->bin[bidx] == node);
@@ -538,9 +558,9 @@ kl_bin_find(kl_bin_t * const bin, size_t const size)
       KL_PRINT("==klinfo==   chunk size:      0x%.16zx (%zu)\n", KL_P2S(n),
         KL_P2S(n));
       KL_PRINT("==klinfo==   request size:    0x%.16zx (%zu)\n", size, size);
-      KL_PRINT("==klfino==   request log:     %zu\n", KLLOG2(size-1));
-      KL_PRINT("==klfino==   request log2off: %zu\n", log2off[KLLOG2(size-1)]);
-      KL_PRINT("==klfino==   request logsize: %zu\n", log2size[KLLOG2(size-1)]);
+      KL_PRINT("==klinfo==   request log:     %zu\n", KLLOG2(size-1));
+      KL_PRINT("==klinfo==   request log2off: %zu\n", log2off[KLLOG2(size-1)]);
+      KL_PRINT("==klinfo==   request logsize: %zu\n", log2size[KLLOG2(size-1)]);
       KL_PRINT("==klinfo==   bin index:       %zu\n", bidx);
       KL_PRINT("==klinfo==   bin size:        %zu\n", KLBIN2SIZE(bidx));
 
