@@ -251,8 +251,20 @@ typedef uintptr_t uptr;
 #define KL_SIZE_ALIGNED(S,A) \
   (assert(0 == ((A)&((A)-1))), (((S)+((A)-1))&(~(((A)-1)))))
 
-#define KL_CHUNK_SIZE_ALIGNED(S) \
-  KL_SIZE_ALIGNED(2*sizeof(size_t)+(S), KL_MEMORY_ALLOCATION_ALIGNMENT)
+#define KL_CHUNK_SIZE(S)                                                    \
+  (                                                                         \
+    (1==(S))                                                                \
+      ? KL_SIZE_ALIGNED(S, log2size[0])                                     \
+      : (KLLOG2((S)-1)<20)                                                  \
+        ? KL_SIZE_ALIGNED(S, log2size[KLLOG2((S)-1)])                       \
+        : (S)                                                               \
+  )
+
+#define KL_CHUNK_SIZE_ALIGNED(S)                                            \
+  KL_SIZE_ALIGNED(                                                          \
+    2*sizeof(size_t)+KL_CHUNK_SIZE(S),                                      \
+    KL_MEMORY_ALLOCATION_ALIGNMENT                                          \
+  )
 
 
 /****************************************************************************/
@@ -279,19 +291,6 @@ typedef uintptr_t uptr;
 /****************************************************************************/
 /* Lookup tables to convert between size and bin number */
 /****************************************************************************/
-#define KLNUMBIN   1576
-#define KLSMALLBIN 1532
-#define KLISSMALLBIN(B) (B < KLSMALLBIN)
-
-#define KLSIZE2BIN(S)                                                       \
-  (                                                                         \
-    (1==(S))                                                                \
-      ? (size_t)0                                                           \
-      : (KLLOG2((S)-1)<20)                                                  \
-        ? log2off[KLLOG2((S)-1)]+(S)/log2size[KLLOG2((S)-1)]                \
-        : log2off[KLLOG2((S)-1)]                                            \
-  )
-
 static size_t log2size[64]=
 {
   8, 8, 8, 8, 8, 8, 16, 16, 32, 32, 64, 64, 128, 128, 256, 256, 512, 512,
@@ -307,6 +306,29 @@ static size_t log2off[64]=
   1556, 1557, 1558, 1559, 1560, 1561, 1562, 1563, 1564, 1565, 1566, 1567,
   1568, 1569, 1570, 1571, 1572, 1573, 1574, 1575
 };
+
+#define KLNUMBIN   1576
+#define KLSMALLBIN 1532
+#define KLISSMALLBIN(B) (B < KLSMALLBIN)
+
+#define KLSIZE2BIN(S)                                                       \
+  (                                                                         \
+    (1==(S))                                                                \
+      ? (size_t)0                                                           \
+      : (KLLOG2((S)-1)<20)                                                  \
+        ? log2off[KLLOG2((S)-1)]+(S)/log2size[KLLOG2((S)-1)]                \
+        : log2off[KLLOG2((S)-1)]                                            \
+  )
+
+#define KLSQR(V) ((V)*(V))
+#define KLBIN2SIZE(B)                                                       \
+  (                                                                         \
+    ((B)<8)                                                                 \
+      ? ((B)+1)*8                                                           \
+      : KLSQR((size_t)8<<KLLOG2((B)/12)) +                                  \
+        ((B)-log2off[KLLOG2(KLSQR((size_t)8<<KLLOG2((B)/12))+1)]) *         \
+        ((size_t)16<<KLLOG2((B)/12))                                        \
+  )
 
 
 /****************************************************************************/
@@ -386,6 +408,14 @@ kl_bin_ad(kl_bin_t * const bin, void * const chunk)
     assert(NULL == node->p && NULL == node->n);
     /* Sanity check: node is not in use. */
     assert(KL_C2S(chunk) == KL_C2F(chunk));
+
+    /* Shift bin index in case a chunk is made up of coalesced chunks which
+     * collectively have a size which causes the chunk to fall in a particular
+     * bin, but has less bytes than required by the bin.
+     * TODO: it should be possible to do this with an if statement, since it
+     * should shift down by one bin at most. */
+    while (KL_P2S(node) < KLBIN2SIZE(bidx) && bidx > 0)
+      bidx--;
 
     /* Prepend n to front of bin[bidx] linked-list. */
     node->p = NULL;
@@ -489,7 +519,7 @@ kl_bin_find(kl_bin_t * const bin, size_t const size)
   if (KLISSMALLBIN(bidx)) {
     /* Find first bin with a node. */
     n = bin->bin[bidx];
-    while (NULL == n && bidx < KLSMALLBIN)
+    while (NULL == n && KLISSMALLBIN(bidx))
       n = bin->bin[++bidx];
 
     /* Remove head of bin[bidx]. */
@@ -512,11 +542,10 @@ kl_bin_find(kl_bin_t * const bin, size_t const size)
       KL_PRINT("==klfino==   request log2off: %zu\n", log2off[KLLOG2(size-1)]);
       KL_PRINT("==klfino==   request logsize: %zu\n", log2size[KLLOG2(size-1)]);
       KL_PRINT("==klinfo==   bin index:       %zu\n", bidx);
-      KL_PRINT("\n");
-      KL_PRINT("==klfino==   test log:     %zu\n", KLLOG2(960-1));
-      KL_PRINT("==klfino==   test log2off: %zu\n", log2off[KLLOG2(960-1)]);
-      KL_PRINT("==klfino==   test logsize: %zu\n", log2size[KLLOG2(960-1)]);
-      KL_PRINT("==klfino==   test bidx:    %zu\n", KLSIZE2BIN(960));
+      KL_PRINT("==klinfo==   bin size:        %zu\n", KLBIN2SIZE(bidx));
+
+      /* Sanity check: chunk must be large enough to hold request. */
+      assert(size <= KL_P2S(n));
     }
 
     assert(NULL == bin->bin[bidx] || NULL == bin->bin[bidx]->p);
@@ -776,6 +805,9 @@ klfree(void * const ptr)
   if (0 == --KL_B2N(block)) {
     assert(KL_ISLAST(chunk) || !KL_INUSE(KL_C2T(chunk)));
 
+    /* Remove previous chunk from free chunk data structure. */
+    if (!KL_ISFIRST(chunk) && 0 != kl_bin_rm(&bin, KL_T2C(chunk)))
+      return;
     /* Remove following chunk from free chunk data structure. */
     if (!KL_ISLAST(chunk) && 0 != kl_bin_rm(&bin, KL_C2T(chunk)))
       return;
