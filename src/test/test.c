@@ -7,6 +7,9 @@
 
 #include "klmalloc.h"
 
+#define MALLOC klmalloc
+#define FREE   klfree
+
 /* probability for each type of allocation (must sum to 100) */
 #define PER_BIG_ALLOC 5
 #define PER_MED_ALLOC 35
@@ -18,7 +21,7 @@
 /*size_t NUM_ALLOCS     = 1<<17;*/
 size_t NUM_ALLOCS     = 1<<12;
 size_t BIG_ALLOC_SIZE = 1<<25; /* 16MB */
-size_t MED_ALLOC_SIZE = 1<<15; /* 16KB */
+size_t MED_ALLOC_SIZE = 1<<16; /* 32KB */
 size_t SML_ALLOC_SIZE = 1<<11; /* 1KB  */
 
 int main(void)
@@ -41,17 +44,17 @@ int main(void)
   ta     = 0;
   tf     = 0;
 #endif
-  alloc = (void **) klmalloc(NUM_ALLOCS*sizeof(void *));
+  alloc = (void **) MALLOC(NUM_ALLOCS*sizeof(void *));
   assert(NULL != alloc);
 
-  buf = klmalloc(BIG_ALLOC_SIZE);
+  buf = MALLOC(BIG_ALLOC_SIZE);
   assert(NULL != buf);
 
 #if 0
-  alloc[0] = klmalloc(8192);
+  alloc[0] = MALLOC(8192);
 
-  klfree(buf);
-  klfree(alloc[0]);
+  FREE(buf);
+  FREE(alloc[0]);
 #else
   for (i=0; i<NUM_ALLOCS; ++i) {
     j = rand()%100; /* indicator for big/med/sml alloc */
@@ -66,7 +69,7 @@ int main(void)
     sz++;
 
     gettimeofday(&ts, NULL);
-    alloc[i] = klmalloc(sz);
+    alloc[i] = MALLOC(sz);
     gettimeofday(&te, NULL);
     ta += (te.tv_sec-ts.tv_sec)*1000000 + te.tv_usec-ts.tv_usec;
     assert(NULL != alloc[i]);
@@ -85,7 +88,7 @@ int main(void)
 
       if (NULL != alloc[l]) {
         gettimeofday(&ts, NULL);
-        klfree(alloc[l]);
+        FREE(alloc[l]);
         gettimeofday(&te, NULL);
         tf += (te.tv_sec-ts.tv_sec)*1000000 + te.tv_usec-ts.tv_usec;
 
@@ -98,7 +101,7 @@ int main(void)
   for (i=0; i<NUM_ALLOCS; ++i) {
     if (NULL != alloc[i]) {
       gettimeofday(&ts, NULL);
-      klfree(alloc[i]);
+      FREE(alloc[i]);
       gettimeofday(&te, NULL);
       tf += (te.tv_sec-ts.tv_sec)*1000000 + te.tv_usec-ts.tv_usec;
       alloc[i] = NULL;
@@ -109,8 +112,8 @@ int main(void)
   fprintf(stderr, "free:   %.2f us\n", tf*1.0/NUM_ALLOCS);
 #endif
 
-  klfree(alloc);
-  klfree(buf);
+  FREE(alloc);
+  FREE(buf);
 
   return EXIT_SUCCESS;
 }

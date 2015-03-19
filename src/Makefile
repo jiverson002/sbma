@@ -30,7 +30,7 @@ config_prefix=/usr/local
 config_exec_prefix=/usr/local
 config_includedir=/usr/local/include
 config_libdir=/usr/local/lib
-config_build=debug
+config_build=release
 config_pthread=no
 config_profile=no
 
@@ -133,13 +133,13 @@ includedir=$(config_includedir) libdir=$(libdir) build=$(build) \
 with-pthread=$(config_pthread) with-profile=$(config_profile)"
 
 clean:
-	$(RM) $(LIB) test/check test/mm $(UTD)
+	$(RM) $(LIB) test/check test/test $(UTD)
 
 help:
 	$(ECHO) "The following are valid targets for this Makefile:"
 	$(ECHO) "... $(LIB) (the default if no target is provided)"
 	$(ECHO) "... test/check"
-	$(ECHO) "... test/mm"
+	$(ECHO) "... test/test"
 	$(ECHO) "... config"
 	$(ECHO) "... dist (non-portable)"
 	$(ECHO) "... install"

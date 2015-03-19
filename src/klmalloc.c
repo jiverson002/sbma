@@ -261,9 +261,12 @@ typedef uintptr_t uptr;
   )
 
 #define KL_CHUNK_SIZE_ALIGNED(S)                                            \
-  KL_SIZE_ALIGNED(                                                          \
-    2*sizeof(size_t)+KL_CHUNK_SIZE(S),                                      \
-    KL_MEMORY_ALLOCATION_ALIGNMENT                                          \
+  (                                                                         \
+    assert(KL_CHUNK_SIZE(S) >= (S)),                                        \
+    KL_SIZE_ALIGNED(                                                        \
+      KL_CHUNK_HEADER_SIZE_ALIGNED+sizeof(size_t)+KL_CHUNK_SIZE(S),         \
+      KL_MEMORY_ALLOCATION_ALIGNMENT                                        \
+    )                                                                       \
   )
 
 
@@ -932,14 +935,18 @@ klmalloc(size_t const size)
   /* Sanity check: pointer points to a valid piece of memory. */
   if (!((uptr)ptr+size <= (uptr)KL_P2B(ptr)+KL_B2S(KL_P2B(ptr)))) {
     printf("==klfail== block address:   0x%.16zx\n", (uptr)KL_P2B(ptr));
+    printf("==klfail== block end:       0x%.16zx\n",
+      (uptr)KL_P2B(ptr)+KL_B2S(KL_P2B(ptr)));
     printf("==klfail== block size:      0x%.16zx (%zu)\n", KL_B2S(KL_P2B(ptr)),
       KL_B2S(KL_P2B(ptr)));
     printf("==klfail== chunk address:   0x%.16zx\n", (uptr)KL_P2C(ptr));
+    printf("==klfail== chunk end:       0x%.16zx\n",
+      (uptr)KL_P2C(ptr)+KL_P2S(ptr));
     printf("==klfail== chunk size:      0x%.16zx (%zu)\n", KL_P2S(ptr),
       KL_P2S(ptr));
     printf("==klfail== pointer address: 0x%.16zx\n", (uptr)ptr);
-    printf("==klfail== pointer size:    0x%.16zx (%zu)\n",
-      KL_CHUNK_SIZE_ALIGNED(size), KL_CHUNK_SIZE_ALIGNED(size));
+    printf("==klfail== pointer end:     0x%.16zx\n", (uptr)ptr+size);
+    printf("==klfail== pointer size:    0x%.16zx (%zu)\n", size, size);
   }
   assert((uptr)ptr+size <= (uptr)KL_P2B(ptr)+KL_B2S(KL_P2B(ptr)));
 
