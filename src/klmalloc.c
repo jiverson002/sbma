@@ -154,7 +154,6 @@ the possibly moved allocated space.
 #else
 # define KL_PRINT(...)
 #endif
-#include <stdio.h>
 
 
 /****************************************************************************/
@@ -253,6 +252,7 @@ typedef uintptr_t uptr;
 
 #define KL_CHUNK_SIZE(S)                                                    \
   (                                                                         \
+    assert(0 != (S)),                                                       \
     (1==(S))                                                                \
       ? KL_SIZE_ALIGNED(S, log2size[0])                                     \
       : (KLLOG2((S)-1)<20)                                                  \
@@ -600,32 +600,8 @@ kl_bin_ad(kl_bin_t * const bin, void * const chunk)
       bin->bin[bidx]->p = node;
     }
     bin->bin[bidx] = node;
-
-    /* Can be safely removed, just for debugging. */
-    assert(NULL == bin->bin[bidx]->p);
   }
   else {
-    printf("size=%zu\n", KL_C2S(chunk));
-    printf("bidx=%zu\n", bidx);
-    printf("log2=%zu\n", KLLOG2(KL_C2S(chunk)-1));
-    printf("^2+1=%zu\n", KLSQR(log2size[KLLOG2(KL_C2S(chunk)-1)-1])+1);
-
-#if 0
-      : (KLLOG2((S)-1)<20)                                                  \
-        ? ((S)>=KLSQR(log2size[KLLOG2((S)-1)-1])+1)                         \
-          ? log2off[KLLOG2((S)-1)] +                                        \
-            ((S)-(KLSQR(log2size[KLLOG2((S)-1)-1])+1)) /                    \
-            log2size[KLLOG2((S)-1)]                                         \
-          : log2off[KLLOG2((S)-1)-1] +                                      \
-            ((S)-(KLSQR(log2size[KLLOG2((S)-1)-2])+1)) /                    \
-            log2size[KLLOG2((S)-1)-1]                                       \
-        : log2off[KLLOG2((S)-1)]                                            \
-
-#endif
-
-    /* Can be safely removed, just for debugging. */
-    assert(0);
-
     /* This will keep large buckets sorted. */
     n = bin->bin[bidx];
     p = NULL;
@@ -933,21 +909,6 @@ klmalloc(size_t const size)
   /* Sanity check: chunk points to a valid piece of memory. */
   assert((uptr)chunk+KL_C2S(chunk) <= (uptr)KL_C2B(chunk)+KL_B2S(KL_C2B(chunk)));
   /* Sanity check: pointer points to a valid piece of memory. */
-  if (!((uptr)ptr+size <= (uptr)KL_P2B(ptr)+KL_B2S(KL_P2B(ptr)))) {
-    printf("==klfail== block address:   0x%.16zx\n", (uptr)KL_P2B(ptr));
-    printf("==klfail== block end:       0x%.16zx\n",
-      (uptr)KL_P2B(ptr)+KL_B2S(KL_P2B(ptr)));
-    printf("==klfail== block size:      0x%.16zx (%zu)\n", KL_B2S(KL_P2B(ptr)),
-      KL_B2S(KL_P2B(ptr)));
-    printf("==klfail== chunk address:   0x%.16zx\n", (uptr)KL_P2C(ptr));
-    printf("==klfail== chunk end:       0x%.16zx\n",
-      (uptr)KL_P2C(ptr)+KL_P2S(ptr));
-    printf("==klfail== chunk size:      0x%.16zx (%zu)\n", KL_P2S(ptr),
-      KL_P2S(ptr));
-    printf("==klfail== pointer address: 0x%.16zx\n", (uptr)ptr);
-    printf("==klfail== pointer end:     0x%.16zx\n", (uptr)ptr+size);
-    printf("==klfail== pointer size:    0x%.16zx (%zu)\n", size, size);
-  }
   assert((uptr)ptr+size <= (uptr)KL_P2B(ptr)+KL_B2S(KL_P2B(ptr)));
 
   return ptr;

@@ -30,7 +30,7 @@ config_prefix=/usr/local
 config_exec_prefix=/usr/local
 config_includedir=/usr/local/include
 config_libdir=/usr/local/lib
-config_build=release
+config_build=debug
 config_pthread=no
 config_profile=no
 
@@ -39,7 +39,7 @@ CFLAGS_debug       = -O0 -g -Wall -Wextra -pedantic
 CFLAGS_release     = -O3 -DNDEBUG -Wall -Wextra -pedantic
 CFLAGS_releaseinfo = -O2 -g -Wall -Wextra -pedantic
 PTHREAD_yes        = -DUSE_PTHREAD -pthread
-PROFILE_yes        = -pg
+PROFILE_yes        = -DUSE_PROFILE -pg
 #}}}1
 
 
@@ -68,8 +68,8 @@ LIB = libklmalloc.a
 # Set up commands and flags
 CFLAGS  = $(CFLAGS_$(config_build)) $(PROFILE_$(config_profile))        \
           -DVERSION="$(VERSION)" -DDATE="$(DATE)" -DCOMMIT="$(COMMIT)"  \
-          $(PTHREAD_LIB_$(config_pthread))
-LDFLAGS = -I.
+          $(PTHREAD_$(config_pthread))
+LDFLAGS = -I. $(PROFILE_$(config_profile)) $(PTHREAD_$(config_pthread))
 LDLIBS  = ./$(LIB)
 
 # Up-to-date file -- whenever a prerequisite of this file changes, any target
@@ -90,10 +90,6 @@ UTD = .UTD
 $(LIB): $(UTD) $(LIB)(klmalloc.o)
 	$(RANLIB) $@
 	$(RM) klmalloc.o
-
-test/test: $(UTD) $(LIB) test/test.c
-	$(config_CC) $(CFLAGS_$(config_build)) $(LDFLAGS) -o $@ $@.c $(LDLIBS)
-#	@$@
 
 test/check: $(UTD) $(LIB) test/check.c
 	$(config_CC) $(CFLAGS_$(config_build)) $(LDFLAGS) -o $@ $@.c $(LDLIBS)
@@ -133,13 +129,12 @@ includedir=$(config_includedir) libdir=$(libdir) build=$(build) \
 with-pthread=$(config_pthread) with-profile=$(config_profile)"
 
 clean:
-	$(RM) $(LIB) test/check test/test $(UTD)
+	$(RM) $(LIB) test/check $(UTD)
 
 help:
 	$(ECHO) "The following are valid targets for this Makefile:"
 	$(ECHO) "... $(LIB) (the default if no target is provided)"
 	$(ECHO) "... test/check"
-	$(ECHO) "... test/test"
 	$(ECHO) "... config"
 	$(ECHO) "... dist (non-portable)"
 	$(ECHO) "... install"

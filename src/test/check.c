@@ -5,6 +5,11 @@
 #include <sys/time.h>
 #include <time.h>
 
+#include "klmalloc.h"
+
+#define MALLOC klmalloc
+#define FREE   klfree
+
 /* probability for each type of allocation (must sum to 100) */
 #define PER_BIG_ALLOC 5
 #define PER_MED_ALLOC 35
@@ -16,7 +21,7 @@
 /*size_t NUM_ALLOCS     = 1<<17;*/
 size_t NUM_ALLOCS     = 1<<12;
 size_t BIG_ALLOC_SIZE = 1<<25; /* 16MB */
-size_t MED_ALLOC_SIZE = 1<<15; /* 16KB */
+size_t MED_ALLOC_SIZE = 1<<16; /* 32KB */
 size_t SML_ALLOC_SIZE = 1<<11; /* 1KB  */
 
 int main(void)
@@ -28,16 +33,17 @@ int main(void)
   struct timeval ts, te;
 
   seed = time(NULL);
+  seed = 1426361468;
   srand(seed);
 
   fprintf(stderr, "seed:   %lu\n", seed);
 
   ta     = 0;
   tf     = 0;
-  alloc  = (void **) malloc(NUM_ALLOCS*sizeof(void *));
-  buf    = malloc(BIG_ALLOC_SIZE);
-
+  alloc = (void **) MALLOC(NUM_ALLOCS*sizeof(void *));
   assert(NULL != alloc);
+
+  buf = MALLOC(BIG_ALLOC_SIZE);
   assert(NULL != buf);
 
   for (i=0; i<NUM_ALLOCS; ++i) {
@@ -53,7 +59,7 @@ int main(void)
     sz++;
 
     gettimeofday(&ts, NULL);
-    alloc[i] = malloc(sz);
+    alloc[i] = MALLOC(sz);
     gettimeofday(&te, NULL);
     ta += (te.tv_sec-ts.tv_sec)*1000000 + te.tv_usec-ts.tv_usec;
     assert(NULL != alloc[i]);
@@ -72,7 +78,7 @@ int main(void)
 
       if (NULL != alloc[l]) {
         gettimeofday(&ts, NULL);
-        free(alloc[l]);
+        FREE(alloc[l]);
         gettimeofday(&te, NULL);
         tf += (te.tv_sec-ts.tv_sec)*1000000 + te.tv_usec-ts.tv_usec;
 
@@ -85,7 +91,7 @@ int main(void)
   for (i=0; i<NUM_ALLOCS; ++i) {
     if (NULL != alloc[i]) {
       gettimeofday(&ts, NULL);
-      free(alloc[i]);
+      FREE(alloc[i]);
       gettimeofday(&te, NULL);
       tf += (te.tv_sec-ts.tv_sec)*1000000 + te.tv_usec-ts.tv_usec;
       alloc[i] = NULL;
@@ -95,8 +101,8 @@ int main(void)
   fprintf(stderr, "malloc: %.2f us\n", ta*1.0/NUM_ALLOCS);
   fprintf(stderr, "free:   %.2f us\n", tf*1.0/NUM_ALLOCS);
 
-  free(alloc);
-  free(buf);
+  FREE(alloc);
+  FREE(buf);
 
   return EXIT_SUCCESS;
 }
