@@ -881,7 +881,14 @@ klmalloc(size_t const size)
     KL_PRINT("==klinfo==   chunk size:    0x%.16zx (%zu)\n",
       KL_C2S(KL_CS2T(chunk, size)), KL_C2S(KL_CS2T(chunk, size)));
 
-    /* Add chunk[1] to free chunk data structure. */
+    /* Add chunk[1] to free chunk data structure.  In case NDEBUG is not
+     * defined, the pointers should be reset.  This is necessary whenever
+     * memory chunks have been coallesced, since the memory locations that the
+     * pointers occupy may have been modified if one of the coalesced chunks
+     * was used as an allocation. */
+#ifndef NDEBUG
+    memset(KL_C2P(KL_CS2T(chunk, size)), 0, sizeof(kl_bin_node_t));
+#endif
     if (0 != kl_bin_ad(&bin, KL_CS2T(chunk, size)))
       return NULL;
 
