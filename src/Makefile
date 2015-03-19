@@ -31,8 +31,8 @@ config_exec_prefix=/usr/local
 config_includedir=/usr/local/include
 config_libdir=/usr/local/lib
 config_build=debug
-config_pthread=no
 config_profile=no
+config_pthread=no
 
 # Compiler flags
 CFLAGS_debug       = -O0 -g -Wall -Wextra -pedantic
@@ -59,8 +59,8 @@ exec_prefix  = $(prefix)
 includedir   = $(prefix)/include
 libdir       = $(exec_prefix)/lib
 build        = debug
-with-pthread = no
 with-profile = no
+with-pthread = no
 
 # Library information
 LIB = libklmalloc.a
@@ -111,8 +111,8 @@ config:
            -e 's|^config_exec_prefix=.*$$|config_exec_prefix=$(exec_prefix)|' \
            -e 's|^config_bindir=.*$$|config_bindir=$(bindir)|' \
            -e 's|^config_build=.*$$|config_build=$(build)|' \
-           -e 's|^config_pthread=.*$$|config_pthread=$(with-pthread)|' \
            -e 's|^config_profile=.*$$|config_profile=$(with-profile)|' \
+           -e 's|^config_pthread=.*$$|config_pthread=$(with-pthread)|' \
     Makefile
 	$(MAKE) -s show
 
@@ -126,7 +126,7 @@ show:
 	$(ECHO) "KLMalloc v$(VERSION) configured with: make config \
 CC=$(CC) prefix=$(config_prefix) exec_prefix=$(config_exec_prefix) \
 includedir=$(config_includedir) libdir=$(libdir) build=$(build) \
-with-pthread=$(config_pthread) with-profile=$(config_profile)"
+with-profile=$(config_profile) with-pthread=$(config_pthread)"
 
 clean:
 	$(RM) $(LIB) test/check $(UTD)
@@ -153,8 +153,8 @@ help:
 	$(ECHO) ""
 	$(ECHO) "The following are valid options for the \`config' target:"
 	$(ECHO) "... build=[debug|release|releaseinfo]"
-	$(ECHO) "... with-pthread=[no|yes]"
 	$(ECHO) "... with-profile=[no|yes]"
+	$(ECHO) "... with-pthread=[no|yes]"
 #}}}1
 
 
