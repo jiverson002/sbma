@@ -120,6 +120,10 @@ Returns
 the possibly moved allocated space.
 *****************************************************************************/
 
+/* TODO:
+ *  1. Don't automatically free large blocks.
+ *  2. Allow coalescing of adjacent blocks.
+ */
 
 #ifndef _POSIX_C_SOURCE
 # define _POSIX_C_SOURCE 200112L
@@ -130,31 +134,29 @@ the possibly moved allocated space.
 #include <stdlib.h> /* posix_memalign, size_t */
 #undef _POSIX_C_SOURCE
 
-#include <assert.h>   /* assert */
-#include <limits.h>   /* CHAR_BIT */
-#include <stdint.h>   /* uint*_t */
-#include <string.h>   /* memset */
+#include <assert.h> /* assert */
+#include <limits.h> /* CHAR_BIT */
+#include <stdint.h> /* uint*_t */
+#include <stdio.h>  /* printf */
+#include <string.h> /* memset */
 
 /* This alignment should be a power of 2. */
 #ifdef MEMORY_ALLOCATION_ALIGNMENT
 # define KL_MEMORY_ALLOCATION_ALIGNMENT MEMORY_ALLOCATION_ALIGNMENT
 #else
-# define KL_MEMORY_ALLOCATION_ALIGNMENT 16
+# define KL_MEMORY_ALLOCATION_ALIGNMENT 8
 #endif
 
 #ifndef KL_EXPORT
 # define KL_EXPORT extern
 #endif
 
-
 #define KL_DEBUG 0
 #if defined(KL_DEBUG) && KL_DEBUG > 0
-# include <stdio.h>
 # define KL_PRINT(...) printf(__VA_ARGS__); fflush(stdout);
 #else
 # define KL_PRINT(...)
 #endif
-
 
 /****************************************************************************/
 /* Relevant type shortcuts */
@@ -163,139 +165,98 @@ typedef uintptr_t uptr;
 
 
 /****************************************************************************/
+/* Accounting variables */
+/****************************************************************************/
+static size_t KL_SYS_CTR=0;
+static size_t KL_MEM_TOTAL=0;
+static size_t KL_MEM_MAX=0;
+
+
+/****************************************************************************/
+/* System memory allocation related macros */
+/****************************************************************************/
+#define KL_SYS_ALLOC_FAIL      NULL
+#define KL_CALL_SYS_ALLOC(P,S) \
+  (0 == posix_memalign(&(P),KL_MEMORY_ALLOCATION_ALIGNMENT,S) ? (P) : NULL)
+#define KL_CALL_SYS_BZERO(P,S) memset(P, 0, S)
+#define KL_CALL_SYS_FREE(P,S)  free(P)
+
+
+/****************************************************************************/
+/* Block and chunk size constants */
+/****************************************************************************/
+#define KL_BLOCK_DEFAULT_SIZE (65536-KL_BLOCK_META_SIZE)
+#define KL_BLOCK_HEADER_SIZE                                                \
+(                                                                           \
+  assert(0 != KL_MEMORY_ALLOCATION_ALIGNMENT),                              \
+  assert(0 ==                                                               \
+    (KL_MEMORY_ALLOCATION_ALIGNMENT&(KL_MEMORY_ALLOCATION_ALIGNMENT-1))),   \
+  KL_MEMORY_ALLOCATION_ALIGNMENT == sizeof(size_t)                          \
+    ? sizeof(size_t)                                                        \
+    : KL_MEMORY_ALLOCATION_ALIGNMENT-sizeof(size_t)                         \
+)
+#define KL_BLOCK_FOOTER_SIZE  sizeof(size_t)
+#define KL_BLOCK_META_SIZE    (KL_BLOCK_HEADER_SIZE+KL_BLOCK_FOOTER_SIZE)
+
+#define KL_CHUNK_HEADER_SIZE  sizeof(size_t)
+#define KL_CHUNK_FOOTER_SIZE  sizeof(size_t)
+#define KL_CHUNK_META_SIZE    (KL_CHUNK_HEADER_SIZE+KL_CHUNK_FOOTER_SIZE)
+#define KL_CHUNK_MIN_SIZE     KL_CHUNK_SIZE(2*sizeof(void*))
+
+
+/****************************************************************************/
 /*
-  Memory block:
-
-    | size_t | size_t | `memory chunks' |
-    +--------+--------+-----------------+
-
-    Memory blocks must be allocated so that their starting address is aligned
-    to their size, which is a power of 2.  This allows for a memory chunk
-    carved out of a block to be traced back to its containing block by masking
-    away all bits according to the block size.
-
-
-  Memory chunk:
-
-      ACTIVE  | size_t | `used memory' |
-              +--------+---------------+
-
-    INACTIVE  | size_t | void * | void * | `unused memory' |
-              +--------+--------+--------+-----------------+
-
-    When a memory chunk is inactive, then the two `void *' shall be used for
-    the pointers in the doubly-linked list in the free chunk data structure.
-
-
-  Abbriviations:
-
-    A = active chunk
-    B = block
-    C = chunk
-    F = footer size
-    I = inactive chunk
-    N = number
-    P = pointer ([active=memory], [inactive=doubly-linked list])
-    S = size
-    T = split chunk
- */
-/****************************************************************************/
-#define KL_B2S(B)    (*((size_t*)((uptr)(B))))
-#define KL_B2N(B)    (*((size_t*)((uptr)(B)+sizeof(size_t))))
-#define KL_B2C(B)    (void*)((uptr)(B)+KL_BLOCK_HEADER_SIZE_ALIGNED)
-
-#define KL_C2B(C)    (void*)((uptr)(C)&(~(KL_BLOCK_SIZE_ALIGNED-1)))
-#define KL_C2S(C)    (*((size_t*)((uptr)(C))))
-#define KL_C2P(C)    (void*)((uptr)(C)+KL_CHUNK_HEADER_SIZE_ALIGNED)
-#define KL_C2D(C)    (kl_bin_node_t*)KL_C2P(C)
-
-#define KL_C2T(C)    (void*)((uptr)(C)+KL_C2S(C))
-#define KL_C2F(C)    (*(size_t*)((uptr)KL_C2T(C)-sizeof(size_t)))
-#define KL_CS2T(C,S) (void*)((uptr)(C)+KL_CHUNK_SIZE_ALIGNED(S))
-
-#define KL_P2C(P)    (void*)((uptr)(P)-KL_CHUNK_HEADER_SIZE_ALIGNED)
-#define KL_P2B(P)    KL_C2B(KL_P2C(P))
-#define KL_P2S(P)    KL_C2S(KL_P2C(P))
-#define KL_P2D(P)    KL_C2D(KL_P2C(P))
-
-#define KL_T2F(T)    (*(size_t*)((uptr)(T)-sizeof(size_t)))
-#define KL_T2C(T)    (void*)((uptr)(T)-KL_T2F(T))
-
-
-/****************************************************************************/
-/* Macros to test the status of memory chunks */
-/****************************************************************************/
-#define KL_ISFIRST(C) ((C) == KL_B2C(KL_C2B(C)))
-#define KL_ISLAST(C)  ((uptr)(C)+KL_C2S(C) == (uptr)KL_C2B(C)+KL_B2S(KL_C2B(C)))
-#define KL_INUSE(C)   (0 == KL_C2F(C))
-
-
-/****************************************************************************/
-/* Align an unsigned integer value to a power supplied power of 2 */
-/****************************************************************************/
-#define KL_CHUNK_MIN_ALIGNED                                                \
-  KL_SIZE_ALIGNED(                                                          \
-    KL_CHUNK_HEADER_SIZE_ALIGNED+2*sizeof(void*)+sizeof(size_t),            \
-    KL_MEMORY_ALLOCATION_ALIGNMENT                                          \
-  )
-
-#define KL_BLOCK_SIZE        65536
-#define KL_BLOCK_HEADER_SIZE _KL_ALIGN(sizeof(size_t))
-#define KL_BLOCK_FOOTER_SIZE sizeof(size_t)
-#define KL_BLOCK_META_SIZE   (KL_BLOCK_HEADER_SIZE+KL_BLOCK_FOOTER_SIZE)
-
-#define KL_CHUNK_HEADER_SIZE sizeof(size_t)
-#define KL_CHUNK_FOOTER_SIZE sizeof(size_t)
-#define KL_CHUNK_META_SIZE   (KL_CHUNK_HEADER_SIZE+KL_CHUNK_FOOTER_SIZE)
-
-#define KL_BLOCK_SIZE_ALIGNED 65536
-
-#define KL_BLOCK_HEADER_SIZE_ALIGNED \
-  KL_SIZE_ALIGNED(2*sizeof(size_t), KL_MEMORY_ALLOCATION_ALIGNMENT)
-
-#define KL_CHUNK_HEADER_SIZE_ALIGNED \
-  KL_SIZE_ALIGNED(sizeof(size_t), KL_MEMORY_ALLOCATION_ALIGNMENT)
-
-#define KL_SIZE_ALIGNED(S,A) \
-  (assert(0 == ((A)&((A)-1))), (((S)+((A)-1))&(~(((A)-1)))))
-
-#define KL_CHUNK_SIZE(S)                                                    \
-  (                                                                         \
-    assert(0 != (S)),                                                       \
-    (1==(S))                                                                \
-      ? KL_SIZE_ALIGNED(S, log2size[0])                                     \
-      : (KLLOG2((S)-1)<20)                                                  \
-        ? KL_SIZE_ALIGNED(S, log2size[KLLOG2((S)-1)])                       \
-        : (S)                                                               \
-  )
-
-#define KL_CHUNK_SIZE_ALIGNED(S)                                            \
-  (                                                                         \
-    assert(KL_CHUNK_SIZE(S) >= (S)),                                        \
-    KL_SIZE_ALIGNED(                                                        \
-      KL_CHUNK_HEADER_SIZE_ALIGNED+sizeof(size_t)+KL_CHUNK_SIZE(S),         \
-      KL_MEMORY_ALLOCATION_ALIGNMENT                                        \
-    )                                                                       \
-  )
-
-/*
- *  | size_t |      ****      | size_t |
- *  +--------+----------------+--------+
- *  `        ^
+ *  Memory block:
  *
- *  The pointer address, indicated by ^ above, must be aligned to
- *  KL_MEMORY_ALLOCATION_ALIGNMENT.  Thus, if KL_MEMORY_ALLOCATION_ALIGNMENT >
- *  sizeof(size_t), the chunk address, indicated by ` above must be aligned to
- *  an address that is sizeof(size_t) less than a
- *  KL_MEMORY_ALLOCATION_ALIGNMENT aligned address.  To accomplish this for
- *  consecutive chunks, the size of each chunk is computed so that the
- *  following chunk will start at an address that is sizeof(size_t) less than
- *  a KL_MEMORY_ALLOCATION_ALIGNMENT aligned address.  Assuming that a given
- *  chunk is properly aligned, it is sufficent to find the first aligned size
- *  >= the requested size plus the per-chunk overhead.
+ *    | size_t | `memory chunks' | size_t |
+ *    +--------+-----------------+--------+
+ *
+ *    Memory blocks must be allocated so that their starting address is
+ *    aligned to KL_MEMORY_ALLOCATION_ALIGNMENT, which is a power of 2.  This
+ *    allows for the first and last memory chunks to be easily identifiable.
+ *    In this case, these chunks are identified as the chunk which is preceded
+ *    / succeeded by a size_t with the value KL_BLOCK_HEADER_SIZE,
+ *    respectively.
+ *
+ *  Memory chunk:
+ *
+ *      ACTIVE  | size_t | 'used memory' | size_t |
+ *              +--------+---------------+--------+
+ *              `        ^
+ *
+ *    INACTIVE  | size_t | void * | void * | 'unused memory' | size_t |
+ *              +--------+--------+--------+-----------------+--------+
+ *              `        ^
+ *
+ *    The pointer address, indicated by ^ above, must be aligned to
+ *    KL_MEMORY_ALLOCATION_ALIGNMENT.  Thus, if KL_MEMORY_ALLOCATION_ALIGNMENT
+ *    > sizeof(size_t), the chunk address, indicated by ` above must be
+ *    aligned to an address that is sizeof(size_t) less than a
+ *    KL_MEMORY_ALLOCATION_ALIGNMENT aligned address.  To accomplish this for
+ *    consecutive chunks, the size of each chunk is computed so that the
+ *    following chunk will start at an address that is sizeof(size_t) less
+ *    than a KL_MEMORY_ALLOCATION_ALIGNMENT aligned address.  Assuming that a
+ *    given chunk is properly aligned, it is sufficient to find the first
+ *    aligned size >= the requested size plus the per-chunk overhead.
+ *
+ *    When a memory chunk is active, the final size_t shall contain the value
+ *    0, and when inactive, shall contain the same value as the first size_t,
+ *    which is the size of the entire memory chunk.  When a memory chunk is
+ *    inactive, then the two `void *' shall be used for the pointers in the
+ *    doubly-linked list in the free chunk data structure.
+ *
+ *  Abbriviations:
+ *
+ *    A = after chunk
+ *    B = block
+ *    C = chunk
+ *    E = before chunk
+ *    F = footer size
+ *    H = header size
+ *    P = pointer ([active=memory], [inactive=doubly-linked list])
  */
-
-static inline size_t _KL_ALIGN(size_t const size)
+/****************************************************************************/
+static inline size_t KL_ALIGN(size_t const size)
 {
   size_t const align = KL_MEMORY_ALLOCATION_ALIGNMENT;
   size_t const size_aligned = (size+(align-1))&(~(align-1));
@@ -308,12 +269,17 @@ static inline size_t _KL_ALIGN(size_t const size)
   return size_aligned;
 }
 
-static inline size_t _KL_CHUNK_SIZE(size_t size)
+static inline size_t KL_BLOCK_SIZE(size_t size)
 {
-  return _KL_ALIGN(size+KL_CHUNK_META_SIZE);
+  return KL_BLOCK_META_SIZE+size;
 }
 
-static inline size_t * _KL_B2H(void * const block)
+static inline size_t KL_CHUNK_SIZE(size_t size)
+{
+  return KL_ALIGN(KL_CHUNK_META_SIZE+size);
+}
+
+static inline size_t * KL_B2H(void * const block)
 {
   /* Sanity check: block is properly aligned. */
   assert(0 == (((uptr)block)&(KL_MEMORY_ALLOCATION_ALIGNMENT-1)));
@@ -321,7 +287,7 @@ static inline size_t * _KL_B2H(void * const block)
   return (size_t*)((uptr)block+KL_BLOCK_HEADER_SIZE-sizeof(size_t));
 }
 
-static inline size_t * _KL_B2F(void * const block, size_t const size)
+static inline size_t * KL_B2F(void * const block, size_t const size)
 {
   void * const footer = (void*)((uptr)block+size-KL_BLOCK_FOOTER_SIZE);
 
@@ -331,15 +297,15 @@ static inline size_t * _KL_B2F(void * const block, size_t const size)
   return (size_t*)footer;
 }
 
-static inline void * _KL_B2C(void * const block)
+static inline void * KL_B2C(void * const block)
 {
   /* Sanity check: block is properly aligned. */
   assert(0 == (((uptr)block)&(KL_MEMORY_ALLOCATION_ALIGNMENT-1)));
 
-  return (void*)((uptr)block+_KL_ALIGN(KL_BLOCK_HEADER_SIZE));
+  return (void*)((uptr)block+KL_BLOCK_HEADER_SIZE);
 }
 
-static inline void * _KL_C2P(void * const chunk)
+static inline void * KL_C2P(void * const chunk)
 {
   void * const ptr_aligned = (void*)((uptr)chunk+KL_CHUNK_HEADER_SIZE);
 
@@ -349,50 +315,50 @@ static inline void * _KL_C2P(void * const chunk)
   return ptr_aligned;
 }
 
-static inline size_t * _KL_C2H(void * const chunk)
+static inline size_t * KL_C2H(void * const chunk)
 {
   /* Sanity check: chunk is properly aligned. */
-  assert(0 == ((uptr)_KL_C2P(chunk)&(KL_MEMORY_ALLOCATION_ALIGNMENT-1)));
+  assert(0 == ((uptr)KL_C2P(chunk)&(KL_MEMORY_ALLOCATION_ALIGNMENT-1)));
 
   return (size_t*)chunk;
 }
 
-static inline size_t * _KL_C2F(void * const chunk)
+static inline size_t * KL_C2F(void * const chunk)
 {
-  void * const footer = (void*)((uptr)chunk+*_KL_C2H(chunk)-KL_CHUNK_FOOTER_SIZE);
+  void * const footer = (void*)((uptr)chunk+*KL_C2H(chunk)-KL_CHUNK_FOOTER_SIZE);
 
   /* Sanity check: chunk is properly aligned. */
-  assert(0 == ((uptr)_KL_C2P(chunk)&(KL_MEMORY_ALLOCATION_ALIGNMENT-1)));
+  assert(0 == ((uptr)KL_C2P(chunk)&(KL_MEMORY_ALLOCATION_ALIGNMENT-1)));
   /* Sanity check: chunk header is not actually a block header. */
-  assert(*_KL_C2H(chunk) > sizeof(size_t));
+  assert(*KL_C2H(chunk) > KL_BLOCK_HEADER_SIZE);
 
   return (size_t*)footer;
 }
 
-static inline void * _KL_C2B(void * const chunk)
+static inline void * KL_C2E(void * const chunk)
 {
   /* Sanity check: chunk is properly aligned. */
-  assert(0 == ((uptr)_KL_C2P(chunk)&(KL_MEMORY_ALLOCATION_ALIGNMENT-1)));
-  /* Sanity check: chunk size >= sizeof(size_t). */
-  /* The reason that this is >= sizeof(size_t) instead of strictly > is to
-   * allow a valid chunk to traverse to the beginning of the block header
+  assert(0 == ((uptr)KL_C2P(chunk)&(KL_MEMORY_ALLOCATION_ALIGNMENT-1)));
+  /* Sanity check: chunk size >= KL_BLOCK_HEADER_SIZE. */
+  /* The reason that this is >= KL_BLOCK_HEADER_SIZE instead of strictly > is
+   * to allow a valid chunk to traverse to the beginning of the block header
    * before it, when it is the first chunk. */
-  assert(*_KL_C2H(chunk) >= sizeof(size_t));
+  assert(*KL_C2H(chunk) >= KL_BLOCK_HEADER_SIZE);
 
   return (void*)((uptr)chunk-(*(size_t*)((uptr)chunk-KL_CHUNK_FOOTER_SIZE)));
 }
 
-static inline void * _KL_C2A(void * const chunk)
+static inline void * KL_C2A(void * const chunk)
 {
   /* Sanity check: chunk is properly aligned. */
-  assert(0 == ((uptr)_KL_C2P(chunk)&(KL_MEMORY_ALLOCATION_ALIGNMENT-1)));
-  /* Sanity check: chunk size > sizeof(size_t). */
-  assert(*_KL_C2H(chunk) > sizeof(size_t));
+  assert(0 == ((uptr)KL_C2P(chunk)&(KL_MEMORY_ALLOCATION_ALIGNMENT-1)));
+  /* Sanity check: chunk size > KL_BLOCK_HEADER_SIZE. */
+  assert(*KL_C2H(chunk) > KL_BLOCK_HEADER_SIZE);
 
-  return (void*)((uptr)chunk+(*_KL_C2H(chunk)));
+  return (void*)((uptr)chunk+(*KL_C2H(chunk)));
 }
 
-static inline void * _KL_P2C(void * const ptr)
+static inline void * KL_P2C(void * const ptr)
 {
   /* Sanity check: pointer is properly aligned. */
   assert(0 == ((uptr)ptr&(KL_MEMORY_ALLOCATION_ALIGNMENT-1)));
@@ -400,38 +366,43 @@ static inline void * _KL_P2C(void * const ptr)
   return (void*)((uptr)ptr-KL_CHUNK_HEADER_SIZE);
 }
 
-static inline void * _KL_A2C(void * const after)
+static inline size_t * KL_P2H(void * const ptr)
+{
+  return KL_C2H(KL_P2C(ptr));
+}
+
+static inline void * KL_A2C(void * const after)
 {
   /* Sanity check: after is properly aligned. */
-  assert(0 == ((uptr)_KL_C2P(after)&(KL_MEMORY_ALLOCATION_ALIGNMENT-1)));
+  assert(0 == ((uptr)KL_C2P(after)&(KL_MEMORY_ALLOCATION_ALIGNMENT-1)));
   /* Sanity check: after header is not actually a block footer. */
-  assert(*_KL_C2H(after) > sizeof(size_t));
+  assert(*KL_C2H(after) > KL_BLOCK_HEADER_SIZE);
 
   return (void*)((uptr)after-(*(size_t*)((uptr)after-KL_CHUNK_FOOTER_SIZE)));
 }
 
-static inline int _KL_ISFIRST(void * const chunk)
+static inline int KL_ISFIRST(void * const chunk)
 {
   /* Sanity check: chunk is properly aligned. */
-  assert(0 == ((uptr)_KL_C2P(chunk)&(KL_MEMORY_ALLOCATION_ALIGNMENT-1)));
+  assert(0 == ((uptr)KL_C2P(chunk)&(KL_MEMORY_ALLOCATION_ALIGNMENT-1)));
 
-  return sizeof(size_t) == *_KL_C2H(_KL_C2B(chunk));
+  return KL_BLOCK_HEADER_SIZE == *(size_t*)((uptr)chunk-sizeof(size_t));
 }
 
-static inline int _KL_ISLAST(void * const chunk)
+static inline int KL_ISLAST(void * const chunk)
 {
   /* Sanity check: chunk is properly aligned. */
-  assert(0 == ((uptr)_KL_C2P(chunk)&(KL_MEMORY_ALLOCATION_ALIGNMENT-1)));
+  assert(0 == ((uptr)KL_C2P(chunk)&(KL_MEMORY_ALLOCATION_ALIGNMENT-1)));
 
-  return sizeof(size_t) == *_KL_C2H(_KL_C2A(chunk));
+  return KL_BLOCK_HEADER_SIZE == *(size_t*)KL_C2A(chunk);
 }
 
-static inline int _KL_INUSE(void * const chunk)
+static inline int KL_INUSE(void * const chunk)
 {
   /* Sanity check: chunk is properly aligned. */
-  assert(0 == ((uptr)_KL_C2P(chunk)&(KL_MEMORY_ALLOCATION_ALIGNMENT-1)));
+  assert(0 == ((uptr)KL_C2P(chunk)&(KL_MEMORY_ALLOCATION_ALIGNMENT-1)));
 
-  return 0 == *_KL_C2F(chunk);
+  return 0 == *KL_C2F(chunk);
 }
 
 
@@ -666,15 +637,6 @@ static size_t bin2size[KLSMALLBIN]=
 
 
 /****************************************************************************/
-/* System memory allocation related macros */
-/****************************************************************************/
-#define KL_SYS_ALLOC_FAIL                NULL
-#define KL_CALL_SYS_ALLOC_ALIGNED(P,A,S) posix_memalign(&(P),A,S)
-#define KL_CALL_SYS_ALLOC(P,S)           (P)=malloc(S)
-#define KL_CALL_SYS_FREE(P,S)            free(P)
-
-
-/****************************************************************************/
 /****************************************************************************/
 /* Free chunk data structure API */
 /****************************************************************************/
@@ -723,14 +685,14 @@ kl_bin_init(kl_bin_t * const bin)
 static int
 kl_bin_ad(kl_bin_t * const bin, void * const chunk)
 {
-  size_t bidx = KLSIZE2BIN(KL_C2S(chunk));
-  kl_bin_node_t * p, * n, * node = KL_C2D(chunk);
+  size_t bidx = KLSIZE2BIN(*KL_C2H(chunk));
+  kl_bin_node_t * p, * n, * node = (kl_bin_node_t*)KL_C2P(chunk);
 
   KL_PRINT("==klinfo== insert chunk\n");
-  KL_PRINT("==klinfo==   block address: 0x%.16zx\n", (uptr)KL_C2B(chunk));
+  KL_PRINT("==klinfo==   block address: 0x%.16zx\n", (uptr)KL_C2E(chunk));
   KL_PRINT("==klinfo==   chunk address: 0x%.16zx\n", (uptr)chunk);
-  KL_PRINT("==klinfo==   chunk size:    0x%.16zx (%zu)\n", KL_C2S(chunk),
-    KL_C2S(chunk));
+  KL_PRINT("==klinfo==   chunk size:    0x%.16zx (%zu)\n", *KL_C2H(chunk),
+    *KL_C2H(chunk));
   KL_PRINT("==klinfo==   bin index:     %zu\n", bidx);
 
   /* Treat fixed size bins and large bins differently */
@@ -743,18 +705,18 @@ kl_bin_ad(kl_bin_t * const bin, void * const chunk)
     /* Sanity check: node has no dangling pointers. */
     assert(NULL == node->p && NULL == node->n);
     /* Sanity check: node is not in use. */
-    assert(KL_C2S(chunk) == KL_C2F(chunk));
+    assert(*KL_C2H(chunk) == *KL_C2F(chunk));
 
     /* Shift bin index in case a chunk is made up of coalesced chunks which
      * collectively have a size which causes the chunk to fall in a particular
      * bin, but has less bytes than required by the bin.
      * TODO: it should be possible to do this with an if statement, since it
      * should shift down by one bin at most. */
-    while (KL_C2S(chunk) < KLBIN2SIZE(bidx) && bidx > 0)
+    while (*KL_C2H(chunk) < KLBIN2SIZE(bidx) && bidx > 0)
       bidx--;
 
     /* Sanity check: chunk must be at least the size of the fixed bin. */
-    assert(KL_C2S(chunk) >= KLBIN2SIZE(bidx));
+    assert(*KL_C2H(chunk) >= KLBIN2SIZE(bidx));
 
     KL_PRINT("==klinfo==   new bin index: %zu\n", bidx);
 
@@ -772,7 +734,7 @@ kl_bin_ad(kl_bin_t * const bin, void * const chunk)
     n = bin->bin[bidx];
     p = NULL;
 
-    while (NULL != n && KL_P2S(n) < KL_C2S(chunk)) {
+    while (NULL != n && *KL_P2H(n) < *KL_C2H(chunk)) {
       p = n;
       n = n->n;
     }
@@ -811,14 +773,13 @@ kl_bin_ad(kl_bin_t * const bin, void * const chunk)
 static int
 kl_bin_rm(kl_bin_t * const bin, void * const chunk)
 {
-  size_t bidx = KLSIZE2BIN(KL_C2S(chunk));
-  kl_bin_node_t * node = KL_C2D(chunk);
+  size_t bidx = KLSIZE2BIN(*KL_C2H(chunk));
+  kl_bin_node_t * node = (kl_bin_node_t*)KL_C2P(chunk);
 
   KL_PRINT("==klinfo== remove chunk\n");
-  KL_PRINT("==klinfo==   block address: 0x%.16zx\n", (uptr)KL_C2B(chunk));
   KL_PRINT("==klinfo==   chunk address: 0x%.16zx\n", (uptr)chunk);
-  KL_PRINT("==klinfo==   chunk size:    0x%.16zx (%zu)\n", KL_C2S(chunk),
-    KL_C2S(chunk));
+  KL_PRINT("==klinfo==   chunk size:    0x%.16zx (%zu)\n", *KL_C2H(chunk),
+    *KL_C2H(chunk));
   KL_PRINT("==klinfo==   bin index:     %zu\n", bidx);
 
   /* Shift bin index in case a chunk is made up of coalesced chunks which
@@ -826,7 +787,7 @@ kl_bin_rm(kl_bin_t * const bin, void * const chunk)
    * bin, but has less bytes than required by the bin.
    * TODO: it should be possible to do this with an if statement, since it
    * should shift down by one bin at most. */
-  while (KL_C2S(chunk) < KLBIN2SIZE(bidx) && bidx > 0)
+  while (*KL_C2H(chunk) < KLBIN2SIZE(bidx) && bidx > 0)
     bidx--;
 
   KL_PRINT("==klinfo==   new bin index: %zu\n", bidx);
@@ -879,10 +840,9 @@ kl_bin_find(kl_bin_t * const bin, size_t const size)
       }
 
       KL_PRINT("==klinfo== found chunk\n");
-      KL_PRINT("==klinfo==   block address:   0x%.16zx\n", (uptr)KL_P2B(n));
       KL_PRINT("==klinfo==   chunk address:   0x%.16zx\n", (uptr)KL_P2C(n));
-      KL_PRINT("==klinfo==   chunk size:      0x%.16zx (%zu)\n", KL_P2S(n),
-        KL_P2S(n));
+      KL_PRINT("==klinfo==   chunk size:      0x%.16zx (%zu)\n", *KL_P2H(n),
+        *KL_P2H(n));
       KL_PRINT("==klinfo==   request size:    0x%.16zx (%zu)\n", size, size);
       KL_PRINT("==klinfo==   request log:     %zu\n", KLLOG2(size-1));
       KL_PRINT("==klinfo==   request log2off: %zu\n", log2off[KLLOG2(size-1)]);
@@ -891,7 +851,7 @@ kl_bin_find(kl_bin_t * const bin, size_t const size)
       KL_PRINT("==klinfo==   bin size:        %zu\n", KLBIN2SIZE(bidx));
 
       /* Sanity check: chunk must be large enough to hold request. */
-      assert(size <= KL_P2S(n));
+      assert(size <= *KL_P2H(n));
     }
 
     assert(NULL == bin->bin[bidx] || NULL == bin->bin[bidx]->p);
@@ -905,7 +865,7 @@ kl_bin_find(kl_bin_t * const bin, size_t const size)
     assert(NULL == n);
 
     /* Find first node in bin[bidx] with size >= size parameter. */
-    while (NULL != n && KL_P2S(n) < size)
+    while (NULL != n && *KL_P2H(n) < size)
       n = n->n;
 
     /* Remove n from bin[bidx]. */
@@ -977,39 +937,45 @@ klmalloc(size_t const size)
 
   KL_PRINT("==klinfo== allocation request\n");
   KL_PRINT("==klinfo==   request size: 0x%.16zx (%zu)\n",
-    _KL_CHUNK_SIZE(size), _KL_CHUNK_SIZE(size));
+    KL_CHUNK_SIZE(size), KL_CHUNK_SIZE(size));
 
   /* Check for available memory chunk. */
-  if (NULL == (chunk=kl_bin_find(&bin, _KL_CHUNK_SIZE(size)))) {
+  if (NULL == (chunk=kl_bin_find(&bin, KL_CHUNK_SIZE(size)))) {
     /* Determine appropriate allocation size. */
-    if (_KL_CHUNK_SIZE(size) <= KL_BLOCK_SIZE-KL_BLOCK_META_SIZE)
-      block_size = KL_BLOCK_SIZE;
+    if (KL_CHUNK_SIZE(size) <= KL_BLOCK_DEFAULT_SIZE)
+      block_size = KL_BLOCK_SIZE(KL_BLOCK_DEFAULT_SIZE);
     else
-      block_size = KL_BLOCK_META_SIZE+_KL_CHUNK_SIZE(size);
+      block_size = KL_BLOCK_SIZE(KL_CHUNK_SIZE(size));
+
+    /* Accounting. */
+    KL_MEM_TOTAL += block_size;
+    if (KL_MEM_TOTAL > KL_MEM_MAX)
+      KL_MEM_MAX = KL_MEM_TOTAL;
 
     /* Get system memory. */
     ret = KL_CALL_SYS_ALLOC(block, block_size);
     if (KL_SYS_ALLOC_FAIL == ret)
       return NULL;
+    KL_SYS_CTR++;
 
     /* Zero memory. */
-    memset(block, 0, block_size);
+    KL_CALL_SYS_BZERO(block, block_size);
 
     /* Set block header and footer size. */
-    *_KL_B2H(block) = sizeof(size_t);
-    *_KL_B2F(block, block_size) = sizeof(size_t);
+    *KL_B2H(block) = KL_BLOCK_HEADER_SIZE;
+    *KL_B2F(block, block_size) = *KL_B2H(block);
 
     /* Set the chunk to be returned. */
-    chunk = _KL_B2C(block);
+    chunk = KL_B2C(block);
 
     /* Set chunk header and footer size (set chunk as not in use). */
-    *_KL_C2H(chunk) = block_size-KL_BLOCK_META_SIZE;
-    *_KL_C2F(chunk) = *_KL_C2H(chunk);
+    *KL_C2H(chunk) = block_size-KL_BLOCK_META_SIZE;
+    *KL_C2F(chunk) = *KL_C2H(chunk);
 
     /* Sanity check: macros are working. */
-    assert(_KL_ISFIRST(chunk));
-    assert(_KL_ISLAST(chunk));
-    assert(!_KL_INUSE(chunk));
+    assert(KL_ISFIRST(chunk));
+    assert(KL_ISLAST(chunk));
+    assert(!KL_INUSE(chunk));
 
     KL_PRINT("==klinfo== new block\n");
     KL_PRINT("==klinfo==   block address: 0x%.16zx\n", (uptr)block);
@@ -1018,33 +984,33 @@ klmalloc(size_t const size)
     KL_PRINT("==klinfo== new chunk\n");
     KL_PRINT("==klinfo==   chunk address: 0x%.16zx\n", (uptr)chunk);
     KL_PRINT("==klinfo==   chunk size:    0x%.16zx (%zu)\n",
-      _KL_CHUNK_SIZE(size), _KL_CHUNK_SIZE(size));
+      KL_CHUNK_SIZE(size), KL_CHUNK_SIZE(size));
   }
   else {
     KL_PRINT("==klinfo== old chunk\n");
     KL_PRINT("==klinfo==   chunk address: 0x%.16zx\n", (uptr)chunk);
     KL_PRINT("==klinfo==   chunk size:    0x%.16zx (%zu)\n",
-      *_KL_C2H(chunk), *_KL_C2H(chunk));
+      *KL_C2H(chunk), *KL_C2H(chunk));
   }
 
   /* Split chunk if applicable. */
-  if (*_KL_C2H(chunk) > KL_CHUNK_MIN_ALIGNED &&
-      _KL_CHUNK_SIZE(size) <= *_KL_C2H(chunk)-KL_CHUNK_MIN_ALIGNED)
+  if (*KL_C2H(chunk) > KL_CHUNK_MIN_SIZE &&
+      KL_CHUNK_SIZE(size) <= *KL_C2H(chunk)-KL_CHUNK_MIN_SIZE)
   {
     /* Get current chunk[0] size. */
-    chunk_size = *_KL_C2H(chunk);
+    chunk_size = *KL_C2H(chunk);
 
     /* Update chunk[0] size. */
-    *_KL_C2H(chunk) = _KL_CHUNK_SIZE(size);
+    *KL_C2H(chunk) = KL_CHUNK_SIZE(size);
 
     /* Set header and footer chunk[1] size (not in use). */
-    *_KL_C2H(_KL_C2A(chunk)) = chunk_size-*_KL_C2H(chunk);
-    *_KL_C2F(_KL_C2A(chunk)) = *_KL_C2H(_KL_C2A(chunk));
+    *KL_C2H(KL_C2A(chunk)) = chunk_size-*KL_C2H(chunk);
+    *KL_C2F(KL_C2A(chunk)) = *KL_C2H(KL_C2A(chunk));
 
     KL_PRINT("==klinfo== split chunk\n");
-    KL_PRINT("==klinfo==   chunk address: 0x%.16zx\n", (uptr)_KL_C2A(chunk));
+    KL_PRINT("==klinfo==   chunk address: 0x%.16zx\n", (uptr)KL_C2A(chunk));
     KL_PRINT("==klinfo==   chunk size:    0x%.16zx (%zu)\n",
-      KL_C2H(_KL_C2A(chunk)), KL_C2H(_KL_C2A(chunk)));
+      KL_C2H(KL_C2A(chunk)), KL_C2H(KL_C2A(chunk)));
 
     /* Add chunk[1] to free chunk data structure.  In case NDEBUG is not
      * defined, the pointers should be reset.  This is necessary whenever
@@ -1052,33 +1018,32 @@ klmalloc(size_t const size)
      * pointers occupy may have been modified if one of the coalesced chunks
      * was used as an allocation. */
 #ifndef NDEBUG
-    memset(KL_C2P(_KL_C2A(chunk)), 0, sizeof(kl_bin_node_t));
+    memset(KL_C2P(KL_C2A(chunk)), 0, sizeof(kl_bin_node_t));
 #endif
-    if (0 != kl_bin_ad(&bin, _KL_C2A(chunk)))
+    if (0 != kl_bin_ad(&bin, KL_C2A(chunk)))
       return NULL;
 
     /* Sanity check: chunk[0] can be reached from chunk[1] */
-    assert((KL_C2F(chunk) = *_KL_C2H(chunk), chunk == _KL_A2C(_KL_C2A(chunk))));
+    assert((*KL_C2F(chunk) = *KL_C2H(chunk), chunk == KL_A2C(KL_C2A(chunk))));
   }
 
   /* Set chunk[0] as in use */
-  *_KL_C2F(chunk) = 0;
+  *KL_C2F(chunk) = 0;
 
   /* Get pointer to return. */
-  ptr = _KL_C2P(chunk);
+  ptr = KL_C2P(chunk);
 
   /* Sanity check: macros are working. */
-  assert(chunk == _KL_P2C(ptr));
+  assert(chunk == KL_P2C(ptr));
   /* Sanity check: returned pointer is properly aligned. */
   assert(0 == ((uptr)ptr&(KL_MEMORY_ALLOCATION_ALIGNMENT-1)));
   /* Sanity check: pointer points to a valid piece of memory. */
-  assert((uptr)ptr+size <= (uptr)chunk+KL_C2S(chunk)-KL_CHUNK_FOOTER_SIZE);
+  assert((uptr)ptr+size <= (uptr)chunk+*KL_C2H(chunk)-KL_CHUNK_FOOTER_SIZE);
 
   return ptr;
 }
 
 
-#if 0
 /****************************************************************************/
 /* Allocate num*size bytes of zeroed memory */
 /****************************************************************************/
@@ -1101,88 +1066,67 @@ KL_EXPORT void
 klfree(void * const ptr)
 {
   void * chunk = KL_P2C(ptr);
-  void * block = KL_C2B(chunk);
-
-  /* TODO: one issue with current implementation is the following.  When a
-   * large block gets split into smaller blocks, the ability to use the KL_C2B
-   * macro goes away, since the large block could get split up such that a
-   * chunk beyond the KL_BLOCK_SIZE_ALIGNED limit is allocated, thus when
-   * KL_C2B is called it will return a memory location of something which is
-   * not a block.  To address this, large blocks are not allowed to be split.
-   * */
-  /* TODO: another issue with current implementation is the following.  When a
-   * block count gets decremented to zero, its associated memory is freed.
-   * However, nowhere does the system account for any chunks that remain in
-   * the free chunk data structure.  This is especially problematic because
-   * those chunks still in the free chunk data structure cannot be removed in
-   * place, due to the singly-linked nature of the data structure. */
 
   KL_INIT_CHECK;
 
-  /* Sanity check to make sure the containing block is somewhat valid. */
-  assert(0 != KL_B2N(block));
+  KL_PRINT("==klinfo== free chunk\n");
+  KL_PRINT("==klinfo==   chunk address: 0x%.16zx\n", (uptr)chunk);
+  KL_PRINT("==klinfo==   chunk size:    0x%.16zx (%zu)\n", *KL_C2H(chunk),
+    *KL_C2H(chunk));
+
+  /* Coalesce with previous chunk. */
+  if (!KL_ISFIRST(chunk) && !KL_INUSE(KL_A2C(chunk))) {
+    /* Remove previous chunk from free chunk data structure. */
+    if (0 != kl_bin_rm(&bin, KL_A2C(chunk)))
+      return;
+
+    /* Set chunk to point to previous chunk. */
+    chunk = KL_A2C(chunk);
+
+    /* Update chunk size. */
+    *KL_C2H(chunk) = *KL_C2H(chunk)+*KL_C2H(KL_C2A(chunk));
+  }
+
+  /* Coalesce with following chunk. */
+  if (!KL_ISLAST(chunk) && !KL_INUSE(KL_C2A(chunk))) {
+    /* Remove following chunk from free chunk data structure. */
+    if (0 != kl_bin_rm(&bin, KL_C2A(chunk)))
+      return;
+
+    /* Update chunk size. */
+    *KL_C2H(chunk) = *KL_C2H(chunk)+*KL_C2H(KL_C2A(chunk));
+  }
 
   /* TODO: Implicitly, the following rule prevents large allocations from
    * going into the free chunk data structure.  Thus, it also prevents the
    * limitation described above.  However, in many cases, it would be nice to
    * keep large allocations around for quicker allocation time. */
 
-  KL_PRINT("==klinfo== free chunk\n");
-  KL_PRINT("==klinfo==   block address: 0x%.16zx\n", (uptr)block);
-  KL_PRINT("==klinfo==   chunk address: 0x%.16zx\n", (uptr)chunk);
-  KL_PRINT("==klinfo==   chunk size:    0x%.16zx (%zu)\n", KL_C2S(chunk),
-    KL_C2S(chunk));
+  /* If chunk is the only chunk, release memory back to system. */
+  if (KL_ISFIRST(chunk) && KL_ISLAST(chunk)) {
+    /* Accounting. */
+    KL_MEM_TOTAL -= KL_BLOCK_SIZE(*KL_C2H(chunk));
 
-  /* Decrement count for containing block and release entire block if it is
-   * empty. */
-  if (0 == --KL_B2N(block)) {
-    assert(KL_ISLAST(chunk) || !KL_INUSE(KL_C2T(chunk)));
-
-    /* Remove previous chunk from free chunk data structure. */
-    if (!KL_ISFIRST(chunk) && 0 != kl_bin_rm(&bin, KL_T2C(chunk)))
-      return;
-    /* Remove following chunk from free chunk data structure. */
-    if (!KL_ISLAST(chunk) && 0 != kl_bin_rm(&bin, KL_C2T(chunk)))
-      return;
-
-    KL_PRINT("==klinfo== free block\n");
-    KL_PRINT("==klinfo==   block address: 0x%.16zx\n", (uptr)block);
-    KL_PRINT("==klinfo==   block size:    0x%.16zx (%zu)\n", KL_B2S(block),
-      KL_B2S(block));
-
-    KL_CALL_SYS_FREE(block, KL_B2S(block));
+    KL_CALL_SYS_FREE(KL_C2E(chunk), KL_BLOCK_SIZE(*KL_C2H(chunk)));
   }
-  /* Otherwise, add the chunk back into free chunk data structure. */
   else {
-    /* Coalesce with previous chunk. */
-    if (!KL_ISFIRST(chunk) && !KL_INUSE(KL_T2C(chunk))) {
-      /* Remove previous chunk from free chunk data structure. */
-      if (0 != kl_bin_rm(&bin, KL_T2C(chunk)))
-        return;
-
-      /* Set chunk to point to previous chunk. */
-      chunk = KL_T2C(chunk);
-
-      /* Update chunk size. */
-      KL_C2S(chunk) = KL_C2S(chunk) + KL_C2S(KL_C2T(chunk));
-    }
-
-    /* Coalesce with following chunk. */
-    if (!KL_ISLAST(chunk) && !KL_INUSE(KL_C2T(chunk))) {
-      /* Remove following chunk from free chunk data structure. */
-      if (0 != kl_bin_rm(&bin, KL_C2T(chunk)))
-        return;
-
-      /* Update chunk size. */
-      KL_C2S(chunk) = KL_C2S(chunk) + KL_C2S(KL_C2T(chunk));
-    }
-
     /* Set chunk as not in use. */
-    KL_C2F(chunk) = KL_C2S(chunk);
+    *KL_C2F(chunk) = *KL_C2H(chunk);
 
     /* Add chunk to free chunk data structure. */
     if (0 != kl_bin_ad(&bin, chunk))
       return;
   }
 }
-#endif
+
+
+/****************************************************************************/
+/* Print some memory statistics */
+/****************************************************************************/
+KL_EXPORT void
+klmalloc_stats(void)
+{
+  printf("Calls to system allocator = %zu\n", KL_SYS_CTR);
+  printf("Maximum concurrent memory = %zu\n", KL_MEM_MAX);
+  fflush(stdout);
+}

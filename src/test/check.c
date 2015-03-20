@@ -5,10 +5,23 @@
 #include <sys/time.h>
 #include <time.h>
 
-#include "klmalloc.h"
+/*#define SEED   1426830585*/
+/*#define SEED   1426361468*/
+#define SEED   time(NULL)
+#define USE_KL 1
 
-#define MALLOC klmalloc
-#define FREE   klfree
+#if defined(USE_KL) && USE_KL > 0
+# include "klmalloc.h"
+# define MALLOC       klmalloc
+# define FREE         klfree
+# define MALLOC_STATS klmalloc_stats
+#else
+# include <malloc.h>
+# define MALLOC       malloc
+# define FREE         free
+# define MALLOC_STATS malloc_stats
+#endif
+
 
 /* probability for each type of allocation (must sum to 100) */
 #define PER_BIG_ALLOC 5
@@ -26,26 +39,29 @@ size_t SML_ALLOC_SIZE = 1<<11; /* 1KB  */
 
 int main(void)
 {
+#if 1
   size_t i, j, k, l, sz;
+#endif
   unsigned long ta, tf, seed;
   void * buf;
   void ** alloc;
+#if 1
   struct timeval ts, te;
+#endif
 
-  seed = time(NULL);
-  seed = 1426361468;
+  seed = SEED;
   srand(seed);
 
-  fprintf(stderr, "seed:   %lu\n", seed);
+  fprintf(stderr, "seed = %lu\n", seed);
 
   ta     = 0;
   tf     = 0;
   alloc = (void **) MALLOC(NUM_ALLOCS*sizeof(void *));
   assert(NULL != alloc);
-
   buf = MALLOC(BIG_ALLOC_SIZE);
   assert(NULL != buf);
 
+#if 1
   for (i=0; i<NUM_ALLOCS; ++i) {
     j = rand()%100; /* indicator for big/med/sml alloc */
     k = rand()%100; /* indicator for free              */
@@ -98,8 +114,10 @@ int main(void)
     }
   }
 
-  fprintf(stderr, "malloc: %.2f us\n", ta*1.0/NUM_ALLOCS);
-  fprintf(stderr, "free:   %.2f us\n", tf*1.0/NUM_ALLOCS);
+  fprintf(stderr, "Time per malloc = %.2f us\n", ta*1.0/NUM_ALLOCS);
+  fprintf(stderr, "Time per free   = %.2f us\n", tf*1.0/NUM_ALLOCS);
+  MALLOC_STATS();
+#endif
 
   FREE(alloc);
   FREE(buf);
