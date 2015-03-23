@@ -39,15 +39,11 @@ size_t SML_ALLOC_SIZE = 1<<11; /* 1KB  */
 
 int main(void)
 {
-#if 1
   size_t i, j, k, l, sz;
-#endif
   unsigned long ta, tf, seed;
   void * buf;
   void ** alloc;
-#if 1
   struct timeval ts, te;
-#endif
 
   seed = SEED;
   srand(seed);
@@ -61,7 +57,6 @@ int main(void)
   buf = MALLOC(BIG_ALLOC_SIZE);
   assert(NULL != buf);
 
-#if 1
   for (i=0; i<NUM_ALLOCS; ++i) {
     j = rand()%100; /* indicator for big/med/sml alloc */
     k = rand()%100; /* indicator for free              */
@@ -117,7 +112,6 @@ int main(void)
   fprintf(stderr, "Time per malloc = %.2f us\n", ta*1.0/NUM_ALLOCS);
   fprintf(stderr, "Time per free   = %.2f us\n", tf*1.0/NUM_ALLOCS);
   MALLOC_STATS();
-#endif
 
   FREE(alloc);
   FREE(buf);

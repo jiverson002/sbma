@@ -3,10 +3,6 @@
 
 #include <stddef.h> /* size_t */
 
-struct klmallinfo {
-  size_t usmblks;
-};
-
 #ifdef __cplusplus
 extern "C"
 {

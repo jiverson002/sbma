@@ -125,20 +125,45 @@ the possibly moved allocated space.
  *  2. Allow coalescing of adjacent blocks.
  */
 
-#ifndef _POSIX_C_SOURCE
-# define _POSIX_C_SOURCE 200112L
-#elif _POSIX_C_SOURCE < 200112L
-# undef _POSIX_C_SOURCE
-# define _POSIX_C_SOURCE 200112L
+#if defined(USE_MMAP) && defined(USE_MEMALIGN)
+# undef USE_MEMALIGN
 #endif
-#include <stdlib.h> /* posix_memalign, size_t */
-#undef _POSIX_C_SOURCE
+#if defined(USE_MMAP) && defined(USE_SBMALLOC)
+# undef USE_SBMALLOC
+#endif
+#if defined(USE_MEMALIGN) && defined(USE_SBMALLOC)
+# undef USE_SBMALLOC
+#endif
+#if !defined(USE_MMAP) && !defined(USE_MEMALIGN) && !defined(USE_SBMALLOC)
+# define USE_SBMALLOC
+#endif
 
-#include <assert.h> /* assert */
-#include <limits.h> /* CHAR_BIT */
-#include <stdint.h> /* uint*_t */
-#include <stdio.h>  /* printf */
-#include <string.h> /* memset */
+#ifdef USE_MMAP
+# ifndef _BSD_SOURCE
+#   define _BSD_SOURCE
+#     include <sys/mman.h> /* mmap, munmap */
+# endif
+# undef _BSD_SOURCE
+#endif
+#ifdef USE_MEMALIGN
+# ifndef _POSIX_C_SOURCE
+#   define _POSIX_C_SOURCE 200112L
+# elif _POSIX_C_SOURCE < 200112L
+#   undef _POSIX_C_SOURCE
+#   define _POSIX_C_SOURCE 200112L
+# endif
+# include <stdlib.h>   /* posix_memalign, size_t */
+# undef _POSIX_C_SOURCE
+#endif
+#ifdef USE_SBMALLOC
+# include "sbmalloc.h"
+#endif
+
+#include <assert.h>   /* assert */
+#include <limits.h>   /* CHAR_BIT */
+#include <stdint.h>   /* uint*_t */
+#include <stdio.h>    /* printf */
+#include <string.h>   /* memset */
 
 /* This alignment should be a power of 2. */
 #ifdef MEMORY_ALLOCATION_ALIGNMENT
@@ -158,6 +183,7 @@ the possibly moved allocated space.
 # define KL_PRINT(...)
 #endif
 
+
 /****************************************************************************/
 /* Relevant type shortcuts */
 /****************************************************************************/
@@ -175,11 +201,26 @@ static size_t KL_MEM_MAX=0;
 /****************************************************************************/
 /* System memory allocation related macros */
 /****************************************************************************/
-#define KL_SYS_ALLOC_FAIL      NULL
-#define KL_CALL_SYS_ALLOC(P,S) \
+#ifdef USE_MMAP
+# define KL_SYS_ALLOC_FAIL      MAP_FAILED
+# define KL_CALL_SYS_ALLOC(P,S) \
+  ((P)=mmap(NULL, S, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0))
+# define KL_CALL_SYS_FREE(P,S)  munmap(P,S)
+# define KL_CALL_SYS_BZERO(P,S)
+#endif
+#ifdef USE_MEMALIGN
+# define KL_SYS_ALLOC_FAIL      NULL
+# define KL_CALL_SYS_ALLOC(P,S) \
   (0 == posix_memalign(&(P),KL_MEMORY_ALLOCATION_ALIGNMENT,S) ? (P) : NULL)
-#define KL_CALL_SYS_BZERO(P,S) memset(P, 0, S)
-#define KL_CALL_SYS_FREE(P,S)  free(P)
+# define KL_CALL_SYS_FREE(P,S)  free(P)
+# define KL_CALL_SYS_BZERO(P,S) memset(P, 0, S)
+#endif
+#ifdef USE_SBMALLOC
+# define KL_SYS_ALLOC_FAIL      NULL
+# define KL_CALL_SYS_ALLOC(P,S) ((P)=sb_malloc(S))
+# define KL_CALL_SYS_FREE(P,S)  sb_free(P)
+# define KL_CALL_SYS_BZERO(P,S)
+#endif
 
 
 /****************************************************************************/

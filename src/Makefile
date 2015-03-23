@@ -33,13 +33,21 @@ config_libdir=/usr/local/lib
 config_build=debug
 config_profile=no
 config_pthread=no
+config_openmp=no
+config_mmap=no
+config_memalign=no
+config_sbmalloc=yes
 
 # Compiler flags
 CFLAGS_debug       = -O0 -g -Wall -Wextra -pedantic
 CFLAGS_release     = -O3 -DNDEBUG -Wall -Wextra -pedantic
 CFLAGS_releaseinfo = -O2 -g -Wall -Wextra -pedantic
-PTHREAD_yes        = -DUSE_PTHREAD -pthread
 PROFILE_yes        = -DUSE_PROFILE -pg
+PTHREAD_yes        = -DUSE_PTHREAD -pthread
+OPENMP_yes         = -DUSE_OPENMP -fopenmp
+MMAP_yes           = -DUSE_MMAP
+MEMALIGN_yes       = -DUSE_MEMALIGN
+SBMALLOC_yes       = -DUSE_SBMALLOC
 #}}}1
 
 
@@ -53,14 +61,18 @@ PROFILE_yes        = -DUSE_PROFILE -pg
 #----------------------------------------------------------------------------#
 #{{{1
 # Default config target parameters
-CC           = c99
-prefix       = /usr/local
-exec_prefix  = $(prefix)
-includedir   = $(prefix)/include
-libdir       = $(exec_prefix)/lib
-build        = debug
-with-profile = no
-with-pthread = no
+CC            = c99
+prefix        = /usr/local
+exec_prefix   = $(prefix)
+includedir    = $(prefix)/include
+libdir        = $(exec_prefix)/lib
+build         = debug
+with-profile  = no
+with-pthread  = no
+with-openmp   = no
+with-mmap     = no
+with-memalign = no
+with-sbmalloc = no
 
 # Library information
 LIB = libklmalloc.a
@@ -68,9 +80,12 @@ LIB = libklmalloc.a
 # Set up commands and flags
 CFLAGS  = $(CFLAGS_$(config_build)) $(PROFILE_$(config_profile))        \
           -DVERSION="$(VERSION)" -DDATE="$(DATE)" -DCOMMIT="$(COMMIT)"  \
-          $(PTHREAD_$(config_pthread))
-LDFLAGS = -I. $(PROFILE_$(config_profile)) $(PTHREAD_$(config_pthread))
-LDLIBS  = ./$(LIB)
+          $(PTHREAD_$(config_pthread)) $(OPENMP_$(config_openmp))       \
+          $(MMAP_$(config_mmap)) $(MEMALIGN_$(config_memalign))         \
+          $(SBMALLOC_$(config_sbmalloc))
+LDFLAGS = -I. $(PROFILE_$(config_profile)) $(PTHREAD_$(config_pthread)) \
+          $(OPENMP_$(config_openmp))
+LDLIBS  = ./$(LIB) -ldl
 
 # Up-to-date file -- whenever a prerequisite of this file changes, any target
 # of which this file is a prerequisite will be forced to update.  This is done
@@ -87,15 +102,17 @@ UTD = .UTD
 	$(config_CC) -c $(CFLAGS) $<
 	$(AR) $(ARFLAGS) $@ $*.o
 
-$(LIB): $(UTD) $(LIB)(klmalloc.o)
+#$(LIB): $(UTD) $(LIB)(sbmalloc.o) $(LIB)(klmalloc.o) $(LIB)(klhooks.o)
+$(LIB): $(UTD) $(LIB)(sbmalloc.o) $(LIB)(klmalloc.o)
 	$(RANLIB) $@
-	$(RM) klmalloc.o
+	$(RM) sbmalloc.o klmalloc.o
+#	$(RM) sbmalloc.o klmalloc.o klhooks.o
 
 test/check: $(UTD) $(LIB) test/check.c
 	$(config_CC) $(CFLAGS_$(config_build)) $(LDFLAGS) -o $@ $@.c $(LDLIBS)
-	@$@
+#	@$@
 
-$(UTD): klmalloc.h Makefile
+$(UTD): sbconfig.h sbmalloc.h klmalloc.h Makefile
 	@$(RM) $(LIB) test/check
 	@$(TOUCH) $(UTD)
 #}}}1
@@ -113,6 +130,10 @@ config:
            -e 's|^config_build=.*$$|config_build=$(build)|' \
            -e 's|^config_profile=.*$$|config_profile=$(with-profile)|' \
            -e 's|^config_pthread=.*$$|config_pthread=$(with-pthread)|' \
+           -e 's|^config_openmp=.*$$|config_openmp=$(with-openmp)|' \
+           -e 's|^config_mmap=.*$$|config_mmap=$(with-mmap)|' \
+           -e 's|^config_memalign=.*$$|config_memalign=$(with-memalign)|' \
+           -e 's|^config_sbmalloc=.*$$|config_sbmalloc=$(with-sbmalloc)|' \
     Makefile
 	$(MAKE) -s show
 
@@ -126,7 +147,9 @@ show:
 	$(ECHO) "KLMalloc v$(VERSION) configured with: make config \
 CC=$(CC) prefix=$(config_prefix) exec_prefix=$(config_exec_prefix) \
 includedir=$(config_includedir) libdir=$(libdir) build=$(build) \
-with-profile=$(config_profile) with-pthread=$(config_pthread)"
+with-profile=$(config_profile) with-pthread=$(config_pthread) \
+with-openmp=$(config_openmp) with-mmap=$(config_mmap) \
+with-memalign=$(config_memalign) with-sbmalloc=$(config_sbmalloc)"
 
 clean:
 	$(RM) $(LIB) test/check $(UTD)
@@ -155,6 +178,10 @@ help:
 	$(ECHO) "... build=[debug|release|releaseinfo]"
 	$(ECHO) "... with-profile=[no|yes]"
 	$(ECHO) "... with-pthread=[no|yes]"
+	$(ECHO) "... with-openmp=[no|yes]"
+	$(ECHO) "... with-mmap=[no|yes]"
+	$(ECHO) "... with-memalign=[no|yes]"
+	$(ECHO) "... with-sbmalloc=[no|yes]"
 #}}}1
 
 
