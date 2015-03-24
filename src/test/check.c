@@ -7,6 +7,7 @@
 
 /*#define SEED   1426830585*/
 /*#define SEED   1426361468*/
+/*#define SEED   1427208060*/
 #define SEED   time(NULL)
 #define USE_KL 1
 
@@ -31,18 +32,19 @@
 /* probability to free a previous allocation */
 #define PER_FREE      30
 
-/*size_t NUM_ALLOCS     = 1<<17;*/
-size_t NUM_ALLOCS     = 1<<12;
+size_t NUM_ALLOCS     = 1<<17;
+/*size_t NUM_ALLOCS     = 1<<12;*/
 size_t BIG_ALLOC_SIZE = 1<<25; /* 16MB */
 size_t MED_ALLOC_SIZE = 1<<16; /* 32KB */
 size_t SML_ALLOC_SIZE = 1<<11; /* 1KB  */
 
 int main(void)
 {
-  size_t i, j, k, l, sz;
+  size_t i, j, k, l, sz, cur_req=0, max_req=0;
   unsigned long ta, tf, seed;
   void * buf;
   void ** alloc;
+  size_t * size;
   struct timeval ts, te;
 
   seed = SEED;
@@ -54,6 +56,8 @@ int main(void)
   tf     = 0;
   alloc = (void **) MALLOC(NUM_ALLOCS*sizeof(void *));
   assert(NULL != alloc);
+  size = (size_t *) MALLOC(NUM_ALLOCS*sizeof(size_t));
+  assert(NULL != size);
   buf = MALLOC(BIG_ALLOC_SIZE);
   assert(NULL != buf);
 
@@ -75,6 +79,11 @@ int main(void)
     ta += (te.tv_sec-ts.tv_sec)*1000000 + te.tv_usec-ts.tv_usec;
     assert(NULL != alloc[i]);
 
+    size[i] = sz;
+    cur_req += sz;
+    if (cur_req > max_req)
+      max_req = cur_req;
+
     /* make sure we can read from allocated memory */
     memcpy(buf, alloc[i], sz);
     assert(0 == memcmp(buf, alloc[i], sz));
@@ -94,6 +103,8 @@ int main(void)
         tf += (te.tv_sec-ts.tv_sec)*1000000 + te.tv_usec-ts.tv_usec;
 
         alloc[l] = NULL;
+
+        cur_req -= size[l];
       }
     }
   }
@@ -106,12 +117,14 @@ int main(void)
       gettimeofday(&te, NULL);
       tf += (te.tv_sec-ts.tv_sec)*1000000 + te.tv_usec-ts.tv_usec;
       alloc[i] = NULL;
+      cur_req -= size[i];
     }
   }
 
   fprintf(stderr, "Time per malloc = %.2f us\n", ta*1.0/NUM_ALLOCS);
   fprintf(stderr, "Time per free   = %.2f us\n", tf*1.0/NUM_ALLOCS);
   MALLOC_STATS();
+  fprintf(stderr, "Maximum concurrent request = %zu\n", max_req);
 
   FREE(alloc);
   FREE(buf);
