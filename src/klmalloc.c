@@ -166,7 +166,7 @@ the possibly moved allocated space.
 #include <stdio.h>    /* printf */
 #include <string.h>   /* memset */
 
-/* This alignment should be a power of 2. */
+/* This alignment should be a power of 2 >= sizeof(size_t). */
 #ifdef MEMORY_ALLOCATION_ALIGNMENT
 # define KL_MEMORY_ALLOCATION_ALIGNMENT MEMORY_ALLOCATION_ALIGNMENT
 #else
