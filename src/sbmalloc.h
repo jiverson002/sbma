@@ -1,5 +1,5 @@
-#ifndef __SBMALLSB_H__
-#define __SBMALLSB_H__ 1
+#ifndef __SBMALLOC_H__
+#define __SBMALLOC_H__ 1
 
 
 #include <stddef.h> /* size_t */

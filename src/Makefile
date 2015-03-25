@@ -102,18 +102,26 @@ UTD = .UTD
 	$(config_CC) -c $(CFLAGS) $<
 	$(AR) $(ARFLAGS) $@ $*.o
 
-#$(LIB): $(UTD) $(LIB)(sbsys.o) $(LIB)(sbmalloc.o) $(LIB)(sbhooks.o)
-$(LIB): $(UTD) $(LIB)(sbsys.o) $(LIB)(sbmalloc.o)
+#$(LIB): $(UTD) $(LIB)(sbsys.o) $(LIB)(sbmalloc.o)
+$(LIB): $(UTD) $(LIB)(sbsys.o) $(LIB)(sbmalloc.o) $(LIB)(sbhooks.o)
 	$(RANLIB) $@
-	$(RM) sbsys.o sbmalloc.o
-#	$(RM) sbsys.o sbmalloc.o sbhooks.o
+	$(RM) sbsys.o sbmalloc.o sbhooks.o
+#	$(RM) sbsys.o sbmalloc.o
 
 test/check: $(UTD) $(LIB) test/check.c
 	$(config_CC) $(CFLAGS_$(config_build)) $(LDFLAGS) -o $@ $@.c $(LDLIBS)
 #	@$@
 
+test/check2: $(UTD) $(LIB) test/check2.c
+	$(config_CC) $(CFLAGS_$(config_build)) $(LDFLAGS) -o $@ $@.c $(LDLIBS)
+#	@$@
+
+test/check3: $(UTD) $(LIB) test/check3.c
+	$(config_CC) $(CFLAGS_$(config_build)) $(LDFLAGS) -o $@ $@.c $(LDLIBS)
+#	@$@
+
 $(UTD): sbconfig.h sbmalloc.h Makefile
-	@$(RM) $(LIB) test/check
+	@$(RM) $(LIB) test/check test/check2 test/check3
 	@$(TOUCH) $(UTD)
 #}}}1
 
@@ -152,12 +160,14 @@ with-openmp=$(config_openmp) with-mmap=$(config_mmap) \
 with-memalign=$(config_memalign) with-sbmalloc=$(config_sbmalloc)"
 
 clean:
-	$(RM) $(LIB) test/check $(UTD)
+	$(RM) $(LIB) test/check test/check2 test/check3 $(UTD)
 
 help:
 	$(ECHO) "The following are valid targets for this Makefile:"
 	$(ECHO) "... $(LIB) (the default if no target is provided)"
 	$(ECHO) "... test/check"
+	$(ECHO) "... test/check2"
+	$(ECHO) "... test/check3"
 	$(ECHO) "... config"
 	$(ECHO) "... dist (non-portable)"
 	$(ECHO) "... install"

@@ -149,6 +149,17 @@ static char sb_dbg_str[SBDBG_NUM][100]=
 };
 
 
+/****************************************************************************/
+/* memory and function pointer for sb_internal_calloc */
+/****************************************************************************/
+static int libc_calloc_init=0;
+static void *(*libc_calloc)(size_t, size_t)=NULL;
+#ifdef USE_PTHREAD
+static char sb_internal_calloc_mem[1024*1024]={0};
+static char * sb_internal_calloc_ptr=sb_internal_calloc_mem;
+#endif
+
+
 /*--------------------------------------------------------------------------*/
 
 
@@ -170,6 +181,28 @@ sb_internal_abort(char const * const file, int const line, int const flag)
   kill(getpid(), SIGKILL);
   exit(EXIT_FAILURE);
 }
+
+
+#ifdef USE_PTHREAD
+/****************************************************************************/
+/*! Temporary calloc function to be used only for dlsym.  After the
+ *  libc_calloc is populated using dlsym, this function will never be called
+ *  again. */
+/****************************************************************************/
+static void *
+sb_internal_calloc(size_t const num, size_t const size)
+{
+  char * nptr=NULL;
+
+  if (sb_internal_calloc_ptr+(num*size) <= sb_internal_calloc_mem+(1024*1024)) {
+    nptr = sb_internal_calloc_ptr;
+    memset(nptr, 0, num*size);
+    sb_internal_calloc_ptr += (num*size);
+  }
+
+  return nptr;
+}
+#endif
 
 
 /****************************************************************************/
@@ -555,10 +588,6 @@ sb_internal_handler(int const sig, siginfo_t * const si, void * const ctx)
 
   if (!(SBISSET(sb_alloc->pflags[ip], SBPAGE_SYNC))) {
     if (0 == sb_opts[SBOPT_LAZYREAD]) {
-      //printf("sig %zx (%zu/%zu)\n", addr, sb_alloc->ld_pages,
-      //  sb_alloc->npages);
-      //fflush(stdout);
-
       sb_internal_acct(SBACCT_CHARGE,
         SB_TO_SYS(sb_alloc->npages-sb_alloc->ld_pages,
         sb_info.pagesize));
@@ -1066,6 +1095,24 @@ SB_sysalloc(size_t const len)
   char * fname=NULL, * pflags=NULL;
   struct sb_alloc * sb_alloc=NULL;
 
+  /**************************************************************************/
+  /* special case when call comes from dlsym. */
+  /**************************************************************************/
+  if (0 == libc_calloc_init) {
+    libc_calloc_init = 1;
+    *((void **) &libc_calloc) = dlsym(RTLD_NEXT, "calloc");
+  }
+#ifdef USE_PTHREAD
+  /* the linux systems are very sensative and obnoxious when it comes to the
+   * useage of dlsym.  it seems that when compiled with -pthread, a version of
+   * dlsym which uses calloc is called, but when compiled without, this second
+   * case is not necessary. */
+  else if (1 == libc_calloc_init) {
+    libc_calloc_init = 2;
+    return sb_internal_calloc(1, len);
+  }
+#endif
+
   SB_INIT_CHECK
 
   /* shortcut */
@@ -1171,6 +1218,14 @@ SB_sysfree(void * const addr)
   struct sb_alloc * sb_alloc=NULL, * psb_alloc=NULL;
 
   SB_INIT_CHECK
+
+#ifdef USE_PTHREAD
+  /* skip __calloc allocations */
+  if ((char*)addr >= sb_internal_calloc_mem &&
+    (char*)addr < sb_internal_calloc_mem+1024*1024) {
+    return;
+  }
+#endif
 
   SB_GET_LOCK(&(sb_info.lock));
   for (sb_alloc=sb_info.head; NULL!=sb_alloc; sb_alloc=sb_alloc->next) {

@@ -574,7 +574,6 @@ static inline int SB_INUSE(void * const chunk)
 #define SBLOG2(V) (sizeof(size_t)*CHAR_BIT-1-sb_clz(V))
 
 
-
 /****************************************************************************/
 /* Lookup tables to convert between size and brick_bin number */
 /****************************************************************************/
@@ -796,12 +795,12 @@ static size_t bin2size[SBSMALLCHUNKBIN]=
 
 /****************************************************************************/
 /****************************************************************************/
-/* Free chunk data structure API */
+/* Free memory data structure API */
 /****************************************************************************/
 /****************************************************************************/
 
 /****************************************************************************/
-/* Free chunk data structure node */
+/* Free brick data structure node */
 /****************************************************************************/
 typedef struct sb_brick_bin_node
 {
@@ -820,7 +819,7 @@ typedef struct sb_chunk_bin_node
 
 
 /****************************************************************************/
-/* Free chunk data structure */
+/* Free memory data structure */
 /****************************************************************************/
 typedef struct sb_mem
 {
@@ -1117,7 +1116,7 @@ sb_chunk_bin_find(sb_mem_t * const mem, size_t const size)
 /****************************************************************************/
 
 /****************************************************************************/
-/* Free brick/chunk data structure */
+/* Free memory data structure */
 /****************************************************************************/
 static sb_mem_t mem={.init=0};
 
@@ -1294,6 +1293,8 @@ SB_malloc(size_t const size)
 #ifdef WITH_BRICK
   }
 #endif
+
+  assert(NULL != ptr);
 
   /* Sanity check: returned pointer is properly aligned. */
   assert(0 == ((uptr)ptr&(SB_MEMORY_ALLOCATION_ALIGNMENT-1)));

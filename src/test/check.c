@@ -9,7 +9,7 @@
 /*#define SEED   1426361468*/
 /*#define SEED   1427208060*/
 #define SEED   time(NULL)
-#define USE_SB 1
+#define USE_SB 0
 
 #if defined(USE_SB) && USE_SB > 0
 # include "sbmalloc.h"
