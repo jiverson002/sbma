@@ -35,8 +35,8 @@ config_profile=no
 config_pthread=no
 config_openmp=no
 config_mmap=no
-config_memalign=no
-config_sbmalloc=yes
+config_memalign=yes
+config_sbmalloc=no
 
 # Compiler flags
 CFLAGS_debug       = -O0 -g -Wall -Wextra -pedantic

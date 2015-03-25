@@ -127,6 +127,7 @@ int main(void)
   fprintf(stderr, "Maximum concurrent request = %zu\n", max_req);
 
   FREE(alloc);
+  FREE(size);
   FREE(buf);
 
   return EXIT_SUCCESS;
