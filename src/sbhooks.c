@@ -76,7 +76,7 @@ malloc(size_t const len)
 {
   HOOK_INIT(malloc);
 
-  return sb_malloc(len);
+  return SB_malloc(len);
 }
 
 
@@ -88,7 +88,10 @@ calloc(size_t const num, size_t const size)
 {
   HOOK_INIT(calloc);
 
-  return sb_calloc(num, size);
+  if (&__calloc == libc_calloc)
+    return libc_calloc(num, size);
+
+  return SB_calloc(num, size);
 }
 
 
@@ -103,7 +106,7 @@ realloc(void * const ptr, size_t const len)
   if (NULL == ptr)
     return malloc(len);
 
-  return sb_realloc(ptr, len);
+  return SB_realloc(ptr, len);
 }
 
 
@@ -122,7 +125,17 @@ free(void * const ptr)
   if ((char*)ptr >= __calloc_mem && (char*)ptr < __calloc_mem+1024*1024)
     return;
 
-  sb_free(ptr);
+  SB_free(ptr);
+}
+
+
+/*************************************************************************/
+/*! Hook: malloc_stats */
+/*************************************************************************/
+extern void
+malloc_stats(void)
+{
+  SB_malloc_stats();
 }
 
 
@@ -134,8 +147,8 @@ read(int const fd, void * const buf, size_t const count)
 {
   HOOK_INIT(read);
 
-  /* sb_load(buf, count, SBPAGE_DIRTY should work here, but it is not */
-  if (1 == sb_exists(buf))
+  /* SB_load(buf, count, SBPAGE_DIRTY should work here, but it is not */
+  if (1 == SB_exists(buf))
     memset(buf, 0, count);
 
   return libc_read(fd, buf, count);
@@ -150,7 +163,7 @@ write(int const fd, void const * const buf, size_t const count)
 {
   HOOK_INIT(write);
 
-  sb_load(buf, count, SBPAGE_SYNC);
+  SB_load(buf, count, SBPAGE_SYNC);
 
   return libc_write(fd, buf, count);
 }
@@ -165,7 +178,7 @@ fread(void * const buf, size_t const size, size_t const num,
 {
   HOOK_INIT(fread);
 
-  (void)sb_load(buf, size*num, SBPAGE_DIRTY);
+  (void)SB_load(buf, size*num, SBPAGE_DIRTY);
 
   return libc_fread(buf, size, num, stream);
 }
@@ -180,7 +193,7 @@ fwrite(void const * const buf, size_t const size, size_t const num,
 {
   HOOK_INIT(fwrite);
 
-  (void)sb_load(buf, SIZE_MAX, SBPAGE_SYNC);
+  (void)SB_load(buf, SIZE_MAX, SBPAGE_SYNC);
 
   return libc_fwrite(buf, size, num, stream);
 }
@@ -194,7 +207,7 @@ mlock(void const * const addr, size_t const len)
 {
   HOOK_INIT(mlock);
 
-  (void)sb_load(addr, SIZE_MAX, SBPAGE_SYNC);
+  (void)SB_load(addr, SIZE_MAX, SBPAGE_SYNC);
 
   return libc_mlock(addr, len);
 }
@@ -220,7 +233,7 @@ mlockall(int flags)
 {
   HOOK_INIT(mlockall);
 
-  sb_loadall(SBPAGE_SYNC);
+  SB_loadall(SBPAGE_SYNC);
 
   return libc_mlockall(flags);
 }
@@ -246,8 +259,8 @@ msync(void * const addr, size_t const len, int const flags)
 {
   HOOK_INIT(msync);
 
-  if (0 == sb_exists(addr))
+  if (0 == SB_exists(addr))
     return libc_msync(addr, len, flags);
   else
-    return sb_sync(addr, len);
+    return SB_sync(addr, len);
 }

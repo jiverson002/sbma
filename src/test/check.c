@@ -9,13 +9,13 @@
 /*#define SEED   1426361468*/
 /*#define SEED   1427208060*/
 #define SEED   time(NULL)
-#define USE_KL 1
+#define USE_SB 1
 
-#if defined(USE_KL) && USE_KL > 0
-# include "klmalloc.h"
-# define MALLOC       klmalloc
-# define FREE         klfree
-# define MALLOC_STATS klmalloc_stats
+#if defined(USE_SB) && USE_SB > 0
+# include "sbmalloc.h"
+# define MALLOC       SB_malloc
+# define FREE         SB_free
+# define MALLOC_STATS SB_malloc_stats
 #else
 # include <malloc.h>
 # define MALLOC       malloc

@@ -56,24 +56,28 @@ enum sb_states
 extern "C" {
 #endif
 
-int    sb_mallopt(int const param, int const value);
-int    sb_mallget(int const param);
-int    sb_fstem(char const * const fstem);
-int    sb_acct(void (*acct_charge_cb)(size_t), void (*acct_discharge_cb)(size_t));
+int SB_mallopt(int const param, int const value);
+int SB_mallget(int const param);
+int SB_fstem(char const * const fstem);
+int SB_acct(void (*acct_charge_cb)(size_t), void (*acct_discharge_cb)(size_t));
 
-int    sb_exists(void const * const addr);
+int SB_exists(void const * const addr);
 
-size_t sb_sync(void const * const addr, size_t len);
-size_t sb_syncall(void);
-size_t sb_load(void const * const addr, size_t len, int const state);
-size_t sb_loadall(int const state);
-size_t sb_dump(void const * const addr, size_t len);
-size_t sb_dumpall(void);
+size_t SB_sync(void const * const addr, size_t len);
+size_t SB_syncall(void);
+size_t SB_load(void const * const addr, size_t len, int const state);
+size_t SB_loadall(int const state);
+size_t SB_dump(void const * const addr, size_t len);
+size_t SB_dumpall(void);
 
-void * sb_malloc(size_t const len);
-void * sb_calloc(size_t const num, size_t const size);
-void * sb_realloc(void * const addr, size_t const len);
-void   sb_free(void * const addr);
+void * SB_sysalloc(size_t const len);
+void   SB_sysfree(void * const addr);
+
+void * SB_malloc(size_t const len);
+void * SB_calloc(size_t const num, size_t const size);
+void * SB_realloc(void * const addr, size_t const len);
+void   SB_free(void * const addr);
+void   SB_malloc_stats(void);
 
 #ifdef __cplusplus
 }

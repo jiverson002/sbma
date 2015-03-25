@@ -35,7 +35,7 @@ config_profile=no
 config_pthread=no
 config_openmp=no
 config_mmap=no
-config_memalign=yes
+config_memalign=no
 config_sbmalloc=no
 
 # Compiler flags
@@ -102,17 +102,17 @@ UTD = .UTD
 	$(config_CC) -c $(CFLAGS) $<
 	$(AR) $(ARFLAGS) $@ $*.o
 
-#$(LIB): $(UTD) $(LIB)(sbmalloc.o) $(LIB)(klmalloc.o) $(LIB)(klhooks.o)
-$(LIB): $(UTD) $(LIB)(sbmalloc.o) $(LIB)(klmalloc.o)
+#$(LIB): $(UTD) $(LIB)(sbsys.o) $(LIB)(sbmalloc.o) $(LIB)(sbhooks.o)
+$(LIB): $(UTD) $(LIB)(sbsys.o) $(LIB)(sbmalloc.o)
 	$(RANLIB) $@
-	$(RM) sbmalloc.o klmalloc.o
-#	$(RM) sbmalloc.o klmalloc.o klhooks.o
+	$(RM) sbsys.o sbmalloc.o
+#	$(RM) sbsys.o sbmalloc.o sbhooks.o
 
 test/check: $(UTD) $(LIB) test/check.c
 	$(config_CC) $(CFLAGS_$(config_build)) $(LDFLAGS) -o $@ $@.c $(LDLIBS)
 #	@$@
 
-$(UTD): sbconfig.h sbmalloc.h klmalloc.h Makefile
+$(UTD): sbconfig.h sbmalloc.h Makefile
 	@$(RM) $(LIB) test/check
 	@$(TOUCH) $(UTD)
 #}}}1
