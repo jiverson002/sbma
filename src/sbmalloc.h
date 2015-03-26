@@ -70,14 +70,8 @@ size_t SB_loadall(int const state);
 size_t SB_dump(void const * const addr, size_t len);
 size_t SB_dumpall(void);
 
-void * SB_sysalloc(size_t const len);
-void   SB_sysfree(void * const addr);
-
 void * SB_malloc(size_t const len);
-void * SB_calloc(size_t const num, size_t const size);
-void * SB_realloc(void * const addr, size_t const len);
 void   SB_free(void * const addr);
-void   SB_malloc_stats(void);
 
 #ifdef __cplusplus
 }

@@ -9,6 +9,7 @@
 #include <string.h> /* memset */
 #include <unistd.h> /* ssize_t */
 
+#include "klmalloc.h"
 #include "sbmalloc.h"
 
 
@@ -28,7 +29,7 @@ do {                                                                        \
 extern void *
 malloc(size_t const len)
 {
-  return SB_malloc(len);
+  return KL_malloc(len);
 }
 
 
@@ -38,7 +39,7 @@ malloc(size_t const len)
 extern void *
 calloc(size_t const num, size_t const size)
 {
-  return SB_calloc(num, size);
+  return KL_calloc(num, size);
 }
 
 
@@ -51,7 +52,7 @@ realloc(void * const ptr, size_t const len)
   if (NULL == ptr)
     return malloc(len);
 
-  return SB_realloc(ptr, len);
+  return KL_realloc(ptr, len);
 }
 
 
@@ -64,7 +65,7 @@ free(void * const ptr)
   if (NULL == ptr)
     return;
 
-  SB_free(ptr);
+  KL_free(ptr);
 }
 
 
@@ -74,7 +75,7 @@ free(void * const ptr)
 extern void
 malloc_stats(void)
 {
-  SB_malloc_stats();
+  KL_malloc_stats();
 }
 
 

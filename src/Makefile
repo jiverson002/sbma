@@ -102,11 +102,11 @@ UTD = .UTD
 	$(config_CC) -c $(CFLAGS) $<
 	$(AR) $(ARFLAGS) $@ $*.o
 
-#$(LIB): $(UTD) $(LIB)(sbsys.o) $(LIB)(sbmalloc.o)
-$(LIB): $(UTD) $(LIB)(sbsys.o) $(LIB)(sbmalloc.o) $(LIB)(sbhooks.o)
+#$(LIB): $(UTD) $(LIB)(sbmalloc.o) $(LIB)(klmalloc.o)
+$(LIB): $(UTD) $(LIB)(sbmalloc.o) $(LIB)(klmalloc.o) $(LIB)(hooks.o)
 	$(RANLIB) $@
-	$(RM) sbsys.o sbmalloc.o sbhooks.o
-#	$(RM) sbsys.o sbmalloc.o
+	$(RM) sbmalloc.o klmalloc.o hooks.o
+#	$(RM) sbmalloc.o klmalloc.o
 
 test/check: $(UTD) $(LIB) test/check.c
 	$(config_CC) $(CFLAGS_$(config_build)) $(LDFLAGS) -o $@ $@.c $(LDLIBS)
@@ -120,7 +120,7 @@ test/check3: $(UTD) $(LIB) test/check3.c
 	$(config_CC) $(CFLAGS_$(config_build)) $(LDFLAGS) -o $@ $@.c $(LDLIBS)
 #	@$@
 
-$(UTD): sbconfig.h sbmalloc.h Makefile
+$(UTD): sbconfig.h sbmalloc.h klmalloc.h Makefile
 	@$(RM) $(LIB) test/check test/check2 test/check3
 	@$(TOUCH) $(UTD)
 #}}}1
