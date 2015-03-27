@@ -48,7 +48,8 @@ enum sb_states
 {
   SBPAGE_SYNC   = 1,
   SBPAGE_DIRTY  = 2,
-  SBPAGE_ONDISK = 4
+  SBPAGE_DUMP   = 4,
+  SBPAGE_ONDISK = 8
 };
 
 

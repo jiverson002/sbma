@@ -47,6 +47,7 @@ struct sb_alloc
   size_t len;             /* number of bytes allocated */
   size_t npages;          /* number of pages allocated */
   size_t ld_pages;        /* number of loaded pages */
+  size_t ch_pages;        /* number of charged pages */
 
   char * pflags;          /* per-page flags vector */
 
@@ -364,6 +365,11 @@ sb_internal_load_range(struct sb_alloc * const sb_alloc,
     SBMPROTECT(app_addr+(ip_beg*psize), (ip_end-ip_beg)*psize, PROT_READ);
 
     for (ip=ip_beg; ip<ip_end; ++ip) {
+      if (SBISSET(pflags[ip], SBPAGE_DUMP)) {
+        /* - DUMP flag */
+        pflags[ip] &= ~SBPAGE_DUMP;
+      }
+
       /* count unloaded pages */
       if (!SBISSET(pflags[ip], SBPAGE_DIRTY) &&
           !SBISSET(pflags[ip], SBPAGE_SYNC)) {
@@ -390,8 +396,8 @@ sb_internal_load_range(struct sb_alloc * const sb_alloc,
         sb_alloc->ld_pages++;
       }
 
-      /* - SYNC/ONDISK flag */
-      pflags[ip] &= ~(SBPAGE_SYNC|SBPAGE_ONDISK);
+      /* - SYNC/DUMP/ONDISK flag */
+      pflags[ip] &= ~(SBPAGE_SYNC|SBPAGE_DUMP|SBPAGE_ONDISK);
       /* + DIRTY flag */
       pflags[ip] |= SBPAGE_DIRTY;
     }
@@ -483,6 +489,11 @@ sb_internal_sync_range(struct sb_alloc * const sb_alloc,
   }
 
   for (ip=ip_beg; ip<ip_end; ++ip) {
+    if (SBISSET(pflags[ip], SBPAGE_DUMP)) {
+      /* - DUMP flag */
+      pflags[ip] &= ~(SBPAGE_DUMP);
+    }
+
     /* count loaded pages */
     if (SBISSET(pflags[ip], SBPAGE_SYNC) ||
         SBISSET(pflags[ip], SBPAGE_DIRTY)) {
@@ -536,6 +547,8 @@ sb_internal_dump_range(struct sb_alloc * const sb_alloc,
 
     /* - SYNC/DIRTY/ONDISK flag */
     sb_alloc->pflags[ip] &= ~(SBPAGE_SYNC|SBPAGE_DIRTY|SBPAGE_ONDISK);
+    /* + DUMP flag */
+    sb_alloc->pflags[ip] |= SBPAGE_DUMP;
   }
 
   /* convert to system pages */
@@ -600,6 +613,7 @@ sb_internal_handler(int const sig, siginfo_t * const si, void * const ctx)
       sb_internal_acct(SBACCT_CHARGE,
         SB_TO_SYS(sb_alloc->npages-sb_alloc->ld_pages,
         sb_info.pagesize));
+      sb_alloc->ch_pages += sb_alloc->npages-sb_alloc->ld_pages;
 
       num = sb_internal_load_range(sb_alloc, 0, sb_alloc->npages,
         SBPAGE_SYNC);
@@ -607,14 +621,22 @@ sb_internal_handler(int const sig, siginfo_t * const si, void * const ctx)
     else {
       /* having this means that sb_info.acct_charge_cb is invoked for every
        * read fault. this needs to be fixed. */
+#if 0
       sb_internal_acct(SBACCT_CHARGE, SB_TO_SYS(1, sb_info.pagesize));
+#else
       /* temporary fix - not working */
-      //if (0 == sb_alloc->ld_pages)
-      //  sb_internal_acct(SBACCT_CHARGE, SB_TO_SYS(sb_alloc->npages,
-      //    sb_info.pagesize));
-      //else if (SBISSET(sb_alloc->pflags[ip], SBPAGE_DUMP))
-      //  sb_internal_acct(SBACCT_CHARGE, SB_TO_SYS(1, sb_info.pagesize));
+      if (0 == sb_alloc->ld_pages) {
+        sb_internal_acct(SBACCT_CHARGE, SB_TO_SYS(sb_alloc->npages,
+          sb_info.pagesize));
+        sb_alloc->ch_pages += sb_alloc->npages;
+      }
+      else if (SBISSET(sb_alloc->pflags[ip], SBPAGE_DUMP)) {
+        sb_internal_acct(SBACCT_CHARGE, SB_TO_SYS(1, sb_info.pagesize));
+        sb_alloc->ch_pages++;
+      }
+#endif
 
+      /* charging all pages, but loading only 1. */
       num = sb_internal_load_range(sb_alloc, ip, 1, SBPAGE_SYNC);
     }
 
@@ -889,6 +911,9 @@ SB_sync(void const * const addr, size_t len)
   num      = sb_internal_sync_range(sb_alloc, ipfirst, ipend-ipfirst);
   ld_pages = ld_pages-sb_alloc->ld_pages;
 
+  /* discharge */
+  sb_alloc->ch_pages -= ld_pages;
+
   /* convert to system pages */
   ld_pages = SB_TO_SYS(ld_pages, psize);
 
@@ -915,6 +940,8 @@ SB_syncall(void)
   SB_GET_LOCK(&(sb_info.lock));
   for (sb_alloc=sb_info.head; NULL!=sb_alloc; sb_alloc=sb_alloc->next) {
     SB_GET_LOCK(&(sb_alloc->lock));
+    sb_alloc->ch_pages -= sb_alloc->ld_pages;
+    sb_assert(0 == sb_alloc->ch_pages);
     ld_pages += sb_alloc->ld_pages;
     num      += sb_internal_sync_range(sb_alloc, 0, sb_alloc->npages);
     sb_assert(0 == sb_alloc->ld_pages);
@@ -979,6 +1006,9 @@ SB_load(void const * const addr, size_t len, int const state)
   num      = sb_internal_load_range(sb_alloc, ipfirst, ipend-ipfirst, state);
   ld_pages = sb_alloc->ld_pages-ld_pages;
 
+  /* charge */
+  sb_alloc->ch_pages += ld_pages;
+
   /* convert to system pages */
   ld_pages = SB_TO_SYS(ld_pages, psize);
 
@@ -1005,6 +1035,8 @@ SB_loadall(int const state)
   SB_GET_LOCK(&(sb_info.lock));
   for (sb_alloc=sb_info.head; NULL!=sb_alloc; sb_alloc=sb_alloc->next) {
     SB_GET_LOCK(&(sb_alloc->lock));
+    sb_alloc->ch_pages -= sb_alloc->npages-sb_alloc->ld_pages;
+    sb_assert(sb_alloc->npages == sb_alloc->ch_pages);
     ld_pages += sb_alloc->npages-sb_alloc->ld_pages;
     num      += sb_internal_load_range(sb_alloc, 0, sb_alloc->npages, state);
     sb_assert(sb_alloc->npages == sb_alloc->ld_pages);
@@ -1072,6 +1104,9 @@ SB_dump(void const * const addr, size_t len)
     ld_pages = sb_alloc->ld_pages;
     (void)sb_internal_dump_range(sb_alloc, ipfirst, ipend-ipfirst);
     ld_pages = ld_pages-sb_alloc->ld_pages;
+
+    /* discharge */
+    sb_alloc->ch_pages -= ld_pages;
 
     /* convert to system pages */
     ld_pages = SB_TO_SYS(ld_pages, psize);
@@ -1202,6 +1237,7 @@ SB_malloc(size_t const len)
 
   /* populate sb_alloc structure */
   sb_alloc->ld_pages = 0;
+  sb_alloc->ch_pages = 0;
   sb_alloc->npages   = npages;
   sb_alloc->len      = len;
   sb_alloc->fname    = fname;
@@ -1277,7 +1313,7 @@ SB_free(void * const addr)
   SB_LET_LOCK(&(sb_info.lock));
 
   /* accounting */
-  sb_internal_acct(SBACCT_DISCHARGE, SB_TO_SYS(sb_alloc->ld_pages,
+  sb_internal_acct(SBACCT_DISCHARGE, SB_TO_SYS(sb_alloc->ch_pages,
     sb_info.pagesize));
   sb_internal_acct(SBACCT_FREE, SB_TO_SYS(sb_alloc->npages,
     sb_info.pagesize));
