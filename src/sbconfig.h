@@ -41,7 +41,7 @@
 # include <syscall.h>   /* SYS_gettid, syscall */
 # include <time.h>      /* CLOCK_REALTIME, struct timespec, clock_gettime */
 
-#define SBDEADLOCK 0    /* 0: no deadlock diagnostics, */
+# define SBDEADLOCK 0   /* 0: no deadlock diagnostics, */
                         /* 1: deadlock diagnostics */
 
 # define _SB_GET_LOCK(LOCK)                                                 \
@@ -102,7 +102,7 @@ do {                                                                        \
   }                                                                         \
 } while (0)
 
-# ifdef NDEBUG
+# if !defined(SBDEADLOACK) || SBDEADLOCK == 0
 #   define SB_GET_LOCK(LOCK) _SB_GET_LOCK(LOCK)
 # else
 #   define SB_GET_LOCK(LOCK)                                                \

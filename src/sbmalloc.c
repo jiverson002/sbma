@@ -589,7 +589,7 @@ sb_internal_find(size_t const addr)
 static void
 sb_internal_handler(int const sig, siginfo_t * const si, void * const ctx)
 {
-  size_t ip, num=0;
+  size_t ip, num=0, ld_pages=0;
   size_t addr=(size_t)si->si_addr;
   struct sb_alloc * sb_alloc=NULL;
 
@@ -610,10 +610,8 @@ sb_internal_handler(int const sig, siginfo_t * const si, void * const ctx)
 
   if (!(SBISSET(sb_alloc->pflags[ip], SBPAGE_SYNC))) {
     if (0 == sb_opts[SBOPT_LAZYREAD]) {
-      sb_internal_acct(SBACCT_CHARGE,
-        SB_TO_SYS(sb_alloc->npages-sb_alloc->ld_pages,
-        sb_info.pagesize));
-      sb_alloc->ch_pages += sb_alloc->npages-sb_alloc->ld_pages;
+      ld_pages = sb_alloc->npages-sb_alloc->ld_pages;
+      sb_alloc->ch_pages += ld_pages;
 
       num = sb_internal_load_range(sb_alloc, 0, sb_alloc->npages,
         SBPAGE_SYNC);
@@ -626,9 +624,8 @@ sb_internal_handler(int const sig, siginfo_t * const si, void * const ctx)
 #else
       /* temporary fix - not working */
       if (0 == sb_alloc->ld_pages) {
-        sb_internal_acct(SBACCT_CHARGE, SB_TO_SYS(sb_alloc->npages,
-          sb_info.pagesize));
-        sb_alloc->ch_pages += sb_alloc->npages;
+        ld_pages = sb_alloc->npages;
+        sb_alloc->ch_pages += ld_pages;
       }
       else if (SBISSET(sb_alloc->pflags[ip], SBPAGE_DUMP)) {
         sb_internal_acct(SBACCT_CHARGE, SB_TO_SYS(1, sb_info.pagesize));
@@ -647,7 +644,13 @@ sb_internal_handler(int const sig, siginfo_t * const si, void * const ctx)
 
     sb_internal_acct(SBACCT_WRFAULT, 0);
   }
+
+  /* convert to system pages */
+  ld_pages = SB_TO_SYS(ld_pages, sb_info.pagesize);
+
   SB_LET_LOCK(&(sb_alloc->lock));
+
+  sb_internal_acct(SBACCT_CHARGE, ld_pages);
 
   if (NULL == ctx) {} /* suppress unused warning */
 }
