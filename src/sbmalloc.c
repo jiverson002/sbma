@@ -954,7 +954,7 @@ SB_load(void const * const addr, size_t len, int const state)
   SB_GET_LOCK(&(sb_alloc->lock));
 
   /* shortcut */
-  if (sb_alloc->npages == sb_alloc->ld_pages) {
+  if (SBPAGE_SYNC == state && sb_alloc->npages == sb_alloc->ld_pages) {
     SB_LET_LOCK(&(sb_alloc->lock));
     return 0;
   }
