@@ -28,6 +28,7 @@ enum sb_acct_type
   SBACCT_WRFAULT,
   SBACCT_RDFAULT,
   SBACCT_ALLOC,
+  SBACCT_FREE,
   SBACCT_CHARGE,
   SBACCT_DISCHARGE
 };
@@ -75,9 +76,10 @@ static struct sb_info
   size_t numwf;             /* total number of write segfaults */
   size_t numrd;             /* total number of pages read */
   size_t numwr;             /* total number of pages written */
-  size_t curpages;          /* current bytes allocated */
-  size_t numpages;          /* total bytes allocated */
-  size_t maxpages;          /* maximum number of bytes allocated */
+  size_t curpages;          /* current bytes loaded */
+  size_t numpages;          /* current bytes allocated */
+  size_t totpages;          /* total bytes allocated */
+  size_t maxpages;          /* maximum number of bytes loaded */
 
   size_t pagesize;          /* bytes per sbmalloc page */
   size_t minsize;           /* minimum allocation in bytes handled by sbmalloc */
@@ -245,18 +247,21 @@ sb_internal_acct(int const acct_type, size_t const arg)
     break;
 
   case SBACCT_ALLOC:
+    sb_info.totpages += arg;
     sb_info.numpages += arg;
     break;
 
+  case SBACCT_FREE:
+    sb_info.numpages -= arg;
+    break;
+
   case SBACCT_CHARGE:
-    printf("[%d] charge: %zu\n", (int)getpid(), arg);
     sb_info.curpages += arg;
     if (sb_info.curpages > sb_info.maxpages)
       sb_info.maxpages = sb_info.curpages;
     break;
 
   case SBACCT_DISCHARGE:
-    printf("[%d] discharge: %zu\n", (int)getpid(), arg);
     sb_info.curpages -= arg;
     break;
   }
@@ -648,14 +653,18 @@ sb_internal_free(void)
   if (0 != sb_info.numrd)
     SBWARN(SBDBG_INFO)("read %zu pages from disk", sb_info.numrd);
 
-  if (0 != sb_info.numpages)
-    SBWARN(SBDBG_INFO)("allocated a total of %zu pages", sb_info.numpages);
+  if (0 != sb_info.totpages)
+    SBWARN(SBDBG_INFO)("allocated a total of %zu pages", sb_info.totpages);
 
   if (0 != sb_info.maxpages)
-    SBWARN(SBDBG_INFO)("maximum simultaneous allocation was %zu pages",
+    SBWARN(SBDBG_INFO)("maximum simultaneous resident memory was %zu pages",
       sb_info.maxpages);
 
   if (0 != sb_info.curpages)
+    SBWARN(SBDBG_LEAK)("%zu pages still loaded at exit",
+      sb_info.curpages);
+
+  if (0 != sb_info.numpages)
     SBWARN(SBDBG_LEAK)("%zu pages still allocated at exit",
       sb_info.curpages);
 
@@ -1267,9 +1276,9 @@ SB_free(void * const addr)
   SB_LET_LOCK(&(sb_info.lock));
 
   /* accounting */
-  printf("[%d] discharging %zu\n", (int)getpid(),
-    SB_TO_SYS(sb_alloc->ld_pages, sb_info.pagesize));
   sb_internal_acct(SBACCT_DISCHARGE, SB_TO_SYS(sb_alloc->ld_pages,
+    sb_info.pagesize));
+  sb_internal_acct(SBACCT_FREE, SB_TO_SYS(sb_alloc->npages,
     sb_info.pagesize));
 
   /* free resources */

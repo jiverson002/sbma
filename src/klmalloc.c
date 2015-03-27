@@ -1160,8 +1160,6 @@ KL_malloc(size_t const size)
 
   KL_INIT_CHECK;
 
-  //printf("KL_malloc(%zu)\n", size);
-
 #ifdef WITH_BRICK
   if (KL_CHUNK_SIZE(size) < KL_CHUNK_MIN_SIZE) {
     if (NULL == (brick=kl_brick_bin_find(&mem, KL_BRICK_SIZE(size)))) {
@@ -1222,8 +1220,6 @@ KL_malloc(size_t const size)
         block_size = KL_BLOCK_SIZE(KL_BLOCK_DEFAULT_SIZE);
       else
         block_size = KL_BLOCK_SIZE(KL_CHUNK_SIZE(size));
-
-      printf("[%d] ALLOC %zu\n", (int)getpid(), block_size);
 
       /* Accounting. */
       KL_MEM_TOTAL += block_size;
@@ -1334,8 +1330,6 @@ KL_realloc(void * const ptr, size_t const size)
 
   KL_INIT_CHECK;
 
-  printf("KL_realloc(%zu)\n", size);
-
   if (NULL == ptr)
     return KL_malloc(size);
 
@@ -1399,7 +1393,6 @@ KL_free(void * const ptr)
 
   /* If chunk is the only chunk, release memory back to system. */
   if (KL_ISFIRST(chunk) && KL_ISLAST(chunk)) {
-    printf("[%d] FREE %zu\n", (int)getpid(), KL_BLOCK_SIZE(*KL_C2H(chunk)));
     /* Accounting. */
     KL_MEM_TOTAL -= KL_BLOCK_SIZE(*KL_C2H(chunk));
 
