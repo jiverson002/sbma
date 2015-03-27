@@ -256,12 +256,14 @@ sb_internal_acct(int const acct_type, size_t const arg)
     break;
 
   case SBACCT_CHARGE:
+    //printf("[%5d] charge: %zu\n", (int)getpid(), arg);
     sb_info.curpages += arg;
     if (sb_info.curpages > sb_info.maxpages)
       sb_info.maxpages = sb_info.curpages;
     break;
 
   case SBACCT_DISCHARGE:
+    //printf("[%5d] discharge: %zu\n", (int)getpid(), arg);
     sb_info.curpages -= arg;
     break;
   }
@@ -1069,7 +1071,7 @@ SB_dump(void const * const addr, size_t len)
   if (ipfirst < ipend) {
     ld_pages = sb_alloc->ld_pages;
     (void)sb_internal_dump_range(sb_alloc, ipfirst, ipend-ipfirst);
-    ld_pages = sb_alloc->ld_pages-ld_pages;
+    ld_pages = ld_pages-sb_alloc->ld_pages;
 
     /* convert to system pages */
     ld_pages = SB_TO_SYS(ld_pages, psize);
@@ -1077,8 +1079,7 @@ SB_dump(void const * const addr, size_t len)
 
   SB_LET_LOCK(&(sb_alloc->lock));
 
-  if (ld_pages > 0)
-    sb_internal_acct(SBACCT_DISCHARGE, ld_pages);
+  sb_internal_acct(SBACCT_DISCHARGE, ld_pages);
 
   return ld_pages;
 }
