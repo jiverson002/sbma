@@ -32,8 +32,8 @@
 /* probability to free a previous allocation */
 #define PER_FREE      30
 
-size_t NUM_ALLOCS     = 1<<17;
-/*size_t NUM_ALLOCS     = 1<<12;*/
+/*size_t NUM_ALLOCS     = 1<<17;*/
+size_t NUM_ALLOCS     = 1<<12;
 size_t BIG_ALLOC_SIZE = 1<<25; /* 16MB */
 size_t MED_ALLOC_SIZE = 1<<16; /* 32KB */
 size_t SML_ALLOC_SIZE = 1<<11; /* 1KB  */
