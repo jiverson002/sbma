@@ -10,7 +10,7 @@ int main(void)
   size_t n=100000;
   size_t * arr, * arr2;
 
-  if (0 != SB_fstem("/tmp/xmm-"))
+  if (0 != SB_fstem("/tmp/sb-"))
     return EXIT_FAILURE;
   if (0 != SB_mallopt(SBOPT_DEBUG, SBDBG_INFO))
     return EXIT_FAILURE;

@@ -15,6 +15,9 @@ void * KL_realloc(void * const addr, size_t const len);
 void   KL_free(void * const addr);
 void   KL_malloc_stats(void);
 
+void * KL_malloc2(size_t const len);
+void   KL_free2(void * const addr);
+
 #ifdef __cplusplus
 }
 #endif

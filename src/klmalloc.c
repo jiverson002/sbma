@@ -191,8 +191,10 @@ the possibly moved allocated space.
 /* Sanity check: void * and size_t are the same size, assumed in many places
  * in the code. */
 ct_assert(sizeof(void*) == sizeof(size_t));
+/* Sanity check: Alignment is >= 2. */
+ct_assert(KL_MEMORY_ALLOCATION_ALIGNMENT >= 2);
 /* Sanity check: Alignment is >= sizeof(size_t). */
-ct_assert(KL_MEMORY_ALLOCATION_ALIGNMENT >=sizeof(size_t));
+ct_assert(KL_MEMORY_ALLOCATION_ALIGNMENT >= sizeof(size_t));
 /* Sanity check: KL_MEMORY_ALLOCATION_ALIGNMENT is a power of 2. */
 ct_assert(0 == (KL_MEMORY_ALLOCATION_ALIGNMENT&(KL_MEMORY_ALLOCATION_ALIGNMENT-1)));
 
@@ -556,13 +558,84 @@ static inline void * KL_A2C(void * const after)
 /****************************************************************************/
 /* ======================================================================== */
 /****************************************************************************/
-#define KL_BRICK_SIZE_MASK  (((size_t)1<<((sizeof(size_t)-1)*CHAR_BIT))-1)
-#define KL_BRICK_MULT_MASK  (~(((size_t)1<<((sizeof(size_t)-1)*CHAR_BIT))-1))
-#define KL_BRICK_MULT_SHIFT ((sizeof(size_t)-1)*CHAR_BIT)
+#define KL_BLOCK_COUNT_MASK (((size_t)1<<((sizeof(size_t)-1)*CHAR_BIT))-1)
+#define KL_BLOCK_MULT_MASK  (~(((size_t)1<<((sizeof(size_t)-1)*CHAR_BIT))-1))
+#define KL_BLOCK_MULT_SHIFT ((sizeof(size_t)-1)*CHAR_BIT)
+
+static inline int      KL_ISALIGNED(void const * const ptr);
+static inline int      KL_ISFIRST(void const * const chunk_hdr);
+static inline int      KL_ISLAST(void const * const chunk_hdr);
+static inline int      KL_ISINUSE(void const * const chunk_hdr);
+static inline int      KL_ISFULL(void const * const block_hdr);
+static inline int      KL_TYPEOF(void const * const hdr);
+static inline int      KL_G_BRICKBIN(size_t const size);
+static inline int      KL_G_BRICKSIZE(int const bidx);
+static inline void *   KL_G_PTR(void * const hdr);
+static inline void *   KL_G_HDR(void * const ptr);
+static inline void *   KL_G_FTR(void * const chunk_hdr);
+static inline void *   KL_G_NEXT(void const * const hdr);
+static inline void *   KL_G_BLOCK(void const * const hdr);
+static inline void **  KL_S_BLOCK(void * const hdr);
+static inline size_t   KL_G_SIZE(void const * const hdr);
+static inline size_t * KL_S_SIZE(void * const hdr);
+static inline size_t   KL_G_MULT(void const * const block_hdr);
+static inline size_t * KL_S_MULT(void * const block_hdr);
+static inline size_t   KL_G_COUNT(void const * const block_hdr);
+static inline size_t * KL_S_COUNT(void * const block_hdr);
 
 static inline int KL_ISALIGNED(void const * const ptr)
 {
   return 0 == ((uptr)ptr&(KL_MEMORY_ALLOCATION_ALIGNMENT-1));
+}
+
+static inline int KL_ISFIRST(void const * const chunk_hdr)
+{
+  assert(KL_ISALIGNED(KL_G_PTR((void*)chunk_hdr)));
+  assert(KL_CHUNK == KL_TYPEOF(chunk_hdr));
+
+  return KL_BLOCK_HEADER_SIZE == *(size_t*)((uptr)chunk_hdr-sizeof(size_t));
+}
+
+static inline int KL_ISLAST(void const * const chunk_hdr)
+{
+  assert(KL_ISALIGNED(KL_G_PTR((void*)chunk_hdr)));
+  assert(KL_CHUNK == KL_TYPEOF(chunk_hdr));
+
+  return KL_BLOCK_HEADER_SIZE == KL_G_SIZE(KL_G_NEXT((void*)chunk_hdr));
+}
+
+static inline int KL_ISINUSE(void const * const chunk_hdr)
+{
+  assert(KL_ISALIGNED(KL_G_PTR((void*)chunk_hdr)));
+  assert(KL_CHUNK == KL_TYPEOF(chunk_hdr));
+
+  return 0 == *(size_t const*)KL_G_FTR((void*)chunk_hdr);
+}
+
+static inline int KL_ISFULL(void const * const block_hdr)
+{
+  assert(KL_ISALIGNED(block_hdr));
+
+  return 0 == KL_G_COUNT(block_hdr);
+}
+
+static inline int KL_TYPEOF(void const * const hdr)
+{
+  assert(KL_ISALIGNED(KL_G_PTR((void*)hdr)));
+
+  return ((uptr)*(void**)hdr)&KL_BRICK;
+}
+
+static inline int KL_G_BRICKBIN(size_t const size)
+{
+  return KL_BRICK_SIZE(size)/KL_MEMORY_ALLOCATION_ALIGNMENT-1;
+}
+
+static inline int KL_G_BRICKSIZE(int const bidx)
+{
+  assert(bidx <= KL_G_BRICKBIN(KL_BRICK_MAX_SIZE));
+
+  return (bidx+1)*KL_MEMORY_ALLOCATION_ALIGNMENT;
 }
 
 static inline void * KL_G_PTR(void * const hdr)
@@ -579,11 +652,28 @@ static inline void * KL_G_HDR(void * const ptr)
   return (void*)((uptr)ptr-KL_ALLOC_HEADER_SIZE);
 }
 
-static inline int KL_TYPEOF(void const * const hdr)
+static inline void * KL_G_FTR(void * const chunk_hdr)
 {
+  assert(KL_ISALIGNED(KL_G_PTR(chunk_hdr)));
+  assert(KL_CHUNK == KL_TYPEOF(chunk_hdr));
+
+  return (void*)((uptr)chunk_hdr+KL_G_SIZE(chunk_hdr)-KL_CHUNK_FOOTER_SIZE);
+}
+
+static inline void * KL_G_NEXT(void const * const hdr)
+{
+  size_t size;
+
   assert(KL_ISALIGNED(KL_G_PTR((void*)hdr)));
 
-  return (uptr)hdr&KL_BRICK;
+  switch (KL_TYPEOF(hdr)) {
+    case KL_BRICK:
+      size = (KL_G_MULT(KL_G_BLOCK(hdr))+1)*KL_MEMORY_ALLOCATION_ALIGNMENT;
+      return (void*)((uptr)hdr+size);
+    case KL_CHUNK:
+      return (void*)((uptr)hdr+KL_G_SIZE(hdr));
+  }
+  return NULL;
 }
 
 static inline void * KL_G_BLOCK(void const * const hdr)
@@ -594,7 +684,7 @@ static inline void * KL_G_BLOCK(void const * const hdr)
 
   switch (KL_TYPEOF(hdr)) {
     case KL_BRICK:
-      ptr = *(void**)hdr;
+      ptr = (void*)((uptr)(*KL_S_BLOCK((void*)hdr))&(~((size_t)KL_BRICK)));
       break;
     case KL_CHUNK:
       ptr = (void*)((uptr)hdr-(*(size_t const*)((uptr)hdr-KL_CHUNK_FOOTER_SIZE)));
@@ -603,7 +693,14 @@ static inline void * KL_G_BLOCK(void const * const hdr)
 
   assert(KL_ISALIGNED(ptr));
 
-  return NULL;
+  return ptr;
+}
+static inline void ** KL_S_BLOCK(void * const hdr)
+{
+  assert(KL_ISALIGNED(KL_G_PTR(hdr)));
+  //assert(KL_BRICK == KL_TYPEOF(hdr));
+
+  return (void**)hdr;
 }
 
 static inline size_t KL_G_SIZE(void const * const hdr)
@@ -612,75 +709,49 @@ static inline size_t KL_G_SIZE(void const * const hdr)
 
   switch (KL_TYPEOF(hdr)) {
     case KL_BRICK:
-      return (*(size_t const*)KL_G_BLOCK(hdr))&KL_BRICK_SIZE_MASK;
+      return (KL_G_MULT(KL_G_BLOCK(hdr))+1)*KL_MEMORY_ALLOCATION_ALIGNMENT;
     case KL_CHUNK:
-      return *(size_t const*)hdr;
+      return *KL_S_SIZE((void*)hdr);
+  }
+  return 0;
+}
+static inline size_t * KL_S_SIZE(void * const hdr)
+{
+  assert(KL_ISALIGNED(KL_G_PTR(hdr)));
+
+  switch (KL_TYPEOF(hdr)) {
+    case KL_BRICK:
+      return (size_t*)KL_G_BLOCK(hdr);
+    case KL_CHUNK:
+      return (size_t*)hdr;
   }
   return 0;
 }
 
-static inline size_t KL_G_MULT(void const * const brick_hdr)
+static inline size_t KL_G_MULT(void const * const block_hdr)
 {
-  size_t hdr;
+  assert(KL_ISALIGNED((void*)block_hdr));
 
-  assert(KL_ISALIGNED(KL_G_PTR((void*)brick_hdr)));
-  assert(KL_BRICK == KL_TYPEOF(brick_hdr));
+  return ((*KL_S_MULT((void*)block_hdr))&KL_BLOCK_MULT_MASK)>>KL_BLOCK_MULT_SHIFT;
+}
+static inline size_t * KL_S_MULT(void * const block_hdr)
+{
+  assert(KL_ISALIGNED((void*)block_hdr));
 
-  hdr = *(size_t const*)KL_G_BLOCK(brick_hdr);
-
-  return (hdr&KL_BRICK_MULT_MASK)>>KL_BRICK_MULT_SHIFT;
+  return (size_t*)block_hdr;
 }
 
-static inline void * KL_G_FTR(void * const chunk_hdr)
+static inline size_t KL_G_COUNT(void const * const block_hdr)
 {
-  assert(KL_ISALIGNED(KL_G_PTR(chunk_hdr)));
-  assert(KL_CHUNK == KL_TYPEOF(chunk_hdr));
+  assert(KL_ISALIGNED((void*)block_hdr));
 
-  return (void*)((uptr)chunk_hdr+KL_G_SIZE(chunk_hdr)-KL_CHUNK_FOOTER_SIZE);
+  return (*KL_S_COUNT((void*)block_hdr))&KL_BLOCK_COUNT_MASK;
 }
-
-static inline void * KL_G_NEXT(void const * const chunk_hdr)
+static inline size_t * KL_S_COUNT(void * const block_hdr)
 {
-  assert(KL_ISALIGNED(KL_G_PTR((void*)chunk_hdr)));
-  assert(KL_CHUNK == KL_TYPEOF(chunk_hdr));
+  assert(KL_ISALIGNED(block_hdr));
 
-  return (void*)((uptr)chunk_hdr+KL_G_SIZE(chunk_hdr));
-}
-
-static inline int KL_ISFIRST(void * const chunk_hdr)
-{
-  assert(KL_ISALIGNED(KL_G_PTR(chunk_hdr)));
-  assert(KL_CHUNK == KL_TYPEOF(chunk_hdr));
-
-  return KL_BLOCK_HEADER_SIZE == *(size_t*)((uptr)chunk_hdr-sizeof(size_t));
-}
-
-static inline int KL_ISLAST(void * const chunk_hdr)
-{
-  assert(KL_ISALIGNED(KL_G_PTR(chunk_hdr)));
-  assert(KL_CHUNK == KL_TYPEOF(chunk_hdr));
-
-  return KL_BLOCK_HEADER_SIZE == KL_G_SIZE(KL_G_NEXT(chunk_hdr));
-}
-
-static inline int KL_ISINUSE(void * const chunk_hdr)
-{
-  assert(KL_ISALIGNED(KL_G_PTR(chunk_hdr)));
-  assert(KL_CHUNK == KL_TYPEOF(chunk_hdr));
-
-  return 0 == *(size_t*)KL_G_FTR(chunk_hdr);
-}
-
-static inline int KL_G_BRICKBIN(size_t const size)
-{
-  return size/KL_MEMORY_ALLOCATION_ALIGNMENT;
-}
-
-static inline int KL_G_BRICKSIZE(int const bidx)
-{
-  assert(bidx < KL_G_BRICKBIN(KL_BRICK_MAX_SIZE));
-
-  return (bidx+1)*KL_MEMORY_ALLOCATION_ALIGNMENT;
+  return (size_t*)block_hdr;
 }
 /****************************************************************************/
 /* ======================================================================== */
@@ -984,6 +1055,33 @@ kl_mem_init(kl_mem_t * const mem)
 }
 
 
+/****************************************************************************/
+/* Allocate a new block */
+/****************************************************************************/
+static void *
+kl_block_alloc(size_t const size)
+{
+  size_t block_size;
+  void * ret, * block;
+
+  block_size = KL_BLOCK_SIZE(size);
+
+  /* Get system memory. */
+  ret = KL_CALL_SYS_ALLOC(block, block_size);
+  if (KL_SYS_ALLOC_FAIL == ret)
+    return NULL;
+  KL_CALL_SYS_BZERO(block, block_size);
+
+  /* Accounting. */
+  KL_MEM_TOTAL += block_size;
+  if (KL_MEM_TOTAL > KL_MEM_MAX)
+    KL_MEM_MAX = KL_MEM_TOTAL;
+  KL_SYS_CTR++;
+
+  return block;
+}
+
+
 #ifdef WITH_BRICK
 /****************************************************************************/
 /* Add a node to a free brick data structure */
@@ -1007,6 +1105,7 @@ kl_brick_bin_ad(kl_mem_t * const mem, void * const brick)
 
   return 0;
 }
+#endif
 
 
 /****************************************************************************/
@@ -1015,57 +1114,81 @@ kl_brick_bin_ad(kl_mem_t * const mem, void * const brick)
 static void *
 kl_brick_bin_find(kl_mem_t * const mem, size_t const size)
 {
-  size_t bidx = KL_G_BRICKBIN(size);
-  void * brick = NULL;
-  kl_brick_bin_node_t * n;
+  size_t bidx=KL_G_BRICKBIN(size);
+  void * block, * brick=NULL;
+  kl_brick_bin_node_t * hd;
+
+  if (size > KL_BRICK_MAX_SIZE)
+    return NULL;
 
   /* Get head of brick_bin[bidx]. */
-  n = mem->brick_bin[bidx];
+  hd = mem->brick_bin[bidx];
 
-  if (NULL != n) {                            /* Use existing brick. */
+  if (NULL != hd) {                           /* Use existing brick. */
     /* Remove head of brick_bin[bidx]. */
-    brick = KL_G_HDR(n);
-
-    /* Sanity check: block must not be empty. */
-    assert(0 != KL_G_SIZE(KL_G_BLOCK(brick)));
-
-    /* Decrement block count.  This is safe because the count occupies the low
-     * bytes of the header. */
-    (*KL_S_SIZE(KL_G_BLOCK(brick)))--;
-    //(*(size_t*)KL_G_BLOCK(brick))--;
-
-    /* Check if brick has never been previously used. */
-    if (NULL == n->n) {
-      *KL_S_BLOCK(brick) = mem->last_block;
-
-      /* Sanity check: next pointer must be NULL. */
-      assert(NULL == n->n);
-
-      /* Set next pointer when block is not empty. */
-      if (0 != KL_G_SIZE(KL_G_BLOCK(brick)))
-        n->n = KL_G_PTR(KL_G_NEXT(brick));
-    }
-
-    /* Set head of brick_bin[bidx]. */
-    mem->brick_bin[bidx] = n->n;
-
-    /* Set the block for n->n brick, so in a subsequent kl_brick_bin_find,
-     * KL_R2B can be used on said brick. */
-    if (NULL != n->n)
-      *KL_S_BLOCK(KL_G_HDR(n->n)) = KL_G_BLOCK(brick);
-
-    n->n = NULL;
+    brick = KL_G_HDR(hd);
+    block = KL_G_BLOCK(brick);
   }
 #if 0
   else if (NULL != 'undesignated block') {  /* Designate existing block. */
   }
-  else {                                    /* Allocate new block. */
-  }
 #endif
+  else {                                    /* Allocate new block. */
+    block = kl_block_alloc(KL_BLOCK_DEFAULT_SIZE);
+
+    /* Set block multiplier. */
+    *KL_S_MULT(block) = bidx<<KL_BLOCK_MULT_SHIFT;
+    /* Set block count. */
+    *KL_S_COUNT(block) |=
+      ((KL_BLOCK_SIZE(KL_BLOCK_DEFAULT_SIZE)-KL_BLOCK_HEADER_SIZE) /
+      ((bidx+1)*KL_MEMORY_ALLOCATION_ALIGNMENT));
+
+    printf("new block\n");
+    printf("  address:    %zu\n", (uptr)block);
+    printf("  multiplier: %zu\n", bidx);
+    printf("  size:       %zu\n", (bidx+1)*KL_MEMORY_ALLOCATION_ALIGNMENT);
+    printf("  count:      %zu\n", KL_G_COUNT(block));
+
+    /* Setup brick. */
+    brick = (void*)((uptr)block+KL_BLOCK_HEADER_SIZE);
+    *KL_S_BLOCK(brick) = (void*)((uptr)block|KL_BRICK);
+    hd = KL_G_PTR(brick);
+
+    printf("\n");
+    printf("  brick\n");
+    printf("    block:   %zu\n", (uptr)KL_G_BLOCK(brick));
+    printf("    address: %zu\n", (uptr)brick);
+    printf("    pointer: %zu\n", (uptr)hd);
+  }
+
+  /* Decrement block count.  This is safe (won't affect multiplier) because
+   * the count occupies the low bytes of the header. */
+  (*KL_S_COUNT(block))--;
+
+  printf("\n");
+  printf("  count:      %zu\n", KL_G_COUNT(block));
+
+  /* Check if brick has never been previously used. */
+  if (NULL == hd->n) {
+    /* Check if block is not full. */
+    if (!KL_ISFULL(block)) {
+      printf("  next:       %zu\n", (uptr)KL_G_NEXT(brick));
+
+      /* Set next pointer. */
+      hd->n = KL_G_PTR(KL_G_NEXT(brick));
+
+      /* Set the block for brick's next, so in a subsequent call to
+       * kl_brick_bin_find, KL_G_BLOCK can be used on said brick. */
+      *KL_S_BLOCK(KL_G_NEXT(brick)) = block;
+    }
+  }
+
+  /* Set head of brick_bin[bidx]. */
+  mem->brick_bin[bidx] = hd->n;
+  hd->n = NULL;
 
   return brick;
 }
-#endif
 
 
 /****************************************************************************/
@@ -1195,6 +1318,8 @@ kl_chunk_bin_find(kl_mem_t * const mem, size_t const size)
   size_t bidx = KLSIZE2BIN(size);
   kl_chunk_bin_node_t * n;
 
+  return NULL;
+
   if (KLISSMALLBIN(bidx)) {
     /* Find first chunk bin with a node. */
     n = mem->chunk_bin[bidx];
@@ -1258,6 +1383,8 @@ kl_chunk_solo(size_t const size)
 {
   size_t block_size;
   void * ret, * block, * chunk;
+
+  return NULL;
 
   /* Determine appropriate allocation size. */
   if (KL_CHUNK_SIZE(size) <= KL_BLOCK_DEFAULT_SIZE)
@@ -1546,6 +1673,8 @@ KL_malloc2(size_t const size)
 
   assert(KL_ISALIGNED(ptr));
 
+  printf("ptr: %p\n", ptr);
+
   return ptr;
 }
 
@@ -1671,7 +1800,7 @@ KL_free2(void * const ptr)
 
   switch (KL_TYPEOF(hdr)) {
     case KL_BRICK:
-      kl_brick_bin_ad(&mem, hdr);
+      //kl_brick_bin_ad(&mem, hdr);
       break;
     case KL_CHUNK:
       kl_chunk_bin_ad(&mem, hdr);

@@ -34,8 +34,8 @@ config_build=debug
 config_profile=no
 config_pthread=no
 config_openmp=no
-config_mmap=yes
-config_memalign=no
+config_mmap=no
+config_memalign=yes
 config_sbmalloc=no
 
 # Compiler flags
@@ -112,6 +112,10 @@ test/check: $(UTD) $(LIB) test/check.c
 	$(config_CC) $(CFLAGS_$(config_build)) $(LDFLAGS) -o $@ $@.c $(LDLIBS)
 #	@$@
 
+test/check1: $(UTD) $(LIB) test/check1.c
+	$(config_CC) $(CFLAGS_$(config_build)) $(LDFLAGS) -o $@ $@.c $(LDLIBS)
+#	@$@
+
 test/check2: $(UTD) $(LIB) test/check2.c
 	$(config_CC) $(CFLAGS_$(config_build)) $(LDFLAGS) -o $@ $@.c $(LDLIBS)
 #	@$@
@@ -121,7 +125,7 @@ test/check3: $(UTD) $(LIB) test/check3.c
 #	@$@
 
 $(UTD): sbconfig.h sbmalloc.h klmalloc.h Makefile
-	@$(RM) $(LIB) test/check test/check2 test/check3
+	@$(RM) $(LIB) test/check test/check1 test/check2 test/check3
 	@$(TOUCH) $(UTD)
 #}}}1
 
@@ -160,12 +164,13 @@ with-openmp=$(config_openmp) with-mmap=$(config_mmap) \
 with-memalign=$(config_memalign) with-sbmalloc=$(config_sbmalloc)"
 
 clean:
-	$(RM) $(LIB) test/check test/check2 test/check3 $(UTD)
+	$(RM) $(LIB) test/check test/check1 test/check2 test/check3 $(UTD)
 
 help:
 	$(ECHO) "The following are valid targets for this Makefile:"
 	$(ECHO) "... $(LIB) (the default if no target is provided)"
 	$(ECHO) "... test/check"
+	$(ECHO) "... test/check1"
 	$(ECHO) "... test/check2"
 	$(ECHO) "... test/check3"
 	$(ECHO) "... config"
