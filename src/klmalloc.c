@@ -552,27 +552,6 @@ static inline void * KL_A2C(void * const after)
   return (void*)((uptr)after-(*(size_t*)((uptr)after-KL_CHUNK_FOOTER_SIZE)));
 }
 
-static inline int KL_ISFIRST(void * const chunk)
-{
-  assert(KL_ISALIGNED2(KL_C2P(chunk)));
-
-  return KL_BLOCK_HEADER_SIZE == *(size_t*)((uptr)chunk-sizeof(size_t));
-}
-
-static inline int KL_ISLAST(void * const chunk)
-{
-  assert(KL_ISALIGNED2(KL_C2P(chunk)));
-
-  return KL_BLOCK_HEADER_SIZE == *(size_t*)KL_C2A(chunk);
-}
-
-static inline int KL_INUSE(void * const chunk)
-{
-  assert(KL_ISALIGNED2(KL_C2P(chunk)));
-
-  return 0 == *KL_C2F(chunk);
-}
-
 
 /****************************************************************************/
 /* ======================================================================== */
@@ -586,14 +565,14 @@ static inline int KL_ISALIGNED(void const * const ptr)
   return 0 == ((uptr)ptr&(KL_MEMORY_ALLOCATION_ALIGNMENT-1));
 }
 
-static inline void * KL_2PTR(void * const hdr)
+static inline void * KL_G_PTR(void * const hdr)
 {
   assert(KL_ISALIGNED((void*)((uptr)hdr+KL_ALLOC_HEADER_SIZE)));
 
   return (void*)((uptr)hdr+KL_ALLOC_HEADER_SIZE);
 }
 
-static inline void * KL_2HDR(void * const ptr)
+static inline void * KL_G_HDR(void * const ptr)
 {
   assert(KL_ISALIGNED(ptr));
 
@@ -602,16 +581,16 @@ static inline void * KL_2HDR(void * const ptr)
 
 static inline int KL_TYPEOF(void const * const hdr)
 {
-  assert(KL_ISALIGNED(KL_2PTR((void*)hdr)));
+  assert(KL_ISALIGNED(KL_G_PTR((void*)hdr)));
 
   return (uptr)hdr&KL_BRICK;
 }
 
-static inline void * KL_2BLOCK(void const * const hdr)
+static inline void * KL_G_BLOCK(void const * const hdr)
 {
   void * ptr=NULL;
 
-  assert(KL_ISALIGNED(KL_2PTR((void*)hdr)));
+  assert(KL_ISALIGNED(KL_G_PTR((void*)hdr)));
 
   switch (KL_TYPEOF(hdr)) {
     case KL_BRICK:
@@ -627,28 +606,81 @@ static inline void * KL_2BLOCK(void const * const hdr)
   return NULL;
 }
 
-static inline size_t KL_2SIZE(void const * const hdr)
+static inline size_t KL_G_SIZE(void const * const hdr)
 {
-  assert(KL_ISALIGNED(KL_2PTR((void*)hdr)));
+  assert(KL_ISALIGNED(KL_G_PTR((void*)hdr)));
 
   switch (KL_TYPEOF(hdr)) {
     case KL_BRICK:
-      return (*(size_t const*)KL_2BLOCK(hdr))&KL_BRICK_SIZE_MASK;
+      return (*(size_t const*)KL_G_BLOCK(hdr))&KL_BRICK_SIZE_MASK;
     case KL_CHUNK:
       return *(size_t const*)hdr;
   }
   return 0;
 }
 
-static inline size_t KL_2MULT(void const * const hdr)
+static inline size_t KL_G_MULT(void const * const brick_hdr)
 {
-  assert(KL_ISALIGNED(KL_2PTR((void*)hdr)));
+  size_t hdr;
 
-  switch (KL_TYPEOF(hdr)) {
-    case KL_BRICK:
-      return ((*(size_t const*)KL_2BLOCK(hdr))&KL_BRICK_MULT_MASK)>>KL_BRICK_MULT_SHIFT;
-  }
-  return 0;
+  assert(KL_ISALIGNED(KL_G_PTR((void*)brick_hdr)));
+  assert(KL_BRICK == KL_TYPEOF(brick_hdr));
+
+  hdr = *(size_t const*)KL_G_BLOCK(brick_hdr);
+
+  return (hdr&KL_BRICK_MULT_MASK)>>KL_BRICK_MULT_SHIFT;
+}
+
+static inline void * KL_G_FTR(void * const chunk_hdr)
+{
+  assert(KL_ISALIGNED(KL_G_PTR(chunk_hdr)));
+  assert(KL_CHUNK == KL_TYPEOF(chunk_hdr));
+
+  return (void*)((uptr)chunk_hdr+KL_G_SIZE(chunk_hdr)-KL_CHUNK_FOOTER_SIZE);
+}
+
+static inline void * KL_G_NEXT(void const * const chunk_hdr)
+{
+  assert(KL_ISALIGNED(KL_G_PTR((void*)chunk_hdr)));
+  assert(KL_CHUNK == KL_TYPEOF(chunk_hdr));
+
+  return (void*)((uptr)chunk_hdr+KL_G_SIZE(chunk_hdr));
+}
+
+static inline int KL_ISFIRST(void * const chunk_hdr)
+{
+  assert(KL_ISALIGNED(KL_G_PTR(chunk_hdr)));
+  assert(KL_CHUNK == KL_TYPEOF(chunk_hdr));
+
+  return KL_BLOCK_HEADER_SIZE == *(size_t*)((uptr)chunk_hdr-sizeof(size_t));
+}
+
+static inline int KL_ISLAST(void * const chunk_hdr)
+{
+  assert(KL_ISALIGNED(KL_G_PTR(chunk_hdr)));
+  assert(KL_CHUNK == KL_TYPEOF(chunk_hdr));
+
+  return KL_BLOCK_HEADER_SIZE == KL_G_SIZE(KL_G_NEXT(chunk_hdr));
+}
+
+static inline int KL_ISINUSE(void * const chunk_hdr)
+{
+  assert(KL_ISALIGNED(KL_G_PTR(chunk_hdr)));
+  assert(KL_CHUNK == KL_TYPEOF(chunk_hdr));
+
+  return 0 == *(size_t*)KL_G_FTR(chunk_hdr);
+}
+
+static inline int KL_G_BRICKBIN(size_t const size)
+{
+  return size/KL_MEMORY_ALLOCATION_ALIGNMENT;
+}
+
+static inline int KL_G_BRICKSIZE(int const bidx)
+{
+  assert(bidx < KL_G_BRICKBIN(KL_BRICK_MAX_SIZE));
+
+  return (bidx+1)*KL_MEMORY_ALLOCATION_ALIGNMENT;
 }
 /****************************************************************************/
 /* ======================================================================== */
@@ -983,7 +1015,7 @@ kl_brick_bin_ad(kl_mem_t * const mem, void * const brick)
 static void *
 kl_brick_bin_find(kl_mem_t * const mem, size_t const size)
 {
-  size_t bidx = KL_2BRICKBIN(size);
+  size_t bidx = KL_G_BRICKBIN(size);
   void * brick = NULL;
   kl_brick_bin_node_t * n;
 
@@ -992,25 +1024,26 @@ kl_brick_bin_find(kl_mem_t * const mem, size_t const size)
 
   if (NULL != n) {                            /* Use existing brick. */
     /* Remove head of brick_bin[bidx]. */
-    brick = KL_2HDR(n);
+    brick = KL_G_HDR(n);
 
     /* Sanity check: block must not be empty. */
-    assert(0 != KL_B2N(*KL_R2B(brick)));
+    assert(0 != KL_G_SIZE(KL_G_BLOCK(brick)));
 
     /* Decrement block count.  This is safe because the count occupies the low
      * bytes of the header. */
-    (*KL_B2H(KL_2BLOCK(brick)))--;
+    (*KL_S_SIZE(KL_G_BLOCK(brick)))--;
+    //(*(size_t*)KL_G_BLOCK(brick))--;
 
     /* Check if brick has never been previously used. */
     if (NULL == n->n) {
-      *KL_R2B(brick) = mem->last_block;
+      *KL_S_BLOCK(brick) = mem->last_block;
 
       /* Sanity check: next pointer must be NULL. */
       assert(NULL == n->n);
 
       /* Set next pointer when block is not empty. */
-      if (0 != KL_B2N(*KL_R2B(brick)))
-        n->n = KL_R2P(KL_R2A(brick));
+      if (0 != KL_G_SIZE(KL_G_BLOCK(brick)))
+        n->n = KL_G_PTR(KL_G_NEXT(brick));
     }
 
     /* Set head of brick_bin[bidx]. */
@@ -1019,7 +1052,7 @@ kl_brick_bin_find(kl_mem_t * const mem, size_t const size)
     /* Set the block for n->n brick, so in a subsequent kl_brick_bin_find,
      * KL_R2B can be used on said brick. */
     if (NULL != n->n)
-      *KL_R2B(KL_P2R(n->n)) = *KL_R2B(brick);
+      *KL_S_BLOCK(KL_G_HDR(n->n)) = KL_G_BLOCK(brick);
 
     n->n = NULL;
   }
@@ -1223,6 +1256,43 @@ kl_chunk_bin_find(kl_mem_t * const mem, size_t const size)
 static void *
 kl_chunk_solo(size_t const size)
 {
+  size_t block_size;
+  void * ret, * block, * chunk;
+
+  /* Determine appropriate allocation size. */
+  if (KL_CHUNK_SIZE(size) <= KL_BLOCK_DEFAULT_SIZE)
+    block_size = KL_BLOCK_SIZE(KL_BLOCK_DEFAULT_SIZE);
+  else
+    block_size = KL_BLOCK_SIZE(KL_CHUNK_SIZE(size));
+
+  /* Get system memory. */
+  ret = KL_CALL_SYS_ALLOC(block, block_size);
+  if (KL_SYS_ALLOC_FAIL == ret)
+    return NULL;
+  KL_CALL_SYS_BZERO(block, block_size);
+
+  /* Accounting. */
+  KL_MEM_TOTAL += block_size;
+  if (KL_MEM_TOTAL > KL_MEM_MAX)
+    KL_MEM_MAX = KL_MEM_TOTAL;
+  KL_SYS_CTR++;
+
+  /* Set block header and footer size. */
+  *KL_B2H(block) = KL_BLOCK_HEADER_SIZE;
+  *KL_B2F(block, block_size) = *KL_B2H(block);
+
+  /* Set the chunk to be returned. */
+  chunk = (void*)((uptr)block+KL_BLOCK_HEADER_SIZE);
+
+  /* Set chunk header and footer size (set chunk as not in use). */
+  *(size_t*)KL_G_HDR(chunk) = block_size-KL_BLOCK_META_SIZE;
+  *(size_t*)KL_G_FTR(chunk) = *(size_t*)KL_G_HDR(chunk);
+
+  /* Sanity check: macros are working. */
+  assert(KL_ISFIRST(chunk));
+  assert(KL_ISLAST(chunk));
+  assert(!KL_ISINUSE(chunk));
+
   return NULL;
 }
 
@@ -1362,7 +1432,7 @@ KL_malloc(size_t const size)
       /* Sanity check: macros are working. */
       assert(KL_ISFIRST(chunk));
       assert(KL_ISLAST(chunk));
-      assert(!KL_INUSE(chunk));
+      assert(!KL_ISINUSE(chunk));
     }
 
     /* Split chunk if applicable. */
@@ -1452,26 +1522,26 @@ KL_malloc2(size_t const size)
     return NULL;
 
   if (NULL != (brick=kl_brick_bin_find(&mem, size))) {
-    ptr = KL_2PTR(brick);
+    ptr = KL_G_PTR(brick);
 
     assert(size <= KL_BRICK_MAX_SIZE);
     assert(KL_BRICK == KL_TYPEOF(brick));
-    assert(KL_BRICK_SIZE(size) == KL_2SIZE(brick));
+    assert(KL_BRICK_SIZE(size) == KL_G_SIZE(brick));
   }
   else if (NULL != (chunk=kl_chunk_bin_find(&mem, size))) {
-    ptr = KL_2PTR(chunk);
+    ptr = KL_G_PTR(chunk);
 
     assert(size <= KL_CHUNK_MAX_SIZE);
     assert(KL_CHUNK == KL_TYPEOF(chunk));
-    assert(KL_CHUNK_SIZE(size) <= KL_2SIZE(chunk));
+    assert(KL_CHUNK_SIZE(size) <= KL_G_SIZE(chunk));
   }
   else if (NULL != (chunk=kl_chunk_solo(size))) {
-    ptr = KL_2PTR(chunk);
+    ptr = KL_G_PTR(chunk);
 
     assert(size <= KL_CHUNK_MAX_SIZE);
     assert(KL_CHUNK == KL_TYPEOF(chunk));
-    //assert(KL_CHUNK_SIZE(size) <= KL_2SIZE(chunk));
-    assert(KL_CHUNK_SIZE(size) == KL_2SIZE(chunk));
+    //assert(KL_CHUNK_SIZE(size) <= KL_G_SIZE(chunk));
+    assert(KL_CHUNK_SIZE(size) == KL_G_SIZE(chunk));
   }
 
   assert(KL_ISALIGNED(ptr));
@@ -1536,7 +1606,7 @@ KL_free(void * const ptr)
    * pointer. */
 
   /* Coalesce with previous chunk. */
-  if (!KL_ISFIRST(chunk) && !KL_INUSE(KL_A2C(chunk))) {
+  if (!KL_ISFIRST(chunk) && !KL_ISINUSE(KL_A2C(chunk))) {
     /* Remove previous chunk from free chunk data structure. */
     if (0 != kl_chunk_bin_rm(&mem, KL_A2C(chunk)))
       return;
@@ -1549,7 +1619,7 @@ KL_free(void * const ptr)
   }
 
   /* Coalesce with following chunk. */
-  if (!KL_ISLAST(chunk) && !KL_INUSE(KL_C2A(chunk))) {
+  if (!KL_ISLAST(chunk) && !KL_ISINUSE(KL_C2A(chunk))) {
     /* Remove following chunk from free chunk data structure. */
     if (0 != kl_chunk_bin_rm(&mem, KL_C2A(chunk)))
       return;
@@ -1597,7 +1667,7 @@ KL_free2(void * const ptr)
 
   KL_INIT_CHECK;
 
-  hdr = KL_2HDR(ptr);
+  hdr = KL_G_HDR(ptr);
 
   switch (KL_TYPEOF(hdr)) {
     case KL_BRICK:
