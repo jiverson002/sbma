@@ -707,6 +707,8 @@ sb_internal_free(void)
 /****************************************************************************/
 /*! Initializes the sbmalloc subsystem. */
 /****************************************************************************/
+#pragma GCC push_options
+#pragma GCC optimize("O0")
 static void
 sb_internal_init(void)
 {
@@ -784,6 +786,7 @@ DONE:
 CLEANUP:
   sb_abort(1);
 }
+#pragma GCC pop_options
 
 
 /*--------------------------------------------------------------------------*/

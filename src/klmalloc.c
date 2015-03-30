@@ -153,7 +153,7 @@ the possibly moved allocated space.
 #   undef _POSIX_C_SOURCE
 #   define _POSIX_C_SOURCE 200112L
 # endif
-# include <stdlib.h>  /* posix_memalign, size_t */
+# include <stdlib.h>  /* posix_memalign */
 # undef _POSIX_C_SOURCE
 #endif
 #ifdef USE_SBMALLOC
@@ -164,6 +164,7 @@ the possibly moved allocated space.
 #include <limits.h>   /* CHAR_BIT */
 #include <stdint.h>   /* uint*_t */
 #include <stdio.h>    /* printf */
+#include <stdlib.h>   /* atexit */
 #include <string.h>   /* memset */
 #include <unistd.h>
 
@@ -298,14 +299,6 @@ ct_assert(262144 == sizeof(kl_fix_block_t));
 
 
 /****************************************************************************/
-/* Accounting variables */
-/****************************************************************************/
-static size_t KL_SYS_CTR=0;
-static size_t KL_MEM_TOTAL=0;
-static size_t KL_MEM_MAX=0;
-
-
-/****************************************************************************/
 /* Types of allocations */
 /****************************************************************************/
 enum {
@@ -397,8 +390,9 @@ enum {
 
 #define ALLOC_MAX_SIZE   CHUNK_MAX_SIZE
 
-#define BRICK_MAX_SIZE   (2*sizeof(void*)-1)
+#define BRICK_MAX_SIZE   (CHUNK_MIN_SIZE-1)
 
+#define CHUNK_MIN_SIZE   (2*sizeof(void*))
 #define CHUNK_MAX_SIZE   \
   ((SIZE_MAX&(~((size_t)MEMORY_ALLOCATION_ALIGNMENT)-1))-2*sizeof(uintptr_t))
 
@@ -517,45 +511,99 @@ static inline int KL_ISEMPTY(kl_fix_block_t const * const block)
 
 
 /****************************************************************************/
+/* =========================================================================*/
+/****************************************************************************/
+
+
+/****************************************************************************/
 /* Free memory data structure */
 /****************************************************************************/
+#define UNDES_BIN_NUM 4
 #define BRICK_BIN_NUM 256
 #define CHUNK_BIN_NUM 1576
 
 typedef struct kl_mem
 {
   int init;
-  void * last_block;
+  size_t sys_ctr;
+  size_t mem_total;
+  size_t mem_max;
+  size_t num_undes;
+  kl_fix_block_t * undes_bin[UNDES_BIN_NUM];
   kl_fix_block_t * brick_bin[BRICK_BIN_NUM];
   kl_var_block_t * chunk_bin[CHUNK_BIN_NUM];
 } kl_mem_t;
 
 
 /****************************************************************************/
+/* Free memory data structure */
+/****************************************************************************/
+static kl_mem_t mem={.init=0};
+
+
+/****************************************************************************/
+/* Check initialization status of the mem data structure. */
+/****************************************************************************/
+#define KL_INIT_CHECK                                                       \
+do {                                                                        \
+  if (0 == mem.init)                                                        \
+    kl_mem_init(&mem);                                                      \
+} while (0)
+
+
+/****************************************************************************/
 /* Initialize free chunk data structure */
 /****************************************************************************/
+static void
+kl_mem_free(void)
+{
+  size_t i;
+
+  for (i=0; i<mem.num_undes; ++i) {
+    /* Release back to system. */
+    CALL_SYS_FREE(mem.undes_bin[i], BLOCK_DEFAULT_SIZE);
+
+    /* Accounting. */
+    mem.mem_total -= BLOCK_DEFAULT_SIZE;
+  }
+}
+
+
 static int
 kl_mem_init(kl_mem_t * const mem)
 {
   int i;
 
+  if (0 != atexit(kl_mem_free))
+    return -1;
+
+  for (i=0; i<UNDES_BIN_NUM; ++i)
+    mem->undes_bin[i] = NULL;
   for (i=0; i<BRICK_BIN_NUM; ++i)
     mem->brick_bin[i] = NULL;
-
   for (i=0; i<CHUNK_BIN_NUM; ++i)
     mem->chunk_bin[i] = NULL;
 
-  mem->init = 1;
+  mem->sys_ctr   = 0;
+  mem->mem_total = 0;
+  mem->mem_max   = 0;
+  mem->num_undes = 0;
+  mem->init      = 1;
 
   return 0;
 }
 
 
 /****************************************************************************/
+/* =========================================================================*/
+/****************************************************************************/
+
+
+/****************************************************************************/
 /* Allocate a new block */
 /****************************************************************************/
 static kl_fix_block_t *
-kl_fix_block_alloc(void)
+kl_fix_block_alloc(kl_mem_t * const mem)
 {
   void * ret, * block;
 
@@ -566,10 +614,10 @@ kl_fix_block_alloc(void)
   CALL_SYS_BZERO(block, sizeof(kl_fix_block_t));
 
   /* Accounting. */
-  KL_MEM_TOTAL += sizeof(kl_fix_block_t);
-  if (KL_MEM_TOTAL > KL_MEM_MAX)
-    KL_MEM_MAX = KL_MEM_TOTAL;
-  KL_SYS_CTR++;
+  mem->mem_total += sizeof(kl_fix_block_t);
+  if (mem->mem_total > mem->mem_max)
+    mem->mem_max = mem->mem_total;
+  mem->sys_ctr++;
 
   return block;
 }
@@ -579,7 +627,7 @@ kl_fix_block_alloc(void)
 /* Add a node to a free brick data structure */
 /****************************************************************************/
 static int
-kl_brick_bin_ad(kl_mem_t * const mem, kl_brick_t * const brick)
+kl_brick_put(kl_mem_t * const mem, kl_brick_t * const brick)
 {
   size_t bidx;
   kl_fix_block_t * block;
@@ -600,23 +648,28 @@ kl_brick_bin_ad(kl_mem_t * const mem, kl_brick_t * const brick)
   block->info++;
 
   if (KL_ISEMPTY(block)) {
-    /*if ('undesignated' not full) {
-    }
-    else {*/
-      /* Remove from doubly-linked list of blocks in bin[bidx]. */
-      if (NULL != block->prev)
-        block->prev->next = block->next;
-      else
-        mem->brick_bin[bidx] = block->next;
-      if (NULL != block->next)
-        block->next->prev = block->prev;
+    /* Remove from doubly-linked list of blocks in bin[bidx]. */
+    if (NULL == block->prev)
+      mem->brick_bin[bidx] = block->next;
+    else
+      block->prev->next = block->next;
+    if (NULL != block->next)
+      block->next->prev = block->prev;
 
+    if (mem->num_undes < UNDES_BIN_NUM) {
+      /* need to zero out memory, so that there are no dangling pointers. */
+      memset(block, 0, sizeof(kl_fix_block_t));
+
+      /* Put block on undesignated stack. */
+      mem->undes_bin[mem->num_undes++] = block;
+    }
+    else {
       /* Release back to system. */
       CALL_SYS_FREE(block, BLOCK_DEFAULT_SIZE);
 
       /* Accounting. */
-      KL_MEM_TOTAL -= BLOCK_DEFAULT_SIZE;
-    /*}*/
+      mem->mem_total -= BLOCK_DEFAULT_SIZE;
+    }
   }
   else {
     /* Prepend brick to front of block singly-linked list. */
@@ -627,9 +680,10 @@ kl_brick_bin_ad(kl_mem_t * const mem, kl_brick_t * const brick)
     if (NULL == block->prev && NULL == block->next &&
         block != mem->brick_bin[bidx])
     {
+      block->prev = NULL;
+      block->next = mem->brick_bin[bidx];
       if (NULL != mem->brick_bin[bidx])
         mem->brick_bin[bidx]->prev = block;
-      block->next = mem->brick_bin[bidx];
       mem->brick_bin[bidx] = block;
     }
   }
@@ -642,7 +696,7 @@ kl_brick_bin_ad(kl_mem_t * const mem, kl_brick_t * const brick)
 /* Find the brick bin with the smallest size >= size parameter */
 /****************************************************************************/
 static void *
-kl_brick_bin_find(kl_mem_t * const mem, size_t const size)
+kl_brick_get(kl_mem_t * const mem, size_t const size)
 {
   size_t bidx;
   kl_fix_block_t * block;
@@ -654,14 +708,15 @@ kl_brick_bin_find(kl_mem_t * const mem, size_t const size)
   bidx  = KL_G_BRICKBIN(size);
   block = mem->brick_bin[bidx];
 
-#if 0
-  if (NULL != 'undesignated block') { /* Designate existing block. */
-  }
-#endif
-  if (NULL == block) {                /* Allocate new block. */
-    block = kl_fix_block_alloc();
-    if (NULL == block)
-      return NULL;
+  if (NULL == block || NULL == block->head) {
+    if (0 != mem->num_undes) {            /* Designate existing block. */
+      block = mem->undes_bin[--mem->num_undes];
+    }
+    else {                                /* Allocate new block. */
+      block = kl_fix_block_alloc(mem);
+      if (NULL == block)
+        return NULL;
+    }
 
     /* Set block bin index (multiplier-1). */
     block->info = bidx<<BLOCK_BIDX_SHIFT;
@@ -669,15 +724,16 @@ kl_brick_bin_find(kl_mem_t * const mem, size_t const size)
     block->info |= (FIXED_MAX_SIZE/((bidx+1)*MEMORY_ALLOCATION_ALIGNMENT));
 
     /* Set block as head of doubly-linked list. */
+    block->prev = NULL;
+    block->next = mem->brick_bin[bidx];
     if (NULL != mem->brick_bin[bidx])
       mem->brick_bin[bidx]->prev = block;
-    block->next = mem->brick_bin[bidx];
     mem->brick_bin[bidx] = block;
 
-    /* Set head of blocks singly-linked list. */
+    /* Set head of block's singly-linked list to first brick. */
     block->head = (kl_brick_t*)&block->raw;
   }
-  else {                              /* Use head block. */
+  else {                                  /* Use head block. */
   }
 
   /* Decrement block count.  This is safe (won't affect multiplier) because
@@ -686,10 +742,10 @@ kl_brick_bin_find(kl_mem_t * const mem, size_t const size)
 
   /* Remove full block from doubly-linked list. */
   if (KL_ISFULL(block)) {
-    if (NULL != block->prev)
-      block->prev->next = block->next;
-    else
+    if (NULL == block->prev)
       mem->brick_bin[bidx] = block->next;
+    else
+      block->prev->next = block->next;
     if (NULL != block->next)
       block->next->prev = block->prev;
   }
@@ -709,10 +765,8 @@ kl_brick_bin_find(kl_mem_t * const mem, size_t const size)
     }
   }
 
-  /* Set new head of block. */
+  /* Remove brick from front of block's singly-linked list. */
   block->head = brick->iface.node.next;
-
-  /* Clear pointer. */
   brick->iface.node.next = NULL;
 
   return brick;
@@ -720,25 +774,8 @@ kl_brick_bin_find(kl_mem_t * const mem, size_t const size)
 
 
 /****************************************************************************/
+/* =========================================================================*/
 /****************************************************************************/
-/* KL API */
-/****************************************************************************/
-/****************************************************************************/
-
-/****************************************************************************/
-/* Free memory data structure */
-/****************************************************************************/
-static kl_mem_t mem={.init=0};
-
-
-/****************************************************************************/
-/* Initialize static variables and data structures */
-/****************************************************************************/
-#define KL_INIT_CHECK                                                       \
-do {                                                                        \
-  if (0 == mem.init)                                                        \
-    kl_mem_init(&mem);                                                      \
-} while (0)
 
 
 /****************************************************************************/
@@ -776,7 +813,7 @@ KL_malloc(size_t const size)
   if (size > ALLOC_MAX_SIZE)
     return NULL;
 
-  if (NULL != (brick=kl_brick_bin_find(&mem, size))) {
+  if (NULL != (brick=kl_brick_get(&mem, size))) {
     ptr = (void*)&brick->iface.raw;
 
     assert(size <= BRICK_MAX_SIZE);
@@ -784,7 +821,7 @@ KL_malloc(size_t const size)
     assert(KL_BRICK_SIZE(size) == KL_G_SIZE((kl_alloc_t*)brick));
   }
 #if 0
-  else if (NULL != (chunk=kl_chunk_bin_find(&mem, size))) {
+  else if (NULL != (chunk=kl_chunk_get(&mem, size))) {
     ptr = KL_G_PTR(chunk);
 
     assert(size <= CHUNK_MAX_SIZE);
@@ -817,16 +854,14 @@ KL_free(void * const ptr)
 
   KL_INIT_CHECK;
 
-  if (NULL == ptr) {}
-
   alloc = KL_G_ALLOC(ptr);
 
   switch (KL_TYPEOF(alloc)) {
     case KL_BRICK:
-      kl_brick_bin_ad(&mem, (kl_brick_t*)alloc);
+      kl_brick_put(&mem, (kl_brick_t*)alloc);
       break;
     case KL_CHUNK:
-      //kl_chunk_bin_ad(&mem, (kl_chunk_t*)alloc);
+      //kl_chunk_put(&mem, (kl_chunk_t*)alloc);
       break;
   }
 }
@@ -838,7 +873,7 @@ KL_free(void * const ptr)
 KL_EXPORT void
 KL_malloc_stats(void)
 {
-  printf("Calls to system allocator = %zu\n", KL_SYS_CTR);
-  printf("Maximum concurrent memory = %zu\n", KL_MEM_MAX);
+  printf("Calls to system allocator = %zu\n", mem.sys_ctr);
+  printf("Maximum concurrent memory = %zu\n", mem.mem_max);
   fflush(stdout);
 }
