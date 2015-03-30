@@ -7,15 +7,15 @@
 
 /*#define SEED   1426830585*/
 /*#define SEED   1426361468*/
-/*#define SEED   1427208060*/
-#define SEED   time(NULL)
-#define USE_SB 0
+#define SEED   1427208060
+/*#define SEED   time(NULL)*/
+#define USE_KL 1
 
-#if defined(USE_SB) && USE_SB > 0
-# include "sbmalloc.h"
-# define MALLOC       SB_malloc
-# define FREE         SB_free
-# define MALLOC_STATS SB_malloc_stats
+#if defined(USE_KL) && USE_KL > 0
+# include "klmalloc.h"
+# define MALLOC       KL_malloc
+# define FREE         KL_free
+# define MALLOC_STATS KL_malloc_stats
 #else
 # include <malloc.h>
 # define MALLOC       malloc
@@ -60,6 +60,7 @@ int main(void)
   assert(NULL != size);
   buf = MALLOC(BIG_ALLOC_SIZE);
   assert(NULL != buf);
+  memset(buf, 1, BIG_ALLOC_SIZE);
 
   for (i=0; i<NUM_ALLOCS; ++i) {
     j = rand()%100; /* indicator for big/med/sml alloc */
@@ -78,6 +79,7 @@ int main(void)
     gettimeofday(&te, NULL);
     ta += (te.tv_sec-ts.tv_sec)*1000000 + te.tv_usec-ts.tv_usec;
     assert(NULL != alloc[i]);
+    memset(alloc[i], 1, sz);
 
     size[i] = sz;
     cur_req += sz;

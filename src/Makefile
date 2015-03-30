@@ -30,12 +30,12 @@ config_prefix=/usr/local
 config_exec_prefix=/usr/local
 config_includedir=/usr/local/include
 config_libdir=/usr/local/lib
-config_build=release
+config_build=debug
 config_profile=no
 config_pthread=no
 config_openmp=no
-config_mmap=yes
-config_memalign=no
+config_mmap=no
+config_memalign=yes
 config_sbmalloc=no
 
 # Compiler flags

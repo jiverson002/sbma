@@ -8,8 +8,8 @@
 
 /*#define SEED 1426830585*/
 /*#define SEED 1426361468*/
-/*#define SEED 1427728812*/
-#define SEED time(NULL)
+#define SEED 1427744642
+/*#define SEED time(NULL)*/
 
 /* probability to free a previous allocation */
 #define PER_FREE 30
@@ -32,9 +32,9 @@ int main(void)
 
   fprintf(stderr, "seed = %lu\n", seed);
 
-  alloc = (void **) malloc(NUM_ALLOCS*sizeof(void *));
+  alloc = (void **) PFX(malloc)(NUM_ALLOCS*sizeof(void *));
   assert(NULL != alloc);
-  size = (size_t *) malloc(NUM_ALLOCS*sizeof(size_t));
+  size = (size_t *) PFX(malloc)(NUM_ALLOCS*sizeof(size_t));
   assert(NULL != size);
 
   gettimeofday(&t_beg1, NULL);
@@ -88,8 +88,8 @@ int main(void)
   t_free +=
     (t_end1.tv_sec-t_beg1.tv_sec)*1000000+(t_end1.tv_usec-t_beg1.tv_usec);
 
-  free(alloc);
-  free(size);
+  PFX(free)(alloc);
+  PFX(free)(size);
 
   fprintf(stderr, "Time per malloc = %.2f us\n", t_alloc*1.0/NUM_ALLOCS);
   fprintf(stderr, "Time per free   = %.2f us\n", t_free*1.0/NUM_ALLOCS);
