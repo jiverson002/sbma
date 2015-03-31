@@ -51,6 +51,7 @@ int main(void)
   srand(seed);
 
   fprintf(stderr, "seed = %lu\n", seed);
+  printf("<beg>            ----------------------------------------\n");
 
   ta     = 0;
   tf     = 0;
@@ -73,6 +74,8 @@ int main(void)
     else                                      /* 60% chance to make sml alloc */
       sz = rand()%SML_ALLOC_SIZE;
     sz++;
+
+    printf("<%3zu> %10zu ----------------------------------------\n", i, sz);
 
     gettimeofday(&ts, NULL);
     alloc[i] = MALLOC(sz);
@@ -109,6 +112,8 @@ int main(void)
         cur_req -= size[l];
       }
     }
+
+    printf("\n");
   }
 
   /* free remaining allocs */

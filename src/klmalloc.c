@@ -518,16 +518,13 @@ static inline size_t KL_G_SIZE(kl_alloc_t const * const alloc)
 
   assert(KL_ISALIGNED(ALLOC_PTR(alloc)));
 
-  printf("5. %zu (%d)\n", (uintptr_t)alloc, KL_TYPEOF(alloc));
   switch (KL_TYPEOF(alloc)) {
     case KL_BRICK:
       brick = (kl_brick_t*)alloc;
       block = (kl_fix_block_t*)KL_G_BLOCK((kl_alloc_t*)brick);
-      printf("-----\n");
       return (KL_G_BIDX(block)+1)*MEMORY_ALLOCATION_ALIGNMENT;
     case KL_CHUNK:
       chunk = (kl_chunk_t*)alloc;
-      printf("-----\n");
       return (size_t)CHUNK_HDR(chunk);
   }
   return 0;
@@ -542,7 +539,6 @@ static inline kl_alloc_t * KL_G_ALLOC(void const * const ptr)
 static inline kl_alloc_t * KL_G_NEXT(kl_alloc_t const * const alloc)
 {
   assert(KL_ISALIGNED(ALLOC_PTR(alloc)));
-  printf("4. %zu\n", (uintptr_t)alloc);
   return (kl_alloc_t*)((uintptr_t)alloc+KL_G_SIZE(alloc));
 }
 
@@ -570,13 +566,13 @@ static inline kl_alloc_t * KL_G_PREV(kl_alloc_t const * const alloc)
 
 static inline int KL_ISFULL(kl_fix_block_t const * const block)
 {
-  assert(KL_ISALIGNED(BLOCK_PTR(block)));
+  assert(KL_ISALIGNED((void*)block));
   return 0 == KL_G_COUNT(block);
 }
 
 static inline int KL_ISEMPTY(kl_fix_block_t const * const block)
 {
-  assert(KL_ISALIGNED(BLOCK_PTR(block)));
+  assert(KL_ISALIGNED((void*)block));
   return KL_G_COUNT(block) ==
     FIXED_MAX_SIZE/((KL_G_BIDX(block)+1)*MEMORY_ALLOCATION_ALIGNMENT);
 }
@@ -585,7 +581,7 @@ static inline int KL_ISFIRST(kl_chunk_t const * const chunk)
 {
   assert(KL_ISALIGNED(CHUNK_PTR(chunk)));
 
-  return sizeof(uintptr_t) ==
+  return BLOCK_HEADER_ALIGN ==
     *(uintptr_t*)((uintptr_t)chunk-sizeof(uintptr_t));
 }
 
@@ -593,10 +589,7 @@ static inline int KL_ISLAST(kl_chunk_t const * const chunk)
 {
   assert(KL_ISALIGNED(CHUNK_PTR(chunk)));
 
-  printf("3. %zu %zu\n", (uintptr_t)chunk,
-    (uintptr_t)KL_G_NEXT((kl_alloc_t*)chunk));
-  assert(KL_CHUNK == KL_TYPEOF((kl_alloc_t*)chunk));
-  return sizeof(uintptr_t) == KL_G_SIZE(KL_G_NEXT((kl_alloc_t*)chunk));
+  return BLOCK_HEADER_ALIGN == KL_G_SIZE(KL_G_NEXT((kl_alloc_t*)chunk));
 }
 
 static inline int KL_ISINUSE(kl_chunk_t const * const chunk)
@@ -925,7 +918,7 @@ kl_mem_init(kl_mem_t * const mem)
 static void *
 kl_block_alloc(kl_mem_t * const mem, size_t const size)
 {
-  void * ret, * block;
+  void * ret, * block=NULL;
 
   /* Get system memory. */
   ret = CALL_SYS_ALLOC(block, size);
@@ -1096,22 +1089,90 @@ kl_brick_get(kl_mem_t * const mem, size_t const size)
 
 
 /****************************************************************************/
-/* Remove a node from a free chunk data structure */
+/* Add a node to a free chunk data structure */
 /****************************************************************************/
+static int
+kl_chunk_put(kl_mem_t * const mem, kl_chunk_t * const chunk)
+{
+  size_t bidx;
+
+  bidx = KL_SIZE2BIN(KL_G_SIZE((kl_alloc_t*)chunk));
+
+  /* Treat fixed size bins and large bins differently */
+  if (KL_ISSMALLBIN(bidx)) {
+    /* Shift bin index in case a chunk is made up of coalesced chunks which
+     * collectively have a size which causes the chunk to fall in a particular
+     * bin, but has less bytes than required by the bin. */
+    if (KL_G_SIZE((kl_alloc_t*)chunk) < KL_BIN2SIZE(bidx) && bidx > 0)
+      bidx--;
+
+    /* Sanity check: chunk must be at least the size of the fixed bin. */
+    assert(KL_G_SIZE((kl_alloc_t*)chunk) >= KL_BIN2SIZE(bidx));
+
+    /* Prepend n to front of chunk_bin[bidx] linked-list. */
+    CHUNK_PREV(chunk) = NULL;
+    CHUNK_NEXT(chunk) = mem->chunk_bin[bidx];
+    if (NULL != mem->chunk_bin[bidx])
+      CHUNK_PREV(mem->chunk_bin[bidx]) = chunk;
+    mem->chunk_bin[bidx] = chunk;
+
+    printf("  [put] bidx=%-4zu, chunk=%-11zu, size=%-10zu\n", bidx,
+      (uintptr_t)chunk, KL_G_SIZE((kl_alloc_t*)chunk));
+  }
+#if 0
+  else {
+    /* This will keep large buckets sorted. */
+    n = mem->chunk_bin[bidx];
+    p = NULL;
+
+    while (NULL != n && *KL_P2H(n) < *KL_C2H(chunk)) {
+      p = n;
+      n = n->n;
+    }
+
+    if (NULL != n) {
+      /* insert internally */
+      node->p = n->p;
+      node->n = n;
+      if (NULL == n->p)
+        mem->chunk_bin[bidx] = node;
+      else
+        n->p->n = node;
+      n->p = node;
+    }
+    else if (NULL != p) {
+      /* insert at the end */
+      p->n = node;
+      node->p = p;
+      node->n = NULL;
+    }
+    else {
+      /* insert at the beginning */
+      mem->chunk_bin[bidx] = node;
+      node->p = NULL;
+      node->n = NULL;
+    }
+  }
+#endif
+
+  return 0;
+}
+
+
 /****************************************************************************/
 /* Remove a node from a free chunk data structure */
 /****************************************************************************/
 static int
-kl_chunk_bin_rm(kl_mem_t * const mem, kl_chunk_t * const chunk)
+kl_chunk_del(kl_mem_t * const mem, kl_chunk_t * const chunk)
 {
-  size_t bidx = KL_SIZE2BIN(KL_G_SIZE((kl_alloc_t*)chunk));
+  size_t bidx;
+
+  bidx = KL_SIZE2BIN(CHUNK_HDR(chunk));
 
   /* Shift bin index in case a chunk is made up of coalesced chunks which
    * collectively have a size which causes the chunk to fall in a particular
-   * bin, but has less bytes than required by the bin.
-   * TODO: it should be possible to do this with an if statement, since it
-   * should shift down by one bin at most. */
-  if (KL_G_SIZE((kl_alloc_t*)chunk) < KL_BIN2SIZE(bidx) && bidx > 0)
+   * bin, but has less bytes than required by the bin. */
+  if (CHUNK_HDR(chunk) < KL_BIN2SIZE(bidx) && bidx > 0)
     bidx--;
 
   /* Fixed and variable sized bins are treated the same, since removing a node
@@ -1130,131 +1191,6 @@ kl_chunk_bin_rm(kl_mem_t * const mem, kl_chunk_t * const chunk)
 
 
 /****************************************************************************/
-/* Add a node to a free chunk data structure */
-/****************************************************************************/
-static int
-kl_chunk_put(kl_mem_t * const mem, kl_chunk_t * chunk)
-{
-  size_t bidx;
-  kl_block_t * block;
-#if 0
-  kl_chunk_t * prev, * next;
-#endif
-
-  bidx = KL_SIZE2BIN(CHUNK_HDR(chunk));
-
-  /* Coalesce with previous chunk. */
-  if (!KL_ISFIRST(chunk) &&
-      chunk != (kl_chunk_t*)KL_G_PREV((kl_alloc_t*)chunk))
-  {
-    /* Remove previous chunk from free chunk data structure. */
-    if (0 != kl_chunk_bin_rm(mem, (kl_chunk_t*)KL_G_PREV((kl_alloc_t*)chunk)))
-      return -1;
-
-    /* Set chunk to point to previous chunk. */
-    chunk = (kl_chunk_t*)KL_G_PREV((kl_alloc_t*)chunk);
-
-    /* Update chunk size. */
-    CHUNK_HDR(chunk) += CHUNK_HDR((kl_chunk_t*)KL_G_NEXT((kl_alloc_t*)chunk));
-  }
-
-  printf("2. %zu [%zu]\n", (uintptr_t)chunk, CHUNK_HDR(chunk));
-  printf("2. %zu\n", CHUNK_HDR((kl_chunk_t*)KL_G_NEXT((kl_alloc_t*)chunk)));
-  assert(KL_CHUNK == KL_TYPEOF((kl_alloc_t*)chunk));
-  /* Coalesce with following chunk. */
-  if (!KL_ISLAST(chunk) &&
-      !KL_ISINUSE((kl_chunk_t*)KL_G_NEXT((kl_alloc_t*)chunk)))
-  {
-    /* Remove following chunk from free chunk data structure. */
-    if (0 != kl_chunk_bin_rm(mem, (kl_chunk_t*)KL_G_NEXT((kl_alloc_t*)chunk)))
-      return -1;
-
-    /* Update chunk size. */
-    CHUNK_HDR(chunk) += CHUNK_HDR((kl_chunk_t*)KL_G_PREV((kl_alloc_t*)chunk));
-  }
-
-  /* TODO: Implicitly, the following rule prevents large allocations from
-   * going into the free chunk data structure.  Thus, it also prevents the
-   * limitation described above.  However, in many cases, it would be nice to
-   * keep large allocations around for quicker allocation time. */
-
-  /* If chunk is the only chunk, release memory back to system. */
-  if (KL_ISFIRST(chunk) && KL_ISLAST(chunk)) {
-    block = KL_G_BLOCK((kl_alloc_t*)chunk);
-
-    /* Accounting. */
-    mem->mem_total -= KL_BLOCK_SIZE(CHUNK_HDR(chunk));
-
-    CALL_SYS_FREE(block, KL_BLOCK_SIZE(CHUNK_HDR(chunk)));
-  }
-  else {
-    /* Set chunk as not in use. */
-    CHUNK_FTR(chunk) = CHUNK_HDR(chunk);
-
-//#ifndef NDEBUG
-//    memset(KL_C2P(chunk), 0, sizeof(kl_chunk_bin_node_t));
-//#endif
-    /* Add chunk to free chunk data structure. */
-    /* Treat fixed size bins and large bins differently */
-    if (KL_ISSMALLBIN(bidx)) {
-      /* Shift bin index in case a chunk is made up of coalesced chunks which
-       * collectively have a size which causes the chunk to fall in a particular
-       * bin, but has less bytes than required by the bin. */
-      if (CHUNK_HDR(chunk) < KL_BIN2SIZE(bidx) && bidx > 0)
-        bidx--;
-
-      /* Prepend n to front of chunk_bin[bidx] linked-list. */
-      CHUNK_PREV(chunk) = NULL;
-      CHUNK_NEXT(chunk) = mem->chunk_bin[bidx];
-      if (NULL != mem->chunk_bin[bidx]) {
-        CHUNK_PREV(mem->chunk_bin[bidx]) = chunk;
-      }
-      mem->chunk_bin[bidx] = chunk;
-    }
-#if 0
-    else {
-      /* This will keep large buckets sorted. */
-      prev = NULL;
-      next = mem->chunk_bin[bidx];
-
-      while (NULL != next &&
-        KL_G_SIZE((kl_alloc_t*)next) < KL_G_SIZE((kl_alloc_t*)chunk))
-      {
-        prev = next;
-        next = CHUNK_NEXT(next);
-      }
-
-      if (NULL != next) {
-        /* insert internally */
-        CHUNK_PREV(chunk) = CHUNK_PREV(next);
-        CHUNK_NEXT(chunk) = next;
-        if (NULL == CHUNK_PREV(next))
-          mem->chunk_bin[bidx] = chunk;
-        else
-          CHUNK_NEXT(CHUNK_PREV(next)) = chunk;
-        CHUNK_PREV(next) = chunk;
-      }
-      else if (NULL != prev) {
-        /* insert at the end */
-        CHUNK_NEXT(prev)  = chunk;
-        CHUNK_PREV(chunk) = prev;
-        CHUNK_NEXT(chunk) = NULL;
-      }
-      else {
-        /* insert at the beginning */
-        mem->chunk_bin[bidx] = chunk;
-        CHUNK_PREV(chunk) = NULL;
-        CHUNK_NEXT(chunk) = NULL;
-      }
-    }
-#endif
-  }
-
-  return 0;
-}
-
-
-/****************************************************************************/
 /* Find the chunk with the smallest size >= size parameter */
 /****************************************************************************/
 static kl_chunk_t *
@@ -1262,7 +1198,7 @@ kl_chunk_get(kl_mem_t * const mem, size_t const size)
 {
   size_t bidx, chunk_size;
   kl_fix_block_t * block;
-  kl_chunk_t * chunk, * next;
+  kl_chunk_t * chunk=NULL, * next;
 
   if (size > FIXED_MAX_SIZE)
     return NULL;
@@ -1275,28 +1211,34 @@ kl_chunk_get(kl_mem_t * const mem, size_t const size)
     while (NULL == chunk && KL_ISSMALLBIN(bidx))
       chunk = mem->chunk_bin[++bidx];
 
+    if (NULL != chunk) {
+      if (!(0 != KL_G_SIZE((kl_alloc_t*)chunk))) {
+        printf("  FAILURE\n");
+        printf("    bidx=%zu\n", bidx);
+        printf("    chunk=%zu\n", (uintptr_t)chunk);
+      }
+      assert(0 != KL_G_SIZE((kl_alloc_t*)chunk));
+    }
+
     if (NULL != chunk) {                /* Use chunk from existing block. */
       /* Remove head of chunk_bin[bidx]. */
       mem->chunk_bin[bidx] = CHUNK_NEXT(chunk);
       if (NULL != mem->chunk_bin[bidx])
         CHUNK_PREV(mem->chunk_bin[bidx]) = NULL;
       CHUNK_NEXT(chunk) = NULL;
-      printf("existing\n");
     }
     else {
       if (0 != mem->num_undes) {          /* Designate existing block. */
         block = mem->undes_bin[--mem->num_undes];
-        printf("undesignated\n");
       }
       else {                              /* Allocate new block. */
         block = (kl_fix_block_t*)kl_block_alloc(mem, BLOCK_DEFAULT_SIZE);
         if (NULL == block)
           return NULL;
-        printf("alloc\n");
       }
 
       /* Set block header and footer size. */
-      BLOCK_HDR(block) = sizeof(uintptr_t);
+      BLOCK_HDR(block) = BLOCK_HEADER_ALIGN;
       BLOCK_FTR(block, BLOCK_DEFAULT_SIZE) = BLOCK_HDR(block);
 
       /* Set the chunk to be returned. */
@@ -1306,6 +1248,7 @@ kl_chunk_get(kl_mem_t * const mem, size_t const size)
       CHUNK_HDR(chunk) = FIXED_MAX_SIZE;
       CHUNK_FTR(chunk) = CHUNK_HDR(chunk);
     }
+    assert(0 != KL_G_SIZE((kl_alloc_t*)chunk));
 
     /* Split chunk if applicable. */
     if (CHUNK_HDR(chunk) > CHUNK_MIN_SIZE &&
@@ -1314,33 +1257,17 @@ kl_chunk_get(kl_mem_t * const mem, size_t const size)
       /* Get current chunk[0] size. */
       chunk_size = CHUNK_HDR(chunk);
 
-      printf("*****\n");
-      printf("1. (%d)\n", KL_ISLAST(chunk));
-      printf("*****\n");
-
       /* Update chunk[0] header and footer (in use). */
       CHUNK_HDR(chunk) = KL_CHUNK_SIZE(size);
       CHUNK_FTR(chunk) = 0;
 
-      assert(KL_ISALIGNED((void*)(chunk_size-CHUNK_HDR(chunk))));
-
       /* Set chunk[1] header and footer (not in use). */
       next = (kl_chunk_t*)KL_G_NEXT((kl_alloc_t*)chunk);
-      CHUNK_HDR(next) = chunk_size-CHUNK_HDR(chunk);
-      CHUNK_FTR(next) = CHUNK_HDR(next);
-
-      /* Add chunk[1] to free chunk data structure.  In case NDEBUG is not
-       * defined, the pointers should be reset.  This is necessary whenever
-       * memory chunks have been coallesced, since the memory locations that the
-       * pointers occupy may have been modified if one of the coalesced chunks
-       * was used as an allocation. */
-#ifndef NDEBUG
+      CHUNK_HDR(next)  = chunk_size-CHUNK_HDR(chunk);
+      CHUNK_FTR(next)  = CHUNK_HDR(next);
       CHUNK_PREV(next) = NULL;
       CHUNK_NEXT(next) = NULL;
-#endif
-      printf("1. %zu [%zu] (%d)\n", (uintptr_t)next, CHUNK_HDR(next),
-        KL_ISLAST(next));
-      assert(KL_CHUNK == KL_TYPEOF((kl_alloc_t*)next));
+
       if (0 != kl_chunk_put(mem, next))
         return NULL;
     }
@@ -1404,7 +1331,7 @@ kl_chunk_solo(kl_mem_t * const mem, size_t const size)
   assert(block_size > BLOCK_DEFAULT_SIZE);
 
   /* Set block header and footer size. */
-  BLOCK_HDR(block) = sizeof(uintptr_t);
+  BLOCK_HDR(block) = BLOCK_HEADER_ALIGN;
   BLOCK_FTR(block, block_size) = BLOCK_HDR(block);
 
   /* Set the chunk to be returned. */
@@ -1470,6 +1397,10 @@ KL_malloc(size_t const size)
 
     assert(size <= CHUNK_MAX_SIZE);
     assert(KL_CHUNK == KL_TYPEOF((kl_alloc_t*)chunk));
+    if (KL_CHUNK_SIZE(size) > KL_G_SIZE((kl_alloc_t*)chunk)) {
+      printf("CHUNK_SIZE: %zu\n", KL_CHUNK_SIZE(size));
+      printf("G_SIZE:     %zu\n", KL_G_SIZE((kl_alloc_t*)chunk));
+    }
     assert(KL_CHUNK_SIZE(size) <= KL_G_SIZE((kl_alloc_t*)chunk));
   }
   else if (NULL != (chunk=kl_chunk_solo(&mem, size))) {
@@ -1494,6 +1425,7 @@ KL_EXPORT void
 KL_free(void * const ptr)
 {
   kl_alloc_t * alloc;
+  kl_chunk_t * chunk, * prev, * next;
 
   KL_INIT_CHECK;
 
@@ -1504,7 +1436,59 @@ KL_free(void * const ptr)
       kl_brick_put(&mem, (kl_brick_t*)alloc);
       break;
     case KL_CHUNK:
-      kl_chunk_put(&mem, (kl_chunk_t*)alloc);
+      chunk = (kl_chunk_t*)alloc;
+
+      /* Coalesce with previous chunk. */
+      prev = (kl_chunk_t*)KL_G_PREV((kl_alloc_t*)chunk);
+#if 0
+      if (!KL_ISFIRST(chunk) && !KL_ISINUSE(prev)) {
+        /* Remove previous chunk from free chunk data structure. */
+        if (0 != kl_chunk_del(&mem, prev))
+          return;
+
+        /* Update previous chunk size. */
+        CHUNK_HDR(prev) = KL_G_SIZE(prev)+KL_G_SIZE(chunk);
+
+        /* Set chunk to point to previous chunk. */
+        chunk = prev;
+      }
+#endif
+
+      /* Coalesce with following chunk. */
+      next = (kl_chunk_t*)KL_G_NEXT((kl_alloc_t*)chunk);
+#if 0
+      if (!KL_ISLAST(chunk) && !KL_ISINUSE(next)) {
+        /* Remove following chunk from free chunk data structure. */
+        if (0 != kl_chunk_del(&mem, next))
+          return;
+
+        /* Update chunk size. */
+        CHUNK_HDR(chunk) = KL_G_SIZE(chunk)+KL_G_SIZE(next);
+      }
+#endif
+
+      /* TODO: Implicitly, the following rule prevents large allocations from
+       * going into the free chunk data structure.  Thus, it also prevents the
+       * limitation described above.  However, in many cases, it would be nice to
+       * keep large allocations around for quicker allocation time. */
+
+      /* If chunk is the only chunk, release memory back to system. */
+      if (KL_ISFIRST(chunk) && KL_ISLAST(chunk)) {
+        /* Accounting. */
+        mem.mem_total -= KL_BLOCK_SIZE(KL_G_SIZE((kl_alloc_t*)chunk));
+
+        CALL_SYS_FREE(KL_G_BLOCK((kl_alloc_t*)chunk),
+          KL_BLOCK_SIZE(KL_G_SIZE((kl_alloc_t*)chunk)));
+      }
+      else {
+        /* Set chunk as not in use. */
+        CHUNK_FTR(chunk) = KL_G_SIZE((kl_alloc_t*)chunk);
+        assert(0 != KL_G_SIZE((kl_alloc_t*)chunk));
+
+        /* Add chunk to free chunk data structure. */
+        if (0 != kl_chunk_put(&mem, chunk))
+          return;
+      }
       break;
   }
 }
