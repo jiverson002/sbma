@@ -35,7 +35,7 @@ config_profile=no
 config_pthread=no
 config_openmp=no
 config_mmap=no
-config_memalign=yes
+config_memalign=no
 config_sbmalloc=no
 
 # Compiler flags
