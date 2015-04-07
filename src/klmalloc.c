@@ -220,6 +220,7 @@ typedef struct kl_chunk
     {
       struct kl_chunk * prev;
       struct kl_chunk * next;
+      uintptr_t footer;
     } node;
     char * raw;
   } iface;
@@ -425,7 +426,7 @@ enum {
 
 #define BRICK_MAX_SIZE   (CHUNK_MIN_SIZE-1)
 
-#define CHUNK_MIN_SIZE   (2*sizeof(void*))
+#define CHUNK_MIN_SIZE   (sizeof(kl_chunk_t))
 #define CHUNK_MAX_SIZE   \
   ((SIZE_MAX&(~((size_t)MEMORY_ALLOCATION_ALIGNMENT)-1))-2*sizeof(uintptr_t))
 
@@ -463,9 +464,14 @@ static inline size_t KL_CHUNK_SIZE(size_t size)
   return KL_ALIGN(2*sizeof(uintptr_t)+size);
 }
 
-static inline int KL_TYPEOF(kl_alloc_t const * const alloc)
+static inline int KL_TYPEOF(void const * const addr)
 {
+  kl_alloc_t * alloc;
+
+  alloc = (kl_alloc_t*)addr;
+
   assert(KL_ISALIGNED(&alloc->raw));
+
   return ALLOC_HDR(alloc)&KL_BRICK;
 }
 
@@ -1140,6 +1146,9 @@ kl_chunk_put(kl_mem_t * const mem, kl_chunk_t * chunk)
   size_t bidx;
   kl_chunk_t * prev, * next;
 
+  /* Sanity check: chunk size is still valid. */
+  assert(KL_G_SIZE(chunk) >= CHUNK_MIN_SIZE);
+
   if (!KL_ISFIRST(chunk)) {
     prev = (kl_chunk_t*)KL_G_PREV(chunk);
 
@@ -1314,7 +1323,7 @@ kl_chunk_get(kl_mem_t * const mem, size_t const size)
       CHUNK_FTR(chunk) = 0;
 
       /* Set chunk[1] header and footer (not in use). */
-      next = (kl_chunk_t*)KL_G_NEXT((kl_alloc_t*)chunk);
+      next = (kl_chunk_t*)KL_G_NEXT(chunk);
       CHUNK_HDR(next)  = chunk_size-CHUNK_HDR(chunk);
       CHUNK_FTR(next)  = CHUNK_HDR(next);
       CHUNK_PREV(next) = NULL;

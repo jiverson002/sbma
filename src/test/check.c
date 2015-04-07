@@ -7,8 +7,9 @@
 
 /*#define SEED   1426830585*/
 /*#define SEED   1426361468*/
-#define SEED   1427208060
-/*#define SEED   time(NULL)*/
+/*#define SEED   1428422405*/
+/*#define SEED   1428425781*/
+#define SEED   time(NULL)
 #define USE_KL 1
 
 #if defined(USE_KL) && USE_KL > 0
@@ -34,9 +35,9 @@
 
 /*size_t NUM_ALLOCS     = 1<<17;*/
 size_t NUM_ALLOCS     = 1<<12;
-size_t BIG_ALLOC_SIZE = 1<<25; /* 16MB */
-size_t MED_ALLOC_SIZE = 1<<16; /* 32KB */
-size_t SML_ALLOC_SIZE = 1<<11; /* 1KB  */
+size_t BIG_ALLOC_SIZE = 1<<25;            /* 16MB */
+size_t MED_ALLOC_SIZE = 262144;           /* CHUNK_MAX_SIZE? */
+size_t SML_ALLOC_SIZE = 4*sizeof(void*);  /* BRICK_MAX_SIZE  */
 
 int main(void)
 {
@@ -51,7 +52,7 @@ int main(void)
   srand(seed);
 
   fprintf(stderr, "seed = %lu\n", seed);
-  printf("<beg>            ----------------------------------------\n");
+  //printf("<beg>            ----------------------------------------\n");
 
   ta     = 0;
   tf     = 0;
@@ -62,6 +63,8 @@ int main(void)
   buf = MALLOC(BIG_ALLOC_SIZE);
   assert(NULL != buf);
   memset(buf, 1, BIG_ALLOC_SIZE);
+
+  //printf("\n");
 
   for (i=0; i<NUM_ALLOCS; ++i) {
     j = rand()%100; /* indicator for big/med/sml alloc */
@@ -75,7 +78,7 @@ int main(void)
       sz = rand()%SML_ALLOC_SIZE;
     sz++;
 
-    printf("<%3zu> %10zu ----------------------------------------\n", i, sz);
+    //printf("<%3zu> %10zu ----------------------------------------\n", i, sz);
 
     gettimeofday(&ts, NULL);
     alloc[i] = MALLOC(sz);
@@ -113,8 +116,10 @@ int main(void)
       }
     }
 
-    printf("\n");
+    //printf("\n");
   }
+
+  //printf("<end>            ----------------------------------------\n\n");
 
   /* free remaining allocs */
   for (i=0; i<NUM_ALLOCS; ++i) {
