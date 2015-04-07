@@ -853,6 +853,11 @@ static size_t bin2size[1532]=
   1047552, 1048576
 };
 
+
+
+/****************************************************************************/
+/* Free memory data structure */
+/****************************************************************************/
 typedef struct kl_mem
 {
   int init;
@@ -865,10 +870,6 @@ typedef struct kl_mem
   kl_chunk_t * chunk_bin[CHUNK_BIN_NUM];
 } kl_mem_t;
 
-
-/****************************************************************************/
-/* Free memory data structure */
-/****************************************************************************/
 static kl_mem_t mem={.init=0};
 
 
@@ -1144,6 +1145,7 @@ static int
 kl_chunk_put(kl_mem_t * const mem, kl_chunk_t * chunk)
 {
   size_t bidx;
+  void * block;
   kl_chunk_t * prev, * next;
 
   /* Sanity check: chunk size is still valid. */
@@ -1190,10 +1192,23 @@ kl_chunk_put(kl_mem_t * const mem, kl_chunk_t * chunk)
 
   /* If chunk is the only chunk, release memory back to system. */
   if (KL_ISFIRST(chunk) && KL_ISLAST(chunk)) {
-    /* Accounting. */
-    mem->mem_total -= KL_BLOCK_SIZE(KL_G_SIZE(chunk));
+    block = KL_G_PREV(chunk);
 
-    CALL_SYS_FREE(KL_G_PREV(chunk), KL_BLOCK_SIZE(KL_G_SIZE(chunk)));
+    if (mem->num_undes < UNDES_BIN_NUM &&
+        BLOCK_DEFAULT_SIZE == KL_BLOCK_SIZE(KL_G_SIZE(chunk)))
+    {
+      /* need to zero out memory, so that there are no dangling pointers. */
+      memset(block, 0, KL_BLOCK_SIZE(KL_G_SIZE(chunk)));
+
+      /* Put block on undesignated stack. */
+      mem->undes_bin[mem->num_undes++] = block;
+    }
+    else {
+      /* Accounting. */
+      mem->mem_total -= KL_BLOCK_SIZE(KL_G_SIZE(chunk));
+
+      CALL_SYS_FREE(block, KL_BLOCK_SIZE(KL_G_SIZE(chunk)));
+    }
   }
   else {
     /* Set chunk as not in use. */
