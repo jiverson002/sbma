@@ -42,6 +42,7 @@ enum sb_acct_type
 /****************************************************************************/
 struct sb_alloc
 {
+  size_t msize;           /* number of bytes mapped */
   size_t app_addr;        /* application handle to the shared mapping */
 
   size_t len;             /* number of bytes allocated */
@@ -157,7 +158,7 @@ static char sb_dbg_str[SBDBG_NUM][100]=
 /****************************************************************************/
 static int libc_calloc_init=0;
 static void *(*libc_calloc)(size_t, size_t)=NULL;
-#ifdef USE_PTHREAD
+#ifdef USE_PTHREAD_XXX
 static char sb_internal_calloc_mem[1024*1024]={0};
 static char * sb_internal_calloc_ptr=sb_internal_calloc_mem;
 #endif
@@ -186,7 +187,7 @@ sb_internal_abort(char const * const file, int const line, int const flag)
 }
 
 
-#ifdef USE_PTHREAD
+#ifdef USE_PTHREAD_XXX
 /****************************************************************************/
 /*! Temporary calloc function to be used only for dlsym.  After the
  *  libc_calloc is populated using dlsym, this function will never be called
@@ -1147,6 +1148,7 @@ SB_dumpall(void)
 }
 
 
+#include <stdio.h>
 /****************************************************************************/
 /*! Allocate memory via anonymous mmap. */
 /****************************************************************************/
@@ -1166,7 +1168,7 @@ SB_malloc(size_t const len)
     libc_calloc_init = 1;
     *((void **) &libc_calloc) = dlsym(RTLD_NEXT, "calloc");
   }
-#ifdef USE_PTHREAD
+#ifdef USE_PTHREAD_XXX
   /* the linux systems are very sensative and obnoxious when it comes to the
    * useage of dlsym.  it seems that when compiled with -pthread, a version of
    * dlsym which uses calloc is called, but when compiled without, this second
@@ -1191,34 +1193,28 @@ SB_malloc(size_t const len)
 
   /* compute allocation sizes */
   ssize = sizeof(struct sb_alloc);
-  msize = npages*psize;
+  msize = npages*psize+ssize+npages+1+100+strlen(sb_info.fstem);
+
+  /* allocate memory */
+  SBMMAP(app_addr, msize, PROT_NONE);
+
+  /* read/write protect internal memory */
+  SBMPROTECT(app_addr+npages*psize, ssize+npages+1+100+strlen(sb_info.fstem),
+    PROT_READ|PROT_WRITE);
 
   /* allocate the allocation structure */
-  sb_alloc = (struct sb_alloc *)(*sb_info.malloc)(ssize);
-  if (NULL == sb_alloc) {
-    SBWARN(SBDBG_DIAG)("%s", strerror(errno));
-    goto CLEANUP;
-  }
+  sb_alloc = (struct sb_alloc*)(app_addr+npages*psize);
   /* allocate the per-page flag vector */
-  pflags = (char *)(*sb_info.calloc)(npages+1, sizeof(char));
-  if (NULL == pflags) {
-    SBWARN(SBDBG_DIAG)("%s", strerror(errno));
-    goto CLEANUP;
-  }
-
+  pflags = (char*)((size_t)sb_alloc+ssize);
   /* create the filename for storage purposes */
-  fname = (char *)(*sb_info.malloc)(100+strlen(sb_info.fstem));
-  if (NULL == fname) {
-    SBWARN(SBDBG_DIAG)("%s", strerror(errno));
-    goto CLEANUP;
-  }
+  fname = (char*)((size_t)pflags+(npages+1));
+
+  /* create and truncate the file to size */
   if (0 > sprintf(fname, "%s%d-%p", sb_info.fstem, (int)getpid(),
       (void*)sb_alloc)) {
     SBWARN(SBDBG_DIAG)("%s", strerror(errno));
     goto CLEANUP;
   }
-
-  /* create and truncate the file to size */
   if (-1 == (fd=open(fname, O_RDWR|O_CREAT|O_EXCL, S_IRUSR|S_IWUSR))) {
     SBWARN(SBDBG_DIAG)("%s", strerror(errno));
     goto CLEANUP;
@@ -1227,11 +1223,6 @@ SB_malloc(size_t const len)
     SBWARN(SBDBG_DIAG)("%s", strerror(errno));
     goto CLEANUP;
   }
-
-  /* allocate memory */
-  SBMMAP(app_addr, msize, PROT_NONE, fd);
-
-  /* close file descriptor */
   if (-1 == close(fd)) {
     SBWARN(SBDBG_DIAG)("%s", strerror(errno));
     goto CLEANUP;
@@ -1239,6 +1230,7 @@ SB_malloc(size_t const len)
   /* fd = -1; */ /* Only need if a goto CLEANUP follows */
 
   /* populate sb_alloc structure */
+  sb_alloc->msize    = msize;
   sb_alloc->ld_pages = 0;
   sb_alloc->ch_pages = 0;
   sb_alloc->npages   = npages;
@@ -1284,7 +1276,7 @@ SB_free(void * const addr)
 
   SB_INIT_CHECK
 
-#ifdef USE_PTHREAD
+#ifdef USE_PTHREAD_XXX
   /* skip __calloc allocations */
   if ((char*)addr >= sb_internal_calloc_mem &&
     (char*)addr < sb_internal_calloc_mem+1024*1024) {
@@ -1327,9 +1319,5 @@ SB_free(void * const addr)
   if (-1 == unlink(sb_alloc->fname))
     sb_abort(1);
 
-  SBMUNMAP(sb_alloc->app_addr, sb_alloc->npages*sb_info.pagesize);
-
-  (*sb_info.free)(sb_alloc->fname);
-  (*sb_info.free)(sb_alloc->pflags);
-  (*sb_info.free)(sb_alloc);
+  SBMUNMAP(sb_alloc->app_addr, sb_alloc->msize);
 }

@@ -1271,7 +1271,7 @@ kl_chunk_get(kl_mem_t * const mem, size_t const size)
   kl_fix_block_t * block;
   kl_chunk_t * chunk=NULL, * next;
 
-  if (size > FIXED_MAX_SIZE)
+  if (KL_CHUNK_SIZE(size) > FIXED_MAX_SIZE)
     return NULL;
 
   bidx = KL_SIZE2BIN(KL_CHUNK_SIZE(size));
@@ -1466,23 +1466,23 @@ KL_malloc(size_t const size)
     ptr = BRICK_PTR(brick);
 
     assert(size <= BRICK_MAX_SIZE);
-    assert(KL_BRICK == KL_TYPEOF((kl_alloc_t*)brick));
-    assert(KL_BRICK_SIZE(size) == KL_G_SIZE((kl_alloc_t*)brick));
+    assert(KL_BRICK == KL_TYPEOF(brick));
+    assert(KL_BRICK_SIZE(size) == KL_G_SIZE(brick));
   }
   else if (NULL != (chunk=kl_chunk_get(&mem, size))) {
     ptr = CHUNK_PTR(chunk);
 
     assert(size <= CHUNK_MAX_SIZE);
-    assert(KL_CHUNK == KL_TYPEOF((kl_alloc_t*)chunk));
-    assert(KL_CHUNK_SIZE(size) <= KL_G_SIZE((kl_alloc_t*)chunk));
+    assert(KL_CHUNK == KL_TYPEOF(chunk));
+    assert(KL_CHUNK_SIZE(size) <= KL_G_SIZE(chunk));
   }
   else if (NULL != (chunk=kl_chunk_solo(&mem, size))) {
     ptr = CHUNK_PTR(chunk);
 
     assert(size <= CHUNK_MAX_SIZE);
-    assert(KL_CHUNK == KL_TYPEOF((kl_alloc_t*)chunk));
+    assert(KL_CHUNK == KL_TYPEOF(chunk));
     //assert(KL_CHUNK_SIZE(size) <= KL_G_SIZE(chunk));
-    assert(KL_CHUNK_SIZE(size) == KL_G_SIZE((kl_alloc_t*)chunk));
+    assert(KL_CHUNK_SIZE(size) == KL_G_SIZE(chunk));
   }
 
   assert(KL_ISALIGNED(ptr));

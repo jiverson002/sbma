@@ -9,6 +9,7 @@
 /*#define SEED   1426361468*/
 /*#define SEED   1428422405*/
 /*#define SEED   1428425781*/
+/*#define SEED   1428431895*/
 #define SEED   time(NULL)
 #define USE_KL 1
 
