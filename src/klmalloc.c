@@ -1507,6 +1507,49 @@ KL_malloc(size_t const size)
 
 
 /****************************************************************************/
+/* Allocate zeroed memory */
+/****************************************************************************/
+KL_EXPORT void *
+KL_calloc(size_t const num, size_t const size)
+{
+  void * ptr;
+
+  KL_INIT_CHECK;
+
+  if (NULL == (ptr=KL_malloc(num*size)))
+    return NULL;
+  memset(ptr, 0, num*size);
+
+  return ptr;
+}
+
+
+/****************************************************************************/
+/* Re-allocate size bytes of memory with pointer hint */
+/****************************************************************************/
+KL_EXPORT void *
+KL_realloc(void * const ptr, size_t const size)
+{
+  void * nptr;
+
+  KL_INIT_CHECK;
+
+  /* See if current allocation is large enough. */
+  if (size <= KL_G_SIZE(KL_G_ALLOC(ptr)))
+    return ptr;
+
+  /* Allocate new, larger region of memory. */
+  if (NULL == (nptr=KL_malloc(size)))
+    return ptr;
+
+  /* Release old memory region. */
+  free(ptr);
+
+  return nptr;
+}
+
+
+/****************************************************************************/
 /* Release size bytes of memory */
 /****************************************************************************/
 KL_EXPORT void
