@@ -37,8 +37,13 @@
 
 
 #ifdef USE_PTHREAD
+# include <errno.h>     /* errno library */
+# include <fcntl.h>     /* O_* */
+# include <limits.h>    /* NAME_MAX */
 # include <pthread.h>   /* pthread library */
+# include <semaphore.h> /* semaphore library */
 # include <syscall.h>   /* SYS_gettid, syscall */
+# include <sys/stat.h>  /* S_IRUSR, S_IWUSR */
 # include <time.h>      /* CLOCK_REALTIME, struct timespec, clock_gettime */
 
 # define SBDEADLOCK 0   /* 0: no deadlock diagnostics, */
@@ -58,28 +63,28 @@ do {                                                                        \
 
 # define _SB_GET_SEM(SEM)                                                   \
 do {                                                                        \
-  if (-1 == sem_wait(SEM)) {                                                \
-    SBWARN(SBDBG_FATAL)("Semaphore wait failed [errno: %d %s]\n", retval,   \
-      strerror(retval));                                                    \
+  if (0 != sem_wait(SEM)) {                                                 \
+    SBWARN(SBDBG_FATAL)("Semaphore wait failed [errno: %d %s]\n", errno,    \
+      strerror(errno));                                                     \
     sb_abort(0);                                                            \
   }                                                                         \
   if (SBDEADLOCK) printf("[%5d] sem get %s:%d %s (%p)\n",                   \
     (int)syscall(SYS_gettid), __func__, __LINE__, #SEM, (void*)(SEM));      \
 } while (0)
 
-#define SB_INIT_LOCK(LOCK)                                                  \
+# define SB_INIT_LOCK(LOCK)                                                 \
 do {                                                                        \
   /* The locks must be of recursive type in-order for the multi-threaded
    * code to work.  This is because OpenMP and pthread both call
    * malloc/free internally when spawning/joining threads. */               \
   int retval;                                                               \
   pthread_mutexattr_t attr;                                                 \
-  if (-1 == (retval=pthread_mutexattr_init(&(attr))))                       \
+  if (0 != (retval=pthread_mutexattr_init(&(attr))))                        \
     goto SB_INIT_LOCK_CLEANUP;                                              \
-  if (-1 == (retval=pthread_mutexattr_settype(&(attr),                      \
+  if (0 != (retval=pthread_mutexattr_settype(&(attr),                       \
     PTHREAD_MUTEX_RECURSIVE)))                                              \
     goto SB_INIT_LOCK_CLEANUP;                                              \
-  if (-1 == (retval=pthread_mutex_init(LOCK, &(attr))))                     \
+  if (0 != (retval=pthread_mutex_init(LOCK, &(attr))))                      \
     goto SB_INIT_LOCK_CLEANUP;                                              \
                                                                             \
   goto SB_INIT_LOCK_DONE;                                                   \
@@ -92,7 +97,7 @@ do {                                                                        \
   SB_INIT_LOCK_DONE: ;                                                      \
 } while (0)
 
-#define SB_FREE_LOCK(LOCK)                                                  \
+# define SB_FREE_LOCK(LOCK)                                                 \
 do {                                                                        \
   int retval;                                                               \
   if (0 != (retval=pthread_mutex_destroy(LOCK))) {                          \
@@ -144,11 +149,92 @@ do {                                                                        \
     (int)syscall(SYS_gettid), __func__, __LINE__, #LOCK, (void*)(LOCK));    \
 } while (0)
 
+#define SB_INIT_SEM(SEM, NAME, UNLINK)                                      \
+do {                                                                        \
+  if (SEM_FAILED == ((SEM)=sem_open(NAME, O_CREAT|O_RDWR, S_IRUSR|S_IWUSR,  \
+    1)))                                                                    \
+  {                                                                         \
+    printf("check1\n");\
+    if (EEXIST == errno) {                                                  \
+      (UNLINK) = 0;                                                         \
+    }                                                                       \
+    else {                                                                  \
+      goto SB_INIT_SEM_CLEANUP;                                             \
+    }                                                                       \
+  }                                                                         \
+  printf("check\n");\
+                                                                            \
+  goto SB_INIT_SEM_DONE;                                                    \
+                                                                            \
+  SB_INIT_SEM_CLEANUP:                                                      \
+  SBWARN(SBDBG_FATAL)("Semaphore init failed [errno: %d %s]\n", errno,      \
+    strerror(errno));                                                       \
+  sb_abort(0);                                                              \
+                                                                            \
+  SB_INIT_SEM_DONE: ;                                                       \
+} while (0)
+
+#define SB_FREE_SEM(SEM, NAME, UNLINK)                                      \
+do {                                                                        \
+  int retval;                                                               \
+  if (0 != sem_close(SEM)) {                                                \
+    SBWARN(SBDBG_FATAL)("Semaphore destroy failed [errno: %d %s]\n",        \
+      errno, strerror(errno));                                              \
+    sb_abort(0);                                                            \
+  }                                                                         \
+  if (0 != (UNLINK))                                                        \
+    sem_unlink(NAME);                                                       \
+} while (0)
+
+# if !defined(SBDEADLOACK) || SBDEADLOCK == 0
+#   define SB_GET_SEM(SEM) _SB_GET_SEM(SEM)
+# else
+#   define SB_GET_SEM(SEM)                                                  \
+do {                                                                        \
+  struct timespec ts;                                                       \
+  if (0 != clock_gettime(CLOCK_REALTIME, &ts)) {                            \
+    SBWARN(SBDBG_FATAL)("Clock get time failed [errno: %d %s]\n", errno,    \
+      strerror(errno));                                                     \
+    sb_abort(0);                                                            \
+  }                                                                         \
+  ts.tv_sec += 10;                                                          \
+  if (0 != sem_timedwait(SEM, &ts)) {                                       \
+    if (ETIMEDOUT == errno) {                                               \
+      SBWARN(SBDBG_DIAG)("[%5d] Semaphore wait timed-out %s:%d %s (%p)\n",  \
+        (int)syscall(SYS_gettid), __func__, __LINE__, #SEM, (void*)(SEM));  \
+      _SB_GET_SEM(SEM);                                                     \
+    }                                                                       \
+    else {                                                                  \
+      SBWARN(SBDBG_FATAL)("Semaphore wait failed [errno: %d %s]\n",         \
+        errno, strerror(errno));                                            \
+      sb_abort(0);                                                          \
+    }                                                                       \
+  }                                                                         \
+  if (SBDEADLOCK) printf("[%5d] sem get %s:%d %s (%p)\n",                   \
+    (int)syscall(SYS_gettid), __func__, __LINE__, #SEM, (void*)(SEM));      \
+} while (0)
+# endif
+
+# define SB_LET_SEM(SEM)                                                    \
+do {                                                                        \
+  if (0 != sem_post(SEM)) {                                                 \
+    SBWARN(SBDBG_FATAL)("Semaphore post failed [errno: %d %s]\n", errno,    \
+      strerror(errno));                                                     \
+    sb_abort(0);                                                            \
+  }                                                                         \
+  if (SBDEADLOCK) printf("[%5d] sem let %s:%d %s (%p)\n",                   \
+    (int)syscall(SYS_gettid), __func__, __LINE__, #SEM, (void*)(SEM));      \
+} while (0)
 #else
 # define SB_INIT_LOCK(LOCK)
 # define SB_FREE_LOCK(LOCK)
 # define SB_GET_LOCK(LOCK)
 # define SB_LET_LOCK(LOCK)
+
+# define SB_INIT_SEM(SEM)
+# define SB_FREE_SEM(SEM)
+# define SB_GET_SEM(SEM)
+# define SB_LET_SEM(SEM)
 #endif
 
 
@@ -199,11 +285,11 @@ do {                                                                        \
 #define SBISSET(FLAGS, FLAG) \
   ((FLAG) == ((FLAGS)&(FLAG)))
 
-#ifdef USE_PTHREAD
-# define MMAP_FLAGS MAP_SHARED|MAP_ANONYMOUS|MAP_NORESERVE
-#else
+//#ifdef USE_PTHREAD
+//# define MMAP_FLAGS MAP_SHARED|MAP_ANONYMOUS|MAP_NORESERVE
+//#else
 # define MMAP_FLAGS MAP_PRIVATE|MAP_ANONYMOUS|MAP_NORESERVE
-#endif
+#//endif
 #define SBMMAP(ADDR, LEN, PROT)                                               \
   do {                                                                        \
     (ADDR) = (size_t)mmap(NULL, LEN, PROT, MMAP_FLAGS, -1, 0);                \

@@ -94,22 +94,13 @@ static struct sb_info
   struct sigaction act;     /* for the SIGSEGV signal handler */
   struct sigaction oldact;  /* ... */
 
-  void *  (*malloc)(size_t);      /* function pointers from libc */
-  void *  (*calloc)(size_t, size_t);                      /* ... */
-  void *  (*realloc)(void*, size_t);                      /* ... */
-  void    (*free)(void*);                                 /* ... */
   ssize_t (*read)(int, void*, size_t);                    /* ... */
   ssize_t (*write)(int, const void*, size_t);             /* ... */
   size_t  (*fread)(void*, size_t, size_t, FILE*);         /* ... */
   size_t  (*fwrite)(const void*, size_t, size_t, FILE*);  /* ... */
-  int     (*mlock)(const void*, size_t);                  /* ... */
-  int     (*munlock)(const void*, size_t);                /* ... */
-  int     (*mlockall)(int);                               /* ... */
-  int     (*munlockall)(void);                            /* ... */
-  int     (*msync)(void*, size_t, size_t);                /* ... */
 
-  void    (*acct_charge_cb)(size_t);  /* function pointers for accounting */
-  void    (*acct_discharge_cb)(size_t);                            /* ... */
+  int     (*acct_charge_cb)(size_t);  /* function pointers for accounting */
+  int     (*acct_discharge_cb)(size_t);                            /* ... */
 
 #ifdef USE_PTHREAD
   pthread_mutex_t init_lock;  /* mutex guarding initialization */
@@ -153,17 +144,6 @@ static char sb_dbg_str[SBDBG_NUM][100]=
 };
 
 
-/****************************************************************************/
-/* memory and function pointer for sb_internal_calloc */
-/****************************************************************************/
-static int libc_calloc_init=0;
-static void *(*libc_calloc)(size_t, size_t)=NULL;
-#ifdef USE_PTHREAD_XXX
-static char sb_internal_calloc_mem[1024*1024]={0};
-static char * sb_internal_calloc_ptr=sb_internal_calloc_mem;
-#endif
-
-
 /*--------------------------------------------------------------------------*/
 
 
@@ -187,40 +167,20 @@ sb_internal_abort(char const * const file, int const line, int const flag)
 }
 
 
-#ifdef USE_PTHREAD_XXX
-/****************************************************************************/
-/*! Temporary calloc function to be used only for dlsym.  After the
- *  libc_calloc is populated using dlsym, this function will never be called
- *  again. */
-/****************************************************************************/
-static void *
-sb_internal_calloc(size_t const num, size_t const size)
-{
-  char * nptr=NULL;
-
-  if (sb_internal_calloc_ptr+(num*size) <= sb_internal_calloc_mem+(1024*1024)) {
-    nptr = sb_internal_calloc_ptr;
-    memset(nptr, 0, num*size);
-    sb_internal_calloc_ptr += (num*size);
-  }
-
-  return nptr;
-}
-#endif
-
-
 /****************************************************************************/
 /*! Accounting functionality. */
 /****************************************************************************/
 static void
 sb_internal_acct(int const acct_type, size_t const arg)
 {
+  int retval=2;
+
   /* the callback functions must be handled outside of the xm_info.lock
    * section to prevent deadlock. */
   if (SBACCT_CHARGE == acct_type && NULL != sb_info.acct_charge_cb)
-    (*sb_info.acct_charge_cb)(arg);
+    retval = (*sb_info.acct_charge_cb)(arg);
   if (SBACCT_DISCHARGE == acct_type && NULL != sb_info.acct_discharge_cb)
-    (*sb_info.acct_discharge_cb)(arg);
+    retval = (*sb_info.acct_discharge_cb)(arg);
 
   //if (SBDBG_INFO > sb_opts[SBOPT_DEBUG])
   //  return;
@@ -258,14 +218,22 @@ sb_internal_acct(int const acct_type, size_t const arg)
     break;
 
   case SBACCT_CHARGE:
-    //printf("[%5d] charge: %zu\n", (int)getpid(), arg);
     sb_info.curpages += arg;
+    /*if (0 != arg && 0 == retval) {
+      fprintf(stderr, "[%5d] here 1 %zu\n", (int)getpid(), arg);
+      sb_abort(0);
+    }*/
+    //if (0 != arg) printf("[%5d] ___charge:    %zu\n", (int)getpid(), arg);
     if (sb_info.curpages > sb_info.maxpages)
       sb_info.maxpages = sb_info.curpages;
     break;
 
   case SBACCT_DISCHARGE:
-    //printf("[%5d] discharge: %zu\n", (int)getpid(), arg);
+    /*if (0 != arg && 0 == retval) {
+      fprintf(stderr, "[%5d] here 2 %zu\n", (int)getpid(), arg);
+      sb_abort(0);
+    }*/
+    //if (0 != arg) printf("[%5d] ___discharge: %zu\n", (int)getpid(), arg);
     sb_info.curpages -= arg;
     break;
   }
@@ -661,9 +629,10 @@ sb_internal_handler(int const sig, siginfo_t * const si, void * const ctx)
 /*! Shuts down the sbmalloc subsystem. */
 /****************************************************************************/
 static void
-sb_internal_free(void)
+sb_internal_destroy(void)
 {
   SB_GET_LOCK(&(sb_info.init_lock));
+
   if (1 != sb_info.init) {
     SB_LET_LOCK(&(sb_info.init_lock));
     return;
@@ -735,16 +704,6 @@ sb_internal_init(void)
   sb_info.minsize  = minpages*sysconf(_SC_PAGESIZE);
   sb_info.head     = NULL;
 
-  if (NULL == (*((void**)&sb_info.malloc)=dlsym(RTLD_NEXT, "malloc")))
-    goto CLEANUP;
-  if (NULL == (*((void**)&sb_info.calloc)=dlsym(RTLD_NEXT, "calloc")))
-    goto CLEANUP;
-  if (NULL == (*((void**)&sb_info.realloc)=dlsym(RTLD_NEXT, "realloc")))
-    goto CLEANUP;
-  if (NULL == (*((void**)&sb_info.free)=dlsym(RTLD_NEXT, "free")))
-    goto CLEANUP;
-  if (NULL == (*((void**)&sb_info.msync)=dlsym(RTLD_NEXT, "msync")))
-    goto CLEANUP;
   if (NULL == (*((void**)&sb_info.read)=dlsym(RTLD_NEXT, "read")))
     goto CLEANUP;
   if (NULL == (*((void**)&sb_info.write)=dlsym(RTLD_NEXT, "write")))
@@ -752,14 +711,6 @@ sb_internal_init(void)
   if (NULL == (*((void**)&sb_info.fread)=dlsym(RTLD_NEXT, "fread")))
     goto CLEANUP;
   if (NULL == (*((void**)&sb_info.fwrite)=dlsym(RTLD_NEXT, "fwrite")))
-    goto CLEANUP;
-  if (NULL == (*((void**)&sb_info.mlock)=dlsym(RTLD_NEXT, "mlock")))
-    goto CLEANUP;
-  if (NULL == (*((void**)&sb_info.munlock)=dlsym(RTLD_NEXT, "munlock")))
-    goto CLEANUP;
-  if (NULL == (*((void**)&sb_info.mlockall)=dlsym(RTLD_NEXT, "mlockall")))
-    goto CLEANUP;
-  if (NULL == (*((void**)&sb_info.munlockall)=dlsym(RTLD_NEXT, "munlockall")))
     goto CLEANUP;
 
   /* setup the signal handler */
@@ -774,7 +725,7 @@ sb_internal_init(void)
   SB_INIT_LOCK(&(sb_info.lock));
 
   /* setup atexit function */
-  if (0 == sb_info.atexit_registered && 0 != atexit(&sb_internal_free))
+  if (0 == sb_info.atexit_registered && 0 != atexit(&sb_internal_destroy))
     goto CLEANUP;
   sb_info.atexit_registered = 1;
 
@@ -845,7 +796,7 @@ SB_fstem(char const * const fstem)
 /*! Set functions for sbmalloc accounting system */
 /****************************************************************************/
 extern int
-SB_acct(void (*acct_charge_cb)(size_t), void (*acct_discharge_cb)(size_t))
+SB_acct(int (*acct_charge_cb)(size_t), int (*acct_discharge_cb)(size_t))
 {
   SB_GET_LOCK(&(sb_info.lock));
   sb_info.acct_charge_cb    = acct_charge_cb;
@@ -959,7 +910,7 @@ SB_syncall(void)
   sb_internal_acct(SBACCT_WRITE, num);
   sb_internal_acct(SBACCT_DISCHARGE, ld_pages);
 
-  return num;
+  return ld_pages;
 }
 
 
@@ -1054,7 +1005,7 @@ SB_loadall(int const state)
   sb_internal_acct(SBACCT_READ, num);
   sb_internal_acct(SBACCT_CHARGE, ld_pages);
 
-  return num;
+  return ld_pages;
 }
 
 
@@ -1148,7 +1099,6 @@ SB_dumpall(void)
 }
 
 
-#include <stdio.h>
 /****************************************************************************/
 /*! Allocate memory via anonymous mmap. */
 /****************************************************************************/
@@ -1160,24 +1110,6 @@ SB_malloc(size_t const len)
   size_t app_addr=(size_t)MAP_FAILED;
   char * fname=NULL, * pflags=NULL;
   struct sb_alloc * sb_alloc=NULL;
-
-  /**************************************************************************/
-  /* special case when call comes from dlsym. */
-  /**************************************************************************/
-  if (0 == libc_calloc_init) {
-    libc_calloc_init = 1;
-    *((void **) &libc_calloc) = dlsym(RTLD_NEXT, "calloc");
-  }
-#ifdef USE_PTHREAD_XXX
-  /* the linux systems are very sensative and obnoxious when it comes to the
-   * useage of dlsym.  it seems that when compiled with -pthread, a version of
-   * dlsym which uses calloc is called, but when compiled without, this second
-   * case is not necessary. */
-  else if (1 == libc_calloc_init) {
-    libc_calloc_init = 2;
-    return sb_internal_calloc(1, len);
-  }
-#endif
 
   SB_INIT_CHECK
 
@@ -1276,14 +1208,6 @@ SB_free(void * const addr)
 
   SB_INIT_CHECK
 
-#ifdef USE_PTHREAD_XXX
-  /* skip __calloc allocations */
-  if ((char*)addr >= sb_internal_calloc_mem &&
-    (char*)addr < sb_internal_calloc_mem+1024*1024) {
-    return;
-  }
-#endif
-
   SB_GET_LOCK(&(sb_info.lock));
   for (sb_alloc=sb_info.head; NULL!=sb_alloc; sb_alloc=sb_alloc->next) {
     SB_GET_LOCK(&(sb_alloc->lock));
@@ -1320,4 +1244,24 @@ SB_free(void * const addr)
     sb_abort(1);
 
   SBMUNMAP(sb_alloc->app_addr, sb_alloc->msize);
+}
+
+
+/****************************************************************************/
+/*! Initializes the sbmalloc subsystem. */
+/****************************************************************************/
+extern void
+SB_init(void)
+{
+  sb_internal_init();
+}
+
+
+/****************************************************************************/
+/*! Shuts down the sbmalloc subsystem. */
+/****************************************************************************/
+extern void
+SB_destroy(void)
+{
+  sb_internal_destroy();
 }

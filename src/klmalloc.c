@@ -137,6 +137,8 @@ the possibly moved allocated space.
 # define USE_SBMALLOC
 #endif
 
+#define _GNU_SOURCE
+
 #ifdef USE_MMAP
 # ifndef _BSD_SOURCE
 #   define _BSD_SOURCE
@@ -883,31 +885,10 @@ do {                                                                        \
 } while (0)
 
 
-/****************************************************************************/
-/* Initialize free chunk data structure */
-/****************************************************************************/
-static void
-kl_mem_free(void)
-{
-  size_t i;
-
-  for (i=0; i<mem.num_undes; ++i) {
-    /* Release back to system. */
-    CALL_SYS_FREE(mem.undes_bin[i], BLOCK_DEFAULT_SIZE);
-
-    /* Accounting. */
-    mem.mem_total -= BLOCK_DEFAULT_SIZE;
-  }
-}
-
-
 static int
 kl_mem_init(kl_mem_t * const mem)
 {
   int i;
-
-  if (0 != atexit(kl_mem_free))
-    return -1;
 
   for (i=0; i<UNDES_BIN_NUM; ++i)
     mem->undes_bin[i] = NULL;
@@ -923,6 +904,29 @@ kl_mem_init(kl_mem_t * const mem)
   mem->init      = 1;
 
   return 0;
+}
+
+
+/****************************************************************************/
+/* Initialize free chunk data structure */
+/****************************************************************************/
+static void
+kl_mem_destroy(kl_mem_t * const mem)
+{
+  size_t i;
+
+  if (0 == mem->init)
+    return;
+
+  for (i=0; i<mem->num_undes; ++i) {
+    /* Release back to system. */
+    CALL_SYS_FREE(mem->undes_bin[i], BLOCK_DEFAULT_SIZE);
+
+    /* Accounting. */
+    mem->mem_total -= BLOCK_DEFAULT_SIZE;
+  }
+
+  mem->init = 0;
 }
 
 
@@ -1198,7 +1202,7 @@ kl_chunk_put(kl_mem_t * const mem, kl_chunk_t * chunk)
         BLOCK_DEFAULT_SIZE == KL_BLOCK_SIZE(KL_G_SIZE(chunk)))
     {
       /* need to zero out memory, so that there are no dangling pointers. */
-      memset(block, 0, KL_BLOCK_SIZE(KL_G_SIZE(chunk)));
+      memset(block, 0, BLOCK_DEFAULT_SIZE);
 
       /* Put block on undesignated stack. */
       mem->undes_bin[mem->num_undes++] = block;
@@ -1581,4 +1585,24 @@ KL_malloc_stats(void)
   printf("Calls to system allocator = %zu\n", mem.sys_ctr);
   printf("Maximum concurrent memory = %zu\n", mem.mem_max);
   fflush(stdout);
+}
+
+
+/****************************************************************************/
+/* Initialize KL environment */
+/****************************************************************************/
+KL_EXPORT void
+KL_init(void)
+{
+  kl_mem_init(&mem);
+}
+
+
+/****************************************************************************/
+/* Destroi KL environment */
+/****************************************************************************/
+KL_EXPORT void
+KL_finalize(void)
+{
+  kl_mem_destroy(&mem);
 }

@@ -60,7 +60,7 @@ extern "C" {
 int SB_mallopt(int const param, int const value);
 int SB_mallget(int const param);
 int SB_fstem(char const * const fstem);
-int SB_acct(void (*acct_charge_cb)(size_t), void (*acct_discharge_cb)(size_t));
+int SB_acct(int (*acct_charge_cb)(size_t), int (*acct_discharge_cb)(size_t));
 
 int SB_exists(void const * const addr);
 
@@ -73,6 +73,9 @@ size_t SB_dumpall(void);
 
 void * SB_malloc(size_t const len);
 void   SB_free(void * const addr);
+
+void SB_init(void);
+void SB_destroy(void);
 
 #ifdef __cplusplus
 }
