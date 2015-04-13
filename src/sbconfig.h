@@ -195,7 +195,7 @@ do {                                                                        \
 //# define MMAP_FLAGS MAP_SHARED|MAP_ANONYMOUS|MAP_NORESERVE
 //#else
 # define MMAP_FLAGS MAP_PRIVATE|MAP_ANONYMOUS|MAP_NORESERVE
-#//endif
+//#endif
 #define SBMMAP(ADDR, LEN, PROT)                                               \
   do {                                                                        \
     (ADDR) = (size_t)mmap(NULL, LEN, PROT, MMAP_FLAGS, -1, 0);                \
@@ -206,6 +206,18 @@ do {                                                                        \
 #define SBMUNMAP(ADDR, LEN)                                                 \
 do {                                                                        \
   if (-1 == munmap((void*)(ADDR), LEN))                                     \
+    sb_abort(1);                                                            \
+} while (0)
+
+#define SBMLOCK(ADDR, LEN)                                                  \
+do {                                                                        \
+  if (-1 == libc_mlock(ADDR, LEN))                                          \
+    sb_abort(1);                                                            \
+} while (0)
+
+#define SBMUNLOCK(ADDR, LEN)                                                \
+do {                                                                        \
+  if (-1 == libc_munlock(ADDR, LEN))                                        \
     sb_abort(1);                                                            \
 } while (0)
 

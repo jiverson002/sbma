@@ -1,18 +1,20 @@
 #include "sbconfig.h"
 
-#include <errno.h>     /* errno */
-#include <fcntl.h>     /* O_RDWR, O_CREAT, O_EXCL, open, posix_fadvise */
-#include <malloc.h>    /* struct mallinfo */
-#include <signal.h>    /* struct sigaction, siginfo_t, sigemptyset, sigaction */
-#include <stdio.h>     /* stderr, fprintf */
-#include <stdlib.h>    /* NULL */
-#include <string.h>    /* memset */
-#include <sys/mman.h>  /* mmap, munmap, madvise, mprotect */
-#include <sys/stat.h>  /* S_IRUSR, S_IWUSR, open */
-#include <sys/types.h> /* open */
-#include <unistd.h>    /* close, read, write, sysconf */
+#include <errno.h>        /* errno */
+#include <fcntl.h>        /* O_RDWR, O_CREAT, O_EXCL, open, posix_fadvise */
+#include <malloc.h>       /* struct mallinfo */
+#include <signal.h>       /* struct sigaction, siginfo_t, sigemptyset, sigaction */
+#include <stdio.h>        /* stderr, fprintf */
+#include <stdlib.h>       /* NULL */
+#include <string.h>       /* memset */
+#include <sys/mman.h>     /* mmap, munmap, madvise, mprotect */
+#include <sys/resource.h> /* rlimit */
+#include <sys/stat.h>     /* S_IRUSR, S_IWUSR, open */
+#include <sys/time.h>     /* rlimit */
+#include <sys/types.h>    /* open */
+#include <unistd.h>       /* close, read, write, sysconf */
 
-#include "sbmalloc.h"  /* sbmalloc library */
+#include "sbmalloc.h"     /* sbmalloc library */
 
 
 /*--------------------------------------------------------------------------*/
@@ -23,6 +25,8 @@
 /****************************************************************************/
 extern ssize_t libc_read(int const fd, void * const buf, size_t const count);
 extern ssize_t libc_write(int const fd, void const * const buf, size_t const count);
+extern int libc_mlock(void const * const addr, size_t const len);
+extern int libc_munlock(void const * const addr, size_t const len);
 
 
 /*--------------------------------------------------------------------------*/
@@ -159,12 +163,12 @@ static void
 sb_internal_abort(char const * const file, int const line, int const flag)
 {
   if (1 == flag)
-#ifdef NDEBUG
+/*#ifdef NDEBUG
     SBWARN(SBDBG_FATAL)("%s", strerror(errno));
   if (NULL == file || 0 == line) {}
-#else
+#else*/
     SBWARN(SBDBG_FATAL)("%s:%d: %s", basename(file), line, strerror(errno));
-#endif
+//#endif
 
   kill(getpid(), SIGABRT);
   kill(getpid(), SIGKILL);
@@ -379,6 +383,8 @@ sb_internal_load_range(struct sb_alloc * const sb_alloc,
     SBMPROTECT(app_addr+(ip_beg*psize), (ip_end-ip_beg)*psize, PROT_READ|PROT_WRITE);
   }
 
+  SBMLOCK((void*)(sb_alloc->app_addr+ip_beg*psize), (ip_end-ip_beg)*psize);
+
   return numrd;
 }
 
@@ -479,6 +485,7 @@ sb_internal_sync_range(struct sb_alloc * const sb_alloc,
     }
   }
 
+  SBMUNLOCK((void*)(sb_alloc->app_addr+ip_beg*psize), (ip_end-ip_beg)*psize);
   SBMADVISE(app_addr+(ip_beg*psize), (ip_end-ip_beg)*psize, MADV_DONTNEED);
   SBMPROTECT(app_addr+(ip_beg*psize), (ip_end-ip_beg)*psize, PROT_NONE);
 
@@ -507,6 +514,7 @@ sb_internal_dump_range(struct sb_alloc * const sb_alloc,
   pflags   = sb_alloc->pflags;
   ip_end   = ip_beg+npages;
 
+  SBMUNLOCK((void*)(sb_alloc->app_addr+ip_beg*psize), (ip_end-ip_beg)*psize);
   SBMADVISE(app_addr+(ip_beg*psize), (ip_end-ip_beg)*psize, MADV_DONTNEED);
   SBMPROTECT(app_addr+(ip_beg*psize), (ip_end-ip_beg)*psize, PROT_NONE);
 
@@ -660,6 +668,7 @@ static void
 sb_internal_init(void)
 {
   size_t npages, minpages;
+  struct rlimit lim;
 
   SB_GET_LOCK(&(sb_info.init_lock));
 
@@ -689,6 +698,12 @@ sb_internal_init(void)
   if (-1 == sigemptyset(&(sb_info.act.sa_mask)))
     goto CLEANUP;
   if (-1 == sigaction(SIGSEGV, &(sb_info.act), &(sb_info.oldact)))
+    goto CLEANUP;
+
+  if (-1 == getrlimit(RLIMIT_MEMLOCK, &lim))
+    goto CLEANUP;
+  lim.rlim_cur = lim.rlim_max;
+  if (-1 == setrlimit(RLIMIT_MEMLOCK, &lim))
     goto CLEANUP;
 
   /* setup the sb_info mutex */
