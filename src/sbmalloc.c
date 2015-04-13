@@ -1,8 +1,8 @@
 #include "sbconfig.h"
 
-#include <dlfcn.h>     /* dlsym */
 #include <errno.h>     /* errno */
 #include <fcntl.h>     /* O_RDWR, O_CREAT, O_EXCL, open, posix_fadvise */
+#include <malloc.h>    /* struct mallinfo */
 #include <signal.h>    /* struct sigaction, siginfo_t, sigemptyset, sigaction */
 #include <stdio.h>     /* stderr, fprintf */
 #include <stdlib.h>    /* NULL */
@@ -13,6 +13,16 @@
 #include <unistd.h>    /* close, read, write, sysconf */
 
 #include "sbmalloc.h"  /* sbmalloc library */
+
+
+/*--------------------------------------------------------------------------*/
+
+
+/****************************************************************************/
+/* Function prototypes for hooks. */
+/****************************************************************************/
+extern ssize_t libc_read(int const fd, void * const buf, size_t const count);
+extern ssize_t libc_write(int const fd, void const * const buf, size_t const count);
 
 
 /*--------------------------------------------------------------------------*/
@@ -93,11 +103,6 @@ static struct sb_info
 
   struct sigaction act;     /* for the SIGSEGV signal handler */
   struct sigaction oldact;  /* ... */
-
-  ssize_t (*read)(int, void*, size_t);                    /* ... */
-  ssize_t (*write)(int, const void*, size_t);             /* ... */
-  size_t  (*fread)(void*, size_t, size_t, FILE*);         /* ... */
-  size_t  (*fwrite)(const void*, size_t, size_t, FILE*);  /* ... */
 
   int     (*acct_charge_cb)(size_t);  /* function pointers for accounting */
   int     (*acct_discharge_cb)(size_t);                            /* ... */
@@ -312,7 +317,7 @@ sb_internal_load_range(struct sb_alloc * const sb_alloc,
             sb_abort(1);
 
           do {
-            if (-1 == (size=(*sb_info.read)(fd, buf, tsize)))
+            if (-1 == (size=libc_read(fd, buf, tsize)))
               sb_abort(1);
 
             buf   += size;
@@ -438,7 +443,7 @@ sb_internal_sync_range(struct sb_alloc * const sb_alloc,
 
         /* write the data */
         do {
-          if (-1 == (size=(*sb_info.write)(fd, buf, tsize)))
+          if (-1 == (size=libc_write(fd, buf, tsize)))
             sb_abort(1);
 
           buf   += size;
@@ -631,45 +636,19 @@ sb_internal_handler(int const sig, siginfo_t * const si, void * const ctx)
 static void
 sb_internal_destroy(void)
 {
-  SB_GET_LOCK(&(sb_info.init_lock));
-
-  if (1 != sb_info.init) {
-    SB_LET_LOCK(&(sb_info.init_lock));
-    return;
-  }
-  sb_info.init = 2;
-  SB_LET_LOCK(&(sb_info.init_lock));
-
-  if (0 != sb_info.numsf)
-    SBWARN(SBDBG_INFO)("received SIGSEGV %zu times (rd=%zu, wr=%zu)",
-      sb_info.numsf, sb_info.numrf, sb_info.numwf);
-
-  if (0 != sb_info.numwr)
-    SBWARN(SBDBG_INFO)("wrote %zu pages to disk", sb_info.numwr);
-
-  if (0 != sb_info.numrd)
-    SBWARN(SBDBG_INFO)("read %zu pages from disk", sb_info.numrd);
-
-  if (0 != sb_info.totpages)
-    SBWARN(SBDBG_INFO)("allocated a total of %zu pages", sb_info.totpages);
-
-  if (0 != sb_info.maxpages)
-    SBWARN(SBDBG_INFO)("maximum simultaneous resident memory was %zu pages",
-      sb_info.maxpages);
-
-  if (0 != sb_info.curpages)
-    SBWARN(SBDBG_LEAK)("%zu pages still loaded at exit",
-      sb_info.curpages);
-
-  if (0 != sb_info.numpages)
-    SBWARN(SBDBG_LEAK)("%zu pages still allocated at exit",
-      sb_info.curpages);
+  size_t i;
 
   SB_GET_LOCK(&(sb_info.init_lock));
+
+  if (0 == sb_info.init)
+    goto DONE;
+
+  sb_info.init = 0;
   if (-1 == sigaction(SIGSEGV, &(sb_info.oldact), NULL))
     sb_abort(1);
   SB_FREE_LOCK(&(sb_info.lock));
-  sb_info.init = 0;
+
+  DONE:
   SB_LET_LOCK(&(sb_info.init_lock));
 }
 
@@ -704,15 +683,6 @@ sb_internal_init(void)
   sb_info.minsize  = minpages*sysconf(_SC_PAGESIZE);
   sb_info.head     = NULL;
 
-  if (NULL == (*((void**)&sb_info.read)=dlsym(RTLD_NEXT, "read")))
-    goto CLEANUP;
-  if (NULL == (*((void**)&sb_info.write)=dlsym(RTLD_NEXT, "write")))
-    goto CLEANUP;
-  if (NULL == (*((void**)&sb_info.fread)=dlsym(RTLD_NEXT, "fread")))
-    goto CLEANUP;
-  if (NULL == (*((void**)&sb_info.fwrite)=dlsym(RTLD_NEXT, "fwrite")))
-    goto CLEANUP;
-
   /* setup the signal handler */
   sb_info.act.sa_flags     = SA_SIGINFO;
   sb_info.act.sa_sigaction = sb_internal_handler;
@@ -723,11 +693,6 @@ sb_internal_init(void)
 
   /* setup the sb_info mutex */
   SB_INIT_LOCK(&(sb_info.lock));
-
-  /* setup atexit function */
-  if (0 == sb_info.atexit_registered && 0 != atexit(&sb_internal_destroy))
-    goto CLEANUP;
-  sb_info.atexit_registered = 1;
 
 DONE:
   SB_LET_LOCK(&(sb_info.init_lock));
@@ -774,6 +739,30 @@ SB_mallget(int const param)
   }
 
   return sb_opts[param];
+}
+
+
+/****************************************************************************/
+/* Return some memory statistics */
+/****************************************************************************/
+extern struct mallinfo
+SB_mallinfo(void)
+{
+  struct mallinfo mi;
+
+  mi.smblks  = sb_info.numrf; /* number of read faults */
+  mi.ordblks = sb_info.numwf; /* number of write faults */
+  mi.hblks   = sb_info.numsf; /* number of segmentation faults */
+
+  mi.usmblks  = sb_info.numrd; /* number of pages read from disk */
+  mi.fsmblks  = sb_info.numwr; /* number of pages wrote to disk */
+
+  mi.uordblks = sb_info.curpages; /* pages loaded at time of call */
+  mi.fordblks = sb_info.numpages; /* pages allocated at time of call */
+  mi.arena    = sb_info.maxpages; /* maximum concurrent memory allocated */
+  mi.keepcost = sb_info.totpages; /* total number of allocated pages */
+
+  return mi;
 }
 
 
@@ -1248,7 +1237,7 @@ SB_free(void * const addr)
 
 
 /****************************************************************************/
-/*! Initializes the sbmalloc subsystem. */
+/*! Frees the memory associated with an anonymous mmap. */
 /****************************************************************************/
 extern void
 SB_init(void)
@@ -1258,10 +1247,10 @@ SB_init(void)
 
 
 /****************************************************************************/
-/*! Shuts down the sbmalloc subsystem. */
+/*! Frees the memory associated with an anonymous mmap. */
 /****************************************************************************/
 extern void
-SB_destroy(void)
+SB_finalize(void)
 {
   sb_internal_destroy();
 }

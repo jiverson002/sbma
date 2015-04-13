@@ -11,6 +11,7 @@
 
 
 #include <dlfcn.h>  /* dlsym */
+#include <malloc.h> /* struct mallinfo */
 #include <stddef.h> /* size_t */
 #include <stdint.h> /* SIZE_MAX */
 #include <stdio.h>  /* FILE */
@@ -118,6 +119,136 @@ libc_free(void * const ptr)
 
 
 /*************************************************************************/
+/*! Hook: libc read */
+/*************************************************************************/
+extern ssize_t
+libc_read(int const fd, void * const buf, size_t const count)
+{
+  static ssize_t (*_libc_read)(int, void*, size_t)=NULL;
+
+  HOOK_INIT(read);
+
+  return _libc_read(fd, buf, count);
+}
+
+
+/*************************************************************************/
+/*! Hook: libc write */
+/*************************************************************************/
+extern ssize_t
+libc_write(int const fd, void const * const buf, size_t const count)
+{
+  static ssize_t (*_libc_write)(int, void const*, size_t)=NULL;
+
+  HOOK_INIT(write);
+
+  SB_load(buf, count, SBPAGE_SYNC);
+
+  return _libc_write(fd, buf, count);
+}
+
+
+/*************************************************************************/
+/*! Hook: libc fread */
+/*************************************************************************/
+extern size_t
+libc_fread(void * const buf, size_t const size, size_t const num,
+      FILE * const stream)
+{
+  static size_t (*_libc_fread)(void*, size_t, size_t, FILE *)=NULL;
+
+  HOOK_INIT(fread);
+
+  return _libc_fread(buf, size, num, stream);
+}
+
+
+/*************************************************************************/
+/*! Hook: libc fwrite */
+/*************************************************************************/
+extern size_t
+libc_fwrite(void const * const buf, size_t const size, size_t const num,
+       FILE * const stream)
+{
+  static size_t (*_libc_fwrite)(void const*, size_t, size_t, FILE *)=NULL;
+
+  HOOK_INIT(fwrite);
+
+  return _libc_fwrite(buf, size, num, stream);
+}
+
+
+/*************************************************************************/
+/*! Hook: libc mlock */
+/*************************************************************************/
+extern int
+libc_mlock(void const * const addr, size_t const len)
+{
+  static int (*_libc_mlock)(void const*, size_t)=NULL;
+
+  HOOK_INIT(mlock);
+
+  return _libc_mlock(addr, len);
+}
+
+
+/*************************************************************************/
+/*! Hook: libc munlock */
+/*************************************************************************/
+extern int
+libc_munlock(void const * const addr, size_t const len)
+{
+  static int (*_libc_munlock)(void const*, size_t)=NULL;
+
+  HOOK_INIT(munlock);
+
+  return _libc_munlock(addr, len);
+}
+
+
+/*************************************************************************/
+/*! Hook: libc mlockall */
+/*************************************************************************/
+extern int
+libc_mlockall(int flags)
+{
+  static int (*_libc_mlockall)(int)=NULL;
+
+  HOOK_INIT(mlockall);
+
+  return _libc_mlockall(flags);
+}
+
+
+/*************************************************************************/
+/*! Hook: libc munlockall */
+/*************************************************************************/
+extern int
+libc_munlockall(void)
+{
+  static int (*_libc_munlockall)(void)=NULL;
+
+  HOOK_INIT(munlockall);
+
+  return _libc_munlockall();
+}
+
+
+/****************************************************************************/
+/*! Hook: libc msync */
+/****************************************************************************/
+extern int
+libc_msync(void * const addr, size_t const len, int const flags)
+{
+  static int (*_libc_msync)(void*, size_t, int)=NULL;
+
+  HOOK_INIT(msync);
+
+  return _libc_msync(addr, len, flags);
+}
+
+
+/*************************************************************************/
 /*! Hook: malloc */
 /*************************************************************************/
 extern void *
@@ -182,14 +313,14 @@ free(void * const ptr)
 
 
 /*************************************************************************/
-/*! Hook: malloc_stats */
+/*! Hook: mallinfo */
 /*************************************************************************/
-extern void
-malloc_stats(void)
+extern struct mallinfo
+mallinfo(void)
 {
   HOOK_INIT(calloc);
 
-  KL_malloc_stats();
+  return KL_mallinfo();
 }
 
 
@@ -199,15 +330,11 @@ malloc_stats(void)
 extern ssize_t
 read(int const fd, void * const buf, size_t const count)
 {
-  static ssize_t (*_libc_read)(int, void*, size_t)=NULL;
-
-  HOOK_INIT(read);
-
   /* SB_load(buf, count, SBPAGE_DIRTY should work here, but it is not */
   if (1 == SB_exists(buf))
     memset(buf, 0, count);
 
-  return _libc_read(fd, buf, count);
+  return libc_read(fd, buf, count);
 }
 
 
@@ -217,13 +344,9 @@ read(int const fd, void * const buf, size_t const count)
 extern ssize_t
 write(int const fd, void const * const buf, size_t const count)
 {
-  static ssize_t (*_libc_write)(int, void const*, size_t)=NULL;
-
-  HOOK_INIT(write);
-
   SB_load(buf, count, SBPAGE_SYNC);
 
-  return _libc_write(fd, buf, count);
+  return libc_write(fd, buf, count);
 }
 
 
@@ -234,13 +357,9 @@ extern size_t
 fread(void * const buf, size_t const size, size_t const num,
       FILE * const stream)
 {
-  static size_t (*_libc_fread)(void*, size_t, size_t, FILE *)=NULL;
-
-  HOOK_INIT(fread);
-
   (void)SB_load(buf, size*num, SBPAGE_DIRTY);
 
-  return _libc_fread(buf, size, num, stream);
+  return libc_fread(buf, size, num, stream);
 }
 
 
@@ -251,13 +370,9 @@ extern size_t
 fwrite(void const * const buf, size_t const size, size_t const num,
        FILE * const stream)
 {
-  static size_t (*_libc_fwrite)(void const*, size_t, size_t, FILE *)=NULL;
-
-  HOOK_INIT(fwrite);
-
   (void)SB_load(buf, SIZE_MAX, SBPAGE_SYNC);
 
-  return _libc_fwrite(buf, size, num, stream);
+  return libc_fwrite(buf, size, num, stream);
 }
 
 
@@ -267,13 +382,9 @@ fwrite(void const * const buf, size_t const size, size_t const num,
 extern int
 mlock(void const * const addr, size_t const len)
 {
-  static int (*_libc_mlock)(void const*, size_t)=NULL;
-
-  HOOK_INIT(mlock);
-
   (void)SB_load(addr, SIZE_MAX, SBPAGE_SYNC);
 
-  return _libc_mlock(addr, len);
+  return libc_mlock(addr, len);
 }
 
 
@@ -283,11 +394,7 @@ mlock(void const * const addr, size_t const len)
 extern int
 munlock(void const * const addr, size_t const len)
 {
-  static int (*_libc_munlock)(void const*, size_t)=NULL;
-
-  HOOK_INIT(munlock);
-
-  return _libc_munlock(addr, len);
+  return libc_munlock(addr, len);
 }
 
 
@@ -297,13 +404,9 @@ munlock(void const * const addr, size_t const len)
 extern int
 mlockall(int flags)
 {
-  static int (*_libc_mlockall)(int)=NULL;
-
-  HOOK_INIT(mlockall);
-
   SB_loadall(SBPAGE_SYNC);
 
-  return _libc_mlockall(flags);
+  return libc_mlockall(flags);
 }
 
 
@@ -313,11 +416,7 @@ mlockall(int flags)
 extern int
 munlockall(void)
 {
-  static int (*_libc_munlockall)(void)=NULL;
-
-  HOOK_INIT(munlockall);
-
-  return _libc_munlockall();
+  return libc_munlockall();
 }
 
 
@@ -327,12 +426,8 @@ munlockall(void)
 extern int
 msync(void * const addr, size_t const len, int const flags)
 {
-  static int (*_libc_msync)(void*, size_t, int)=NULL;
-
-  HOOK_INIT(msync);
-
   if (0 == SB_exists(addr))
-    return _libc_msync(addr, len, flags);
+    return libc_msync(addr, len, flags);
   else
     return SB_sync(addr, len);
 }

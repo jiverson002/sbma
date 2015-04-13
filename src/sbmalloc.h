@@ -2,6 +2,7 @@
 #define __SBMALLOC_H__ 1
 
 
+#include <malloc.h> /* struct mallinfo */
 #include <stddef.h> /* size_t */
 
 
@@ -62,6 +63,8 @@ int SB_mallget(int const param);
 int SB_fstem(char const * const fstem);
 int SB_acct(int (*acct_charge_cb)(size_t), int (*acct_discharge_cb)(size_t));
 
+struct mallinfo SB_mallinfo(void);
+
 int SB_exists(void const * const addr);
 
 size_t SB_sync(void const * const addr, size_t len);
@@ -75,7 +78,7 @@ void * SB_malloc(size_t const len);
 void   SB_free(void * const addr);
 
 void SB_init(void);
-void SB_destroy(void);
+void SB_finalize(void);
 
 #ifdef __cplusplus
 }

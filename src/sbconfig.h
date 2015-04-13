@@ -37,17 +37,13 @@
 
 
 #ifdef USE_PTHREAD
-# include <errno.h>     /* errno library */
-# include <fcntl.h>     /* O_* */
-# include <limits.h>    /* NAME_MAX */
-# include <pthread.h>   /* pthread library */
-# include <semaphore.h> /* semaphore library */
-# include <syscall.h>   /* SYS_gettid, syscall */
-# include <sys/stat.h>  /* S_IRUSR, S_IWUSR */
-# include <time.h>      /* CLOCK_REALTIME, struct timespec, clock_gettime */
-
 # define SBDEADLOCK 0   /* 0: no deadlock diagnostics, */
                         /* 1: deadlock diagnostics */
+
+# include <errno.h>     /* errno library */
+# include <pthread.h>   /* pthread library */
+# include <syscall.h>   /* SYS_gettid, syscall */
+# include <time.h>      /* CLOCK_REALTIME, struct timespec, clock_gettime */
 
 # define _SB_GET_LOCK(LOCK)                                                 \
 do {                                                                        \
@@ -59,17 +55,6 @@ do {                                                                        \
   }                                                                         \
   if (SBDEADLOCK) printf("[%5d] mtx get %s:%d %s (%p)\n",                   \
     (int)syscall(SYS_gettid), __func__, __LINE__, #LOCK, (void*)(LOCK));    \
-} while (0)
-
-# define _SB_GET_SEM(SEM)                                                   \
-do {                                                                        \
-  if (0 != sem_wait(SEM)) {                                                 \
-    SBWARN(SBDBG_FATAL)("Semaphore wait failed [errno: %d %s]\n", errno,    \
-      strerror(errno));                                                     \
-    sb_abort(0);                                                            \
-  }                                                                         \
-  if (SBDEADLOCK) printf("[%5d] sem get %s:%d %s (%p)\n",                   \
-    (int)syscall(SYS_gettid), __func__, __LINE__, #SEM, (void*)(SEM));      \
 } while (0)
 
 # define SB_INIT_LOCK(LOCK)                                                 \
@@ -148,93 +133,11 @@ do {                                                                        \
   if (SBDEADLOCK) printf("[%5d] mtx let %s:%d %s (%p)\n",                   \
     (int)syscall(SYS_gettid), __func__, __LINE__, #LOCK, (void*)(LOCK));    \
 } while (0)
-
-#define SB_INIT_SEM(SEM, NAME, UNLINK)                                      \
-do {                                                                        \
-  if (SEM_FAILED == ((SEM)=sem_open(NAME, O_CREAT|O_RDWR, S_IRUSR|S_IWUSR,  \
-    1)))                                                                    \
-  {                                                                         \
-    printf("check1\n");\
-    if (EEXIST == errno) {                                                  \
-      (UNLINK) = 0;                                                         \
-    }                                                                       \
-    else {                                                                  \
-      goto SB_INIT_SEM_CLEANUP;                                             \
-    }                                                                       \
-  }                                                                         \
-  printf("check\n");\
-                                                                            \
-  goto SB_INIT_SEM_DONE;                                                    \
-                                                                            \
-  SB_INIT_SEM_CLEANUP:                                                      \
-  SBWARN(SBDBG_FATAL)("Semaphore init failed [errno: %d %s]\n", errno,      \
-    strerror(errno));                                                       \
-  sb_abort(0);                                                              \
-                                                                            \
-  SB_INIT_SEM_DONE: ;                                                       \
-} while (0)
-
-#define SB_FREE_SEM(SEM, NAME, UNLINK)                                      \
-do {                                                                        \
-  int retval;                                                               \
-  if (0 != sem_close(SEM)) {                                                \
-    SBWARN(SBDBG_FATAL)("Semaphore destroy failed [errno: %d %s]\n",        \
-      errno, strerror(errno));                                              \
-    sb_abort(0);                                                            \
-  }                                                                         \
-  if (0 != (UNLINK))                                                        \
-    sem_unlink(NAME);                                                       \
-} while (0)
-
-# if !defined(SBDEADLOACK) || SBDEADLOCK == 0
-#   define SB_GET_SEM(SEM) _SB_GET_SEM(SEM)
-# else
-#   define SB_GET_SEM(SEM)                                                  \
-do {                                                                        \
-  struct timespec ts;                                                       \
-  if (0 != clock_gettime(CLOCK_REALTIME, &ts)) {                            \
-    SBWARN(SBDBG_FATAL)("Clock get time failed [errno: %d %s]\n", errno,    \
-      strerror(errno));                                                     \
-    sb_abort(0);                                                            \
-  }                                                                         \
-  ts.tv_sec += 10;                                                          \
-  if (0 != sem_timedwait(SEM, &ts)) {                                       \
-    if (ETIMEDOUT == errno) {                                               \
-      SBWARN(SBDBG_DIAG)("[%5d] Semaphore wait timed-out %s:%d %s (%p)\n",  \
-        (int)syscall(SYS_gettid), __func__, __LINE__, #SEM, (void*)(SEM));  \
-      _SB_GET_SEM(SEM);                                                     \
-    }                                                                       \
-    else {                                                                  \
-      SBWARN(SBDBG_FATAL)("Semaphore wait failed [errno: %d %s]\n",         \
-        errno, strerror(errno));                                            \
-      sb_abort(0);                                                          \
-    }                                                                       \
-  }                                                                         \
-  if (SBDEADLOCK) printf("[%5d] sem get %s:%d %s (%p)\n",                   \
-    (int)syscall(SYS_gettid), __func__, __LINE__, #SEM, (void*)(SEM));      \
-} while (0)
-# endif
-
-# define SB_LET_SEM(SEM)                                                    \
-do {                                                                        \
-  if (0 != sem_post(SEM)) {                                                 \
-    SBWARN(SBDBG_FATAL)("Semaphore post failed [errno: %d %s]\n", errno,    \
-      strerror(errno));                                                     \
-    sb_abort(0);                                                            \
-  }                                                                         \
-  if (SBDEADLOCK) printf("[%5d] sem let %s:%d %s (%p)\n",                   \
-    (int)syscall(SYS_gettid), __func__, __LINE__, #SEM, (void*)(SEM));      \
-} while (0)
 #else
 # define SB_INIT_LOCK(LOCK)
 # define SB_FREE_LOCK(LOCK)
 # define SB_GET_LOCK(LOCK)
 # define SB_LET_LOCK(LOCK)
-
-# define SB_INIT_SEM(SEM)
-# define SB_FREE_SEM(SEM)
-# define SB_GET_SEM(SEM)
-# define SB_LET_SEM(SEM)
 #endif
 
 
@@ -274,6 +177,9 @@ do {                                                                        \
 
 #define sb_abort(FLAG)  \
   sb_internal_abort(__FILE__, __LINE__, FLAG)
+
+/*--------------------------------------------------------------------------*/
+
 
 #define SB_TO_SYS(NPAGES, PAGESIZE) \
   ((NPAGES)*(PAGESIZE)/sysconf(_SC_PAGESIZE))

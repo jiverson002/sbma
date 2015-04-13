@@ -124,59 +124,31 @@ the possibly moved allocated space.
  *  1. Allow coalescing of adjacent blocks.
  */
 
-#if defined(USE_MMAP) && defined(USE_MEMALIGN)
-# undef USE_MEMALIGN
-#endif
-#if defined(USE_MMAP) && defined(USE_SBMALLOC)
-# undef USE_SBMALLOC
-#endif
-#if defined(USE_MEMALIGN) && defined(USE_SBMALLOC)
-# undef USE_SBMALLOC
-#endif
-#if !defined(USE_MMAP) && !defined(USE_MEMALIGN) && !defined(USE_SBMALLOC)
-# define USE_SBMALLOC
-#endif
-
-#define _GNU_SOURCE
-
-#ifdef USE_MMAP
-# ifndef _BSD_SOURCE
-#   define _BSD_SOURCE
-#     include <sys/mman.h> /* mmap, munmap */
-# endif
-# undef _BSD_SOURCE
-#endif
-#ifdef USE_MEMALIGN
-# ifndef _POSIX_C_SOURCE
-#   define _POSIX_C_SOURCE 200112L
-# elif _POSIX_C_SOURCE < 200112L
-#   undef _POSIX_C_SOURCE
-#   define _POSIX_C_SOURCE 200112L
-# endif
-# include <stdlib.h>  /* posix_memalign */
-# undef _POSIX_C_SOURCE
-#endif
-#ifdef USE_SBMALLOC
-# include "sbmalloc.h"
-#endif
+#include "config.h"
 
 #include <assert.h>   /* assert */
 #include <limits.h>   /* CHAR_BIT */
-#include <stdint.h>   /* uint*_t */
-#include <stdio.h>    /* printf */
-#include <stdlib.h>   /* atexit */
+#include <malloc.h>   /* struct mallinfo */
+#include <stdint.h>   /* uintptr_t */
 #include <string.h>   /* memset */
-#include <unistd.h>
 
 #include "klmalloc.h" /* klmalloc library */
+
+
+void * libc_malloc(size_t const size);
+void * libc_calloc(size_t const num, size_t const size);
+void * libc_realloc(void * const ptr, size_t const size);
+void   libc_free(void * const ptr);
+
+
+#ifndef KL_EXPORT
+# define KL_EXPORT extern
+#endif
+
 
 /* This alignment should be a power of 2 >= sizeof(size_t). */
 #ifndef MEMORY_ALLOCATION_ALIGNMENT
 # define MEMORY_ALLOCATION_ALIGNMENT 8
-#endif
-
-#ifndef KL_EXPORT
-# define KL_EXPORT extern
 #endif
 
 
@@ -307,31 +279,6 @@ ct_assert(MEMORY_ALLOCATION_ALIGNMENT >= sizeof(uintptr_t));
 ct_assert(0 == (MEMORY_ALLOCATION_ALIGNMENT&(MEMORY_ALLOCATION_ALIGNMENT-1)));
 /* Sanity check: fixed block struct size is correct. */
 ct_assert(262144 == sizeof(kl_fix_block_t));
-
-
-/****************************************************************************/
-/* System memory allocation related macros */
-/****************************************************************************/
-#ifdef USE_MMAP
-# define SYS_ALLOC_FAIL      MAP_FAILED
-# define CALL_SYS_ALLOC(P,S) \
-  ((P)=mmap(NULL, S, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0))
-# define CALL_SYS_FREE(P,S)  munmap(P,S)
-# define CALL_SYS_BZERO(P,S)
-#endif
-#ifdef USE_MEMALIGN
-# define SYS_ALLOC_FAIL      NULL
-# define CALL_SYS_ALLOC(P,S) \
-  (0 == posix_memalign(&(P),MEMORY_ALLOCATION_ALIGNMENT,S) ? (P) : NULL)
-# define CALL_SYS_FREE(P,S)  free(P)
-# define CALL_SYS_BZERO(P,S) memset(P, 0, S)
-#endif
-#ifdef USE_SBMALLOC
-# define SYS_ALLOC_FAIL      NULL
-# define CALL_SYS_ALLOC(P,S) ((P)=SB_malloc(S))
-# define CALL_SYS_FREE(P,S)  SB_free(P)
-# define CALL_SYS_BZERO(P,S)
-#endif
 
 
 /****************************************************************************/
@@ -863,32 +810,46 @@ static size_t bin2size[1532]=
 typedef struct kl_mem
 {
   int init;
+  int enabled;
+
   size_t sys_ctr;
   size_t mem_total;
   size_t mem_max;
+
   size_t num_undes;
   kl_fix_block_t * undes_bin[UNDES_BIN_NUM];
   kl_fix_block_t * brick_bin[BRICK_BIN_NUM];
   kl_chunk_t * chunk_bin[CHUNK_BIN_NUM];
+
+#ifdef USE_PTHREAD
+  pthread_mutex_t init_lock;  /* mutex guarding initialization */
+  pthread_mutex_t lock;       /* mutex guarding struct */
+#endif
 } kl_mem_t;
 
-static kl_mem_t mem={.init=0};
-
-
-/****************************************************************************/
-/* Check initialization status of the mem data structure. */
-/****************************************************************************/
-#define KL_INIT_CHECK                                                       \
-do {                                                                        \
-  if (0 == mem.init)                                                        \
-    kl_mem_init(&mem);                                                      \
-} while (0)
-
+static kl_mem_t mem={
+#ifdef USE_PTHREAD
+  .init_lock = PTHREAD_MUTEX_INITIALIZER,
+#endif
+  .init = 0,
+  .enabled = M_ENABLED_OFF
+};
 
 static int
 kl_mem_init(kl_mem_t * const mem)
 {
   int i;
+
+  GET_LOCK(&(mem->init_lock));
+
+  if (1 == mem->init)
+    goto DONE;
+
+  mem->init      = 1;
+  mem->sys_ctr   = 0;
+  mem->mem_total = 0;
+  mem->mem_max   = 0;
+  mem->num_undes = 0;
 
   for (i=0; i<UNDES_BIN_NUM; ++i)
     mem->undes_bin[i] = NULL;
@@ -897,11 +858,10 @@ kl_mem_init(kl_mem_t * const mem)
   for (i=0; i<CHUNK_BIN_NUM; ++i)
     mem->chunk_bin[i] = NULL;
 
-  mem->sys_ctr   = 0;
-  mem->mem_total = 0;
-  mem->mem_max   = 0;
-  mem->num_undes = 0;
-  mem->init      = 1;
+  INIT_LOCK(&(mem->lock));
+
+  DONE:
+  LET_LOCK(&(mem->init_lock));
 
   return 0;
 }
@@ -915,8 +875,10 @@ kl_mem_destroy(kl_mem_t * const mem)
 {
   size_t i;
 
+  GET_LOCK(&(mem->init_lock));
+
   if (0 == mem->init)
-    return;
+    goto DONE;
 
   for (i=0; i<mem->num_undes; ++i) {
     /* Release back to system. */
@@ -925,8 +887,12 @@ kl_mem_destroy(kl_mem_t * const mem)
     /* Accounting. */
     mem->mem_total -= BLOCK_DEFAULT_SIZE;
   }
-
   mem->init = 0;
+
+  FREE_LOCK(&(mem->lock));
+
+  DONE:
+  LET_LOCK(&(mem->init_lock));
 }
 
 
@@ -943,10 +909,12 @@ kl_block_alloc(kl_mem_t * const mem, size_t const size)
 {
   void * ret, * block=NULL;
 
+  GET_LOCK(&(mem->lock));
+
   /* Get system memory. */
   ret = CALL_SYS_ALLOC(block, size);
   if (SYS_ALLOC_FAIL == ret)
-    return NULL;
+    goto FAILURE;
   CALL_SYS_BZERO(block, size);
 
   /* Accounting. */
@@ -955,7 +923,12 @@ kl_block_alloc(kl_mem_t * const mem, size_t const size)
     mem->mem_max = mem->mem_total;
   mem->sys_ctr++;
 
+  LET_LOCK(&(mem->lock));
   return block;
+
+  FAILURE:
+  LET_LOCK(&(mem->lock));
+  return NULL;
 }
 
 
@@ -972,6 +945,8 @@ kl_brick_put(kl_mem_t * const mem, kl_brick_t * const brick)
 {
   size_t bidx;
   kl_fix_block_t * block;
+
+  GET_LOCK(&(mem->lock));
 
   block = (kl_fix_block_t*)KL_G_BLOCK((kl_alloc_t*)brick);
   bidx  = KL_G_BIDX(block);
@@ -1021,6 +996,7 @@ kl_brick_put(kl_mem_t * const mem, kl_brick_t * const brick)
     }
   }
 
+  LET_LOCK(&(mem->lock));
   return 0;
 }
 
@@ -1038,6 +1014,8 @@ kl_brick_get(kl_mem_t * const mem, size_t const size)
   if (size > BRICK_MAX_SIZE)
     return NULL;
 
+  GET_LOCK(&(mem->lock));
+
   bidx  = KL_G_BRICKBIN(size);
   block = mem->brick_bin[bidx];
 
@@ -1048,7 +1026,7 @@ kl_brick_get(kl_mem_t * const mem, size_t const size)
     else {                                /* Allocate new block. */
       block = (kl_fix_block_t*)kl_block_alloc(mem, BLOCK_DEFAULT_SIZE);
       if (NULL == block)
-        return NULL;
+        goto FAILURE;
     }
 
     /* Set block bin index (multiplier-1). */
@@ -1102,7 +1080,12 @@ kl_brick_get(kl_mem_t * const mem, size_t const size)
   BLOCK_HEAD(block) = BRICK_NEXT(brick);
   BRICK_NEXT(brick) = NULL;
 
+  LET_LOCK(&(mem->lock));
   return brick;
+
+  FAILURE:
+  LET_LOCK(&(mem->lock));
+  return NULL;
 }
 
 
@@ -1118,6 +1101,8 @@ static int
 kl_chunk_del(kl_mem_t * const mem, kl_chunk_t * const chunk)
 {
   size_t bidx;
+
+  GET_LOCK(&(mem->lock));
 
   bidx = KL_SIZE2BIN(KL_G_SIZE(chunk));
 
@@ -1138,6 +1123,7 @@ kl_chunk_del(kl_mem_t * const mem, kl_chunk_t * const chunk)
   CHUNK_PREV(chunk) = NULL;
   CHUNK_NEXT(chunk) = NULL;
 
+  LET_LOCK(&(mem->lock));
   return 0;
 }
 
@@ -1152,6 +1138,8 @@ kl_chunk_put(kl_mem_t * const mem, kl_chunk_t * chunk)
   void * block;
   kl_chunk_t * prev, * next;
 
+  GET_LOCK(&(mem->lock));
+
   /* Sanity check: chunk size is still valid. */
   assert(KL_G_SIZE(chunk) >= CHUNK_MIN_SIZE);
 
@@ -1162,7 +1150,7 @@ kl_chunk_put(kl_mem_t * const mem, kl_chunk_t * chunk)
     if (prev != chunk && !KL_ISINUSE(prev)) {
       /* Remove previous chunk from free chunk data structure. */
       if (0 != kl_chunk_del(mem, prev))
-        return -1;
+        goto FAILURE;
 
       /* Update chunk size. */
       CHUNK_HDR(prev) += CHUNK_HDR(chunk);
@@ -1179,7 +1167,7 @@ kl_chunk_put(kl_mem_t * const mem, kl_chunk_t * chunk)
     if (!KL_ISINUSE(next)) {
       /* Remove following chunk from free chunk data structure. */
       if (0 != kl_chunk_del(mem, next))
-        return -1;
+        goto FAILURE;
 
       /* Update chunk size. */
       CHUNK_HDR(chunk) += CHUNK_HDR(next);
@@ -1276,7 +1264,12 @@ kl_chunk_put(kl_mem_t * const mem, kl_chunk_t * chunk)
 #endif
   }
 
+  LET_LOCK(&(mem->lock));
   return 0;
+
+  FAILURE:
+  LET_LOCK(&(mem->lock));
+  return -1;
 }
 
 
@@ -1292,6 +1285,8 @@ kl_chunk_get(kl_mem_t * const mem, size_t const size)
 
   if (KL_CHUNK_SIZE(size) > FIXED_MAX_SIZE)
     return NULL;
+
+  GET_LOCK(&(mem->lock));
 
   bidx = KL_SIZE2BIN(KL_CHUNK_SIZE(size));
 
@@ -1315,7 +1310,7 @@ kl_chunk_get(kl_mem_t * const mem, size_t const size)
       else {                              /* Allocate new block. */
         block = (kl_fix_block_t*)kl_block_alloc(mem, BLOCK_DEFAULT_SIZE);
         if (NULL == block)
-          return NULL;
+          goto FAILURE;
       }
 
       /* Set block header and footer size. */
@@ -1349,7 +1344,7 @@ kl_chunk_get(kl_mem_t * const mem, size_t const size)
       CHUNK_NEXT(next) = NULL;
 
       if (0 != kl_chunk_put(mem, next))
-        return NULL;
+        goto FAILURE;
     }
     else {
       /* Set chunk[0] as in use */
@@ -1403,7 +1398,12 @@ kl_chunk_get(kl_mem_t * const mem, size_t const size)
   }
 #endif
 
+  LET_LOCK(&(mem->lock));
   return chunk;
+
+  FAILURE:
+  LET_LOCK(&(mem->lock));
+  return NULL;
 }
 
 
@@ -1417,12 +1417,14 @@ kl_chunk_solo(kl_mem_t * const mem, size_t const size)
   kl_var_block_t * block;
   kl_chunk_t * chunk;
 
+  GET_LOCK(&(mem->lock));
+
   /* Determine appropriate allocation size. */
   block_size = KL_BLOCK_SIZE(KL_CHUNK_SIZE(size));
 
   block = (kl_var_block_t*)kl_block_alloc(mem, block_size);
   if (NULL == block)
-    return NULL;
+    goto FAILURE;
 
   assert(block_size > BLOCK_DEFAULT_SIZE);
 
@@ -1437,7 +1439,12 @@ kl_chunk_solo(kl_mem_t * const mem, size_t const size)
   CHUNK_HDR(chunk) = KL_CHUNK_SIZE(size);
   CHUNK_FTR(chunk) = 0;
 
+  LET_LOCK(&(mem->lock));
   return chunk;
+
+  FAILURE:
+  LET_LOCK(&(mem->lock));
+  return NULL;
 }
 
 
@@ -1476,7 +1483,13 @@ KL_malloc(size_t const size)
              use the first, do not split
   */
 
-  KL_INIT_CHECK;
+  /* Enabled check. */
+  GET_LOCK(&(mem.init_lock));
+  if (M_ENABLED_ON != mem.enabled) {
+    LET_LOCK(&(mem.init_lock));
+    return libc_malloc(size);
+  }
+  LET_LOCK(&(mem.init_lock));
 
   if (size > ALLOC_MAX_SIZE)
     return NULL;
@@ -1518,7 +1531,13 @@ KL_calloc(size_t const num, size_t const size)
 {
   void * ptr;
 
-  KL_INIT_CHECK;
+  /* Enabled check. */
+  GET_LOCK(&(mem.init_lock));
+  if (M_ENABLED_ON != mem.enabled) {
+    LET_LOCK(&(mem.init_lock));
+    return libc_calloc(num, size);
+  }
+  LET_LOCK(&(mem.init_lock));
 
   if (NULL == (ptr=KL_malloc(num*size)))
     return NULL;
@@ -1536,7 +1555,13 @@ KL_realloc(void * const ptr, size_t const size)
 {
   void * nptr;
 
-  KL_INIT_CHECK;
+  /* Enabled check. */
+  GET_LOCK(&(mem.init_lock));
+  if (M_ENABLED_ON != mem.enabled) {
+    LET_LOCK(&(mem.init_lock));
+    return libc_realloc(ptr, size);
+  }
+  LET_LOCK(&(mem.init_lock));
 
   /* See if current allocation is large enough. */
   if (size <= KL_G_SIZE(KL_G_ALLOC(ptr)))
@@ -1547,7 +1572,7 @@ KL_realloc(void * const ptr, size_t const size)
     return ptr;
 
   /* Release old memory region. */
-  free(ptr);
+  KL_free(ptr);
 
   return nptr;
 }
@@ -1561,7 +1586,14 @@ KL_free(void * const ptr)
 {
   kl_alloc_t * alloc;
 
-  KL_INIT_CHECK;
+  /* Enabled check. */
+  GET_LOCK(&(mem.init_lock));
+  if (M_ENABLED_ON != mem.enabled) {
+    LET_LOCK(&(mem.init_lock));
+    libc_free(ptr);
+    return;
+  }
+  LET_LOCK(&(mem.init_lock));
 
   alloc = KL_G_ALLOC(ptr);
 
@@ -1577,32 +1609,69 @@ KL_free(void * const ptr)
 
 
 /****************************************************************************/
-/* Print some memory statistics */
+/* Modify the KL environment */
 /****************************************************************************/
-KL_EXPORT void
-KL_malloc_stats(void)
+KL_EXPORT int
+KL_mallopt(int const param, int const value)
 {
-  printf("Calls to system allocator = %zu\n", mem.sys_ctr);
-  printf("Maximum concurrent memory = %zu\n", mem.mem_max);
-  fflush(stdout);
+  if (param >= M_NUMBER)
+    return 0;
+
+  switch (param) {
+    case M_ENABLED:
+      switch (value) {
+        case M_ENABLED_OFF:
+          GET_LOCK(&(mem.init_lock));
+          mem.enabled = M_ENABLED_OFF;
+          LET_LOCK(&(mem.init_lock));
+          kl_mem_destroy(&mem);
+#ifdef USE_SBMALLOC
+          SB_finalize();
+#endif
+          break;
+        case M_ENABLED_ON:
+#ifdef USE_SBMALLOC
+          SB_init();
+#endif
+          kl_mem_init(&mem);
+          GET_LOCK(&(mem.init_lock));
+          mem.enabled = M_ENABLED_ON;
+          LET_LOCK(&(mem.init_lock));
+          break;
+        case M_ENABLED_PAUSE:
+          GET_LOCK(&(mem.init_lock));
+          mem.enabled = M_ENABLED_PAUSE;
+          LET_LOCK(&(mem.init_lock));
+          break;
+      }
+      break;
+  }
+
+  return 1;
 }
 
 
 /****************************************************************************/
-/* Initialize KL environment */
+/* Return some memory statistics */
 /****************************************************************************/
-KL_EXPORT void
-KL_init(void)
+KL_EXPORT struct mallinfo
+KL_mallinfo(void)
 {
-  kl_mem_init(&mem);
-}
+  struct mallinfo mi;
 
+  mi.arena = mem.mem_max; /* maximum concurrent memory allocated */
 
-/****************************************************************************/
-/* Destroi KL environment */
-/****************************************************************************/
-KL_EXPORT void
-KL_finalize(void)
-{
-  kl_mem_destroy(&mem);
+  mi.smblks  = 0; /* number of bricks */
+  mi.ordblks = 0; /* number of chunks */
+  mi.hblks   = 0; /* number of solo chunks */
+
+  mi.usmblks  = 0; /* bytes of used bricks */
+  mi.fsmblks  = 0; /* bytes of free bricks */
+  mi.uordblks = 0; /* bytes of used chunks */
+  mi.fordblks = 0; /* bytes of free chunks */
+  mi.hblkhd   = 0; /* bytes of used solo chunks */
+
+  mi.keepcost = mem.num_undes*BLOCK_DEFAULT_SIZE; /* bytes of undesignated blocks */
+
+  return mi;
 }

@@ -2,6 +2,7 @@
 #define __KLMALLOC_H__ 1
 
 
+#include <malloc.h> /* struct mallinfo */
 #include <stddef.h> /* size_t */
 
 
@@ -9,19 +10,22 @@
 extern "C" {
 #endif
 
-void * libc_malloc(size_t const size);
-void * libc_calloc(size_t const num, size_t const size);
-void * libc_realloc(void * const ptr, size_t const size);
-void   libc_free(void * const ptr);
+enum {
+  M_ENABLED,
+    M_ENABLED_ON,
+    M_ENABLED_OFF,
+    M_ENABLED_PAUSE,
+
+  M_NUMBER
+};
 
 void * KL_malloc(size_t const size);
 void * KL_calloc(size_t const num, size_t const size);
 void * KL_realloc(void * const ptr, size_t const size);
 void   KL_free(void * const ptr);
 
-void   KL_malloc_stats(void);
-void   KL_init(void);
-void   KL_finalize(void);
+int             KL_mallopt(int const param, int const value);
+struct mallinfo KL_mallinfo(void);
 
 #ifdef __cplusplus
 }
