@@ -141,7 +141,7 @@ do {                                                                        \
 
 /*--------------------------------------------------------------------------*/
 
-
+//#define USE_MEMALIGN
 #if defined(USE_MMAP) && defined(USE_MEMALIGN)
 # undef USE_MMAP
 #endif

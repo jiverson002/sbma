@@ -383,7 +383,7 @@ sb_internal_load_range(struct sb_alloc * const sb_alloc,
     SBMPROTECT(app_addr+(ip_beg*psize), (ip_end-ip_beg)*psize, PROT_READ|PROT_WRITE);
   }
 
-  SBMLOCK((void*)(sb_alloc->app_addr+ip_beg*psize), (ip_end-ip_beg)*psize);
+  SBMLOCK(app_addr+(ip_beg*psize), (ip_end-ip_beg)*psize);
 
   return numrd;
 }
@@ -485,7 +485,7 @@ sb_internal_sync_range(struct sb_alloc * const sb_alloc,
     }
   }
 
-  SBMUNLOCK((void*)(sb_alloc->app_addr+ip_beg*psize), (ip_end-ip_beg)*psize);
+  SBMUNLOCK(app_addr+(ip_beg*psize), (ip_end-ip_beg)*psize);
   SBMADVISE(app_addr+(ip_beg*psize), (ip_end-ip_beg)*psize, MADV_DONTNEED);
   SBMPROTECT(app_addr+(ip_beg*psize), (ip_end-ip_beg)*psize, PROT_NONE);
 
@@ -514,7 +514,7 @@ sb_internal_dump_range(struct sb_alloc * const sb_alloc,
   pflags   = sb_alloc->pflags;
   ip_end   = ip_beg+npages;
 
-  SBMUNLOCK((void*)(sb_alloc->app_addr+ip_beg*psize), (ip_end-ip_beg)*psize);
+  SBMUNLOCK(app_addr+(ip_beg*psize), (ip_end-ip_beg)*psize);
   SBMADVISE(app_addr+(ip_beg*psize), (ip_end-ip_beg)*psize, MADV_DONTNEED);
   SBMPROTECT(app_addr+(ip_beg*psize), (ip_end-ip_beg)*psize, PROT_NONE);
 

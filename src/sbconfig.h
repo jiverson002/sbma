@@ -211,14 +211,14 @@ do {                                                                        \
 
 #define SBMLOCK(ADDR, LEN)                                                  \
 do {                                                                        \
-  if (-1 == libc_mlock(ADDR, LEN))                                          \
-    sb_abort(1);                                                            \
+  /*if (-1 == libc_mlock((void*)(ADDR), LEN))                                 \
+    sb_abort(1);*/                                                            \
 } while (0)
 
 #define SBMUNLOCK(ADDR, LEN)                                                \
 do {                                                                        \
-  if (-1 == libc_munlock(ADDR, LEN))                                        \
-    sb_abort(1);                                                            \
+  /*if (-1 == libc_munlock((void*)(ADDR), LEN))                               \
+    sb_abort(1);*/                                                            \
 } while (0)
 
 #define SBMADVISE(ADDR, LEN, FLAG)                                          \
