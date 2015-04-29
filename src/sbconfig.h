@@ -202,12 +202,20 @@ do {                                                                        \
 //#else
 # define MMAP_FLAGS MAP_PRIVATE|MAP_ANONYMOUS|MAP_NORESERVE
 //#endif
-#define SBMMAP(ADDR, LEN, PROT)                                               \
-  do {                                                                        \
-    (ADDR) = (size_t)mmap(NULL, LEN, PROT, MMAP_FLAGS, -1, 0);                \
-    if (MAP_FAILED == (void *)(ADDR))                                         \
-      sb_abort(1);                                                            \
-  } while (0)
+#define SBMMAP(ADDR, LEN, PROT)                                             \
+do {                                                                        \
+  (ADDR) = (size_t)mmap(NULL, LEN, PROT, MMAP_FLAGS, -1, 0);                \
+  if (MAP_FAILED == (void *)(ADDR))                                         \
+    sb_abort(1);                                                            \
+} while (0)
+
+#define SBMREMAP(ADDR, SIZE, NADDR)                                         \
+do {                                                                        \
+  (ADDR) = (size_t)mremap((void*)ADDR, SIZE, SIZE,                          \
+    MREMAP_MAYMOVE|MREMAP_FIXED, NADDR);                                    \
+  if (MAP_FAILED == (void *)(ADDR))                                         \
+    sb_abort(1);                                                            \
+} while (0)
 
 #define SBMUNMAP(ADDR, LEN)                                                 \
 do {                                                                        \

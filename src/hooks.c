@@ -10,13 +10,17 @@
 #pragma GCC optimize("O0")
 
 
-#include <dlfcn.h>  /* dlsym */
-#include <malloc.h> /* struct mallinfo */
-#include <stddef.h> /* size_t */
-#include <stdint.h> /* SIZE_MAX */
-#include <stdio.h>  /* FILE */
-#include <string.h> /* memset */
-#include <unistd.h> /* ssize_t */
+#include <dlfcn.h>     /* dlsym */
+#include <fcntl.h>     /* open */
+#include <malloc.h>    /* struct mallinfo */
+#include <stdarg.h>    /* stdarg library */
+#include <stddef.h>    /* size_t */
+#include <stdint.h>    /* SIZE_MAX */
+#include <stdio.h>     /* FILE */
+#include <string.h>    /* memset */
+#include <sys/stat.h>  /* stat, open */
+#include <sys/types.h> /* stat, open */
+#include <unistd.h>    /* ssize_t, stat */
 
 #include "klmalloc.h"
 #include "sbmalloc.h"
@@ -115,6 +119,81 @@ libc_free(void * const ptr)
   HOOK_INIT(free);
 
   _libc_free(ptr);
+}
+
+
+/*************************************************************************/
+/*! Hook: libc stat */
+/*************************************************************************/
+extern int
+libc_stat(char const * path, struct stat * buf)
+{
+  static ssize_t (*_libc_stat)(char const*, struct stat*)=NULL;
+
+  HOOK_INIT(stat);
+
+  return _libc_stat(path, buf);
+}
+
+
+/*************************************************************************/
+/*! Hook: libc __xstat */
+/*************************************************************************/
+extern int
+libc___xstat(int ver, char const * path, struct stat * buf)
+{
+  static ssize_t (*_libc___xstat)(int, char const*, struct stat*)=NULL;
+
+  HOOK_INIT(__xstat);
+
+  return _libc___xstat(ver, path, buf);
+}
+
+
+#if 0
+#ifndef __xstat64
+/*************************************************************************/
+/*! Hook: libc xstat64 */
+/*************************************************************************/
+extern int
+#ifdef __USE_LARGEFILE64
+libc_xstat64(int ver, char const * path, struct stat64 * buf)
+#else
+libc_xstat64(int ver, char const * path, struct stat * buf)
+#endif
+{
+#ifdef __USE_LARGEFILE64
+  static ssize_t (*_libc_xstat64)(int, char const*, struct stat64*)=NULL;
+#else
+  static ssize_t (*_libc_xstat64)(int, char const*, struct stat*)=NULL;
+#endif
+
+  HOOK_INIT(xstat64);
+
+  return _libc_xstat64(ver, path, buf);
+}
+#endif
+#endif
+
+
+/*************************************************************************/
+/*! Hook: libc open */
+/*************************************************************************/
+extern int
+libc_open(char const * path, int flags, ...)
+{
+  static ssize_t (*_libc_open)(char const*, int, ...)=NULL;
+  va_list list;
+  mode_t mode=0;
+
+  HOOK_INIT(open);
+
+  if (O_CREAT == (flags&O_CREAT)) {
+    va_start(list, flags);
+    mode = va_arg(list, mode_t);
+  }
+
+  return _libc_open(path, flags, mode);
 }
 
 
@@ -352,6 +431,70 @@ mallinfo(void)
 
 
 /*************************************************************************/
+/*! Hook: stat */
+/*************************************************************************/
+extern int
+stat(char const * path, struct stat * buf)
+{
+  if (1 == SB_exists(path))
+    SB_load(path, SIZE_MAX, SBPAGE_SYNC);
+
+  return libc_stat(path, buf);
+}
+
+
+/*************************************************************************/
+/*! Hook: __xstat */
+/*************************************************************************/
+extern int
+__xstat(int ver, const char * path, struct stat * buf)
+{
+  if (1 == SB_exists(path))
+    SB_load(path, SIZE_MAX, SBPAGE_SYNC);
+
+  return libc___xstat(ver, path, buf);
+}
+
+
+#if 0
+# ifdef __USE_LARGEFILE64
+/*************************************************************************/
+/*! Hook: __xstat64 */
+/*************************************************************************/
+extern int
+__xstat64(int ver, const char * path, struct stat64 * buf)
+{
+  if (1 == SB_exists(path))
+    SB_load(path, SIZE_MAX, SBPAGE_SYNC);
+
+  return libc_xstat64(path, buf);
+}
+#endif
+#endif
+
+
+/*************************************************************************/
+/*! Hook: stat */
+/*************************************************************************/
+extern int
+open(char const * path, int flags, ...)
+{
+  va_list list;
+  mode_t mode=0;
+
+  if (1 == SB_exists(path))
+    SB_load(path, SIZE_MAX, SBPAGE_SYNC);
+
+  if (O_CREAT == (flags&O_CREAT)) {
+    va_start(list, flags);
+    mode = va_arg(list, mode_t);
+  }
+
+  return libc_open(path, flags, mode);
+}
+
+
+/*************************************************************************/
 /*! Hook: read */
 /*************************************************************************/
 extern ssize_t
@@ -359,7 +502,8 @@ read(int const fd, void * const buf, size_t const count)
 {
   /* SB_load(buf, count, SBPAGE_DIRTY should work here, but it is not */
   if (1 == SB_exists(buf))
-    memset(buf, 0, count);
+    SB_load(buf, count, SBPAGE_DIRTY);
+    //memset(buf, 0, count);
 
   return libc_read(fd, buf, count);
 }
@@ -397,7 +541,7 @@ extern size_t
 fwrite(void const * const buf, size_t const size, size_t const num,
        FILE * const stream)
 {
-  (void)SB_load(buf, SIZE_MAX, SBPAGE_SYNC);
+  (void)SB_load(buf, size, SBPAGE_SYNC);
 
   return libc_fwrite(buf, size, num, stream);
 }
@@ -409,7 +553,7 @@ fwrite(void const * const buf, size_t const size, size_t const num,
 extern int
 mlock(void const * const addr, size_t const len)
 {
-  (void)SB_load(addr, SIZE_MAX, SBPAGE_SYNC);
+  (void)SB_load(addr, len, SBPAGE_SYNC);
 
   return libc_mlock(addr, len);
 }

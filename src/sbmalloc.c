@@ -345,7 +345,7 @@ sb_internal_load_range(struct sb_alloc * const sb_alloc,
   unsigned int * pchksums;
 #endif
   int fd;
-  size_t ip, psize, app_addr, tsize, off, ip_end, numrd=0;
+  size_t ip, psize, app_addr, tmp_addr, tsize, off, ip_end, numrd=0;
   size_t chunk, lip_beg, lip_end;
   ssize_t size, ipfirst;
   char * buf, * pflags;
@@ -370,12 +370,23 @@ sb_internal_load_range(struct sb_alloc * const sb_alloc,
 
     //SBFADVISE(fd, ip_beg*psize, (ip_end-ip_beg)*psize,
     //  POSIX_FADV_WILLNEED|POSIX_FADV_SEQUENTIAL|POSIX_FADV_NOREUSE);
-#ifdef USE_CHECKSUM
+
+//#if defined(USE_PTHREAD) && defined(USE_BULK)
+//    /* mmap a page into a temporary address with write privileges. */
+//# ifdef USE_CHECKSUM
+//    SBMMAP(tmp_addr, (ip_end-ip_beg)*psize, PROT_READ|PROT_WRITE);
+//# else
+//    SBMMAP(tmp_addr, (ip_end-ip_beg)*psize, PROT_WRITE);
+//# endif
+//#elif !defined(USE_PTHREAD)
+# ifdef USE_CHECKSUM
     SBMPROTECT(app_addr+(ip_beg*psize), (ip_end-ip_beg)*psize,
       PROT_READ|PROT_WRITE);
-#else
+# else
     SBMPROTECT(app_addr+(ip_beg*psize), (ip_end-ip_beg)*psize, PROT_WRITE);
-#endif
+# endif
+    tmp_addr = app_addr;
+//#endif
 
     /* Load only those pages which are on disk and are not already synched
      * with the disk or dirty. */
@@ -404,11 +415,26 @@ sb_internal_load_range(struct sb_alloc * const sb_alloc,
             ipfirst = ip;
         }
         else if (-1 != ipfirst) {
-          off   = ipfirst*psize;
-          buf   = (char*)(app_addr+off);
+//#if defined(USE_PTHREAD) && !defined(USE_BULK)
+//# ifdef USE_CHECKSUM
+//          SBMMAP(tmp_addr, (ip-ipfirst)*psize, PROT_READ|PROT_WRITE);
+//# else
+//          SBMMAP(tmp_addr, (ip-ipfirst)*psize, PROT_WRITE);
+//# endif
+//#endif
+
+//#if defined(USE_PTHREAD) && !defined(USE_BULK)
+//          off = 0;
+//#elif defined(USE_PTHREAD)
+//          off = (ipfirst-ip_beg)*psize;
+//#else
+          off = ipfirst*psize;
+//#endif
+
+          buf   = (char*)(tmp_addr+off);
           tsize = (ip-ipfirst)*psize;
 
-          if (-1 == lseek(fd, off, SEEK_SET))
+          if (-1 == lseek(fd, ipfirst*psize, SEEK_SET))
             sb_abort(1);
 
           do {
@@ -420,23 +446,21 @@ sb_internal_load_range(struct sb_alloc * const sb_alloc,
           } while (tsize > 0);
 
 #ifdef USE_CHECKSUM
-          buf = (char*)(app_addr+off);
+          buf = (char*)(tmp_addr+off);
           for (i=0; i<ip-ipfirst; ++i) {
-            //fprintf(stderr, "r[%5d](%5zu) %p %u\n", (int)getpid(), ipfirst+i,
-            //  (void*)(buf+i*psize), sb_internal_crc32(buf+i*psize, psize));
-            //fflush(stdout);
-            if (sb_internal_crc32(buf+i*psize, psize) != pchksums[ipfirst+i]) {
-              //fprintf(stderr, "[%5d] CRC checksums do not match\n",
-              //  (int)getpid());
-              SBWARN(SBDBG_FATAL)("CRC checksums do not match");
-              SBWARN(SBDBG_FATAL)("  buf addr: %p", (void*)(buf+i*psize));
-              SBWARN(SBDBG_FATAL)("  pchksum:  %u", pchksums[ipfirst+i]);
-              SBWARN(SBDBG_FATAL)("  chksum:   %u",
-                sb_internal_crc32(buf+i*psize, psize));
-              sb_abort(0);
-            }
+            sb_assert(sb_internal_crc32(buf+i*psize, psize) ==
+              pchksums[ipfirst+i]);
           }
 #endif
+
+//#if defined(USE_PTHREAD) && !defined(USE_BULK)
+//          /* remove write privileges from temporary pages and grant read-only
+//           * privileges. */
+//          SBMPROTECT(tmp_addr, (ip-ipfirst)*psize, PROT_READ);
+//          /* mremap temporary pages to the correct location in persistent
+//           * memory region. */
+//          SBMREMAP(tmp_addr, (ip-ipfirst)*psize, app_addr+(ipfirst*psize));
+//#endif
 
           /*#pragma omp critical*/
           numrd += (ip-ipfirst);
@@ -450,7 +474,15 @@ sb_internal_load_range(struct sb_alloc * const sb_alloc,
         sb_abort(1);
     }
 
-    SBMPROTECT(app_addr+(ip_beg*psize), (ip_end-ip_beg)*psize, PROT_READ);
+//#if !defined(USE_PTHREAD) || defined(USE_BULK)
+    /* remove write privileges from pages and grant read-only privileges. */
+    SBMPROTECT(tmp_addr, (ip_end-ip_beg)*psize, PROT_READ);
+//# if defined(USE_PTHREAD)
+//    /* mremap temporary pages to the correct location in persistent memory
+//     * region. */
+//    SBMREMAP(tmp_addr, (ip_end-ip_beg)*psize, app_addr+(ip_beg*psize));
+//# endif
+//#endif
 
     for (ip=ip_beg; ip<ip_end; ++ip) {
       if (SBISSET(pflags[ip], SBPAGE_DUMP)) {
@@ -467,10 +499,12 @@ sb_internal_load_range(struct sb_alloc * const sb_alloc,
         /* + SYNC flag */
         pflags[ip] |= SBPAGE_SYNC;
       }
+//#if !defined(USE_PTHREAD) || defined(USE_BULK)
       /* leave dirty pages dirty */
       else if (SBISSET(pflags[ip], SBPAGE_DIRTY)) {
-        SBMPROTECT(app_addr+(ip*psize), psize, PROT_READ|PROT_WRITE);
+        SBMPROTECT(tmp_addr+(ip*psize), psize, PROT_READ|PROT_WRITE);
       }
+//#endif
     }
 
     numrd = SB_TO_SYS(numrd, psize);
@@ -490,7 +524,8 @@ sb_internal_load_range(struct sb_alloc * const sb_alloc,
       pflags[ip] |= SBPAGE_DIRTY;
     }
 
-    SBMPROTECT(app_addr+(ip_beg*psize), (ip_end-ip_beg)*psize, PROT_READ|PROT_WRITE);
+    SBMPROTECT(app_addr+(ip_beg*psize), (ip_end-ip_beg)*psize,
+      PROT_READ|PROT_WRITE);
   }
 
   SBMLOCK(app_addr+(ip_beg*psize), (ip_end-ip_beg)*psize);
@@ -691,7 +726,6 @@ sb_internal_find(size_t const addr)
 }
 
 
-#include <execinfo.h>
 /****************************************************************************/
 /*! The SIGSEGV handler. */
 /****************************************************************************/
@@ -709,13 +743,6 @@ sb_internal_handler(int const sig, siginfo_t * const si, void * const ctx)
 
   /* find the sb_alloc */
   if (NULL == (sb_alloc=sb_internal_find(addr))) {
-    int fd, size;
-    void * buffer[100];
-    size = backtrace(buffer, 100);
-    fd = open("/tmp/sb-backtrace.txt", O_WRONLY|O_CREAT|O_TRUNC,
-      S_IRUSR|S_IWUSR);
-    backtrace_symbols_fd(buffer, size, fd);
-
     SBWARN(SBDBG_FATAL)("received SIGSEGV on unhandled memory location (%p)",
       (void*)addr);
     sb_abort(0);
@@ -984,7 +1011,7 @@ SB_sync(void const * const addr, size_t len)
   }
 
   if (sb_alloc->len < len)
-    len = sb_alloc->len;
+    len = sb_alloc->app_addr+sb_alloc->len-(size_t)addr;
 
   psize    = sb_info.pagesize;
   app_addr = sb_alloc->app_addr;
@@ -1079,7 +1106,7 @@ SB_load(void const * const addr, size_t len, int const state)
   }
 
   if (sb_alloc->len < len)
-    len = sb_alloc->len;
+    len = sb_alloc->app_addr+sb_alloc->len-(size_t)addr;
 
   psize    = sb_info.pagesize;
   app_addr = sb_alloc->app_addr;
@@ -1175,7 +1202,7 @@ SB_dump(void const * const addr, size_t len)
   }
 
   if (sb_alloc->len < len)
-    len = sb_alloc->len;
+    len = sb_alloc->app_addr+sb_alloc->len-(size_t)addr;
 
   psize    = sb_info.pagesize;
   app_addr = sb_alloc->app_addr;
@@ -1386,6 +1413,7 @@ SB_free(void * const addr)
   /* free resources */
   SB_FREE_LOCK(&(sb_alloc->lock));
 
+  //printf("[%5d] unlinking %s\n", (int)getpid(), sb_alloc->fname);
   if (-1 == unlink(sb_alloc->fname))
     sb_abort(1);
 
@@ -1410,4 +1438,5 @@ extern void
 SB_finalize(void)
 {
   sb_internal_destroy();
+  printf("[%5d] <%zu>\n", (int)getpid(), sb_info.numpages);
 }

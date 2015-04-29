@@ -12,11 +12,11 @@ extern "C" {
 
 enum {
   M_ENABLED,
+  M_NUMBER,
+
     M_ENABLED_ON,
     M_ENABLED_OFF,
     M_ENABLED_PAUSE,
-
-  M_NUMBER
 };
 
 void * KL_malloc(size_t const size);

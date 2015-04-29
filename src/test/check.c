@@ -136,7 +136,7 @@ int main(void)
 
   fprintf(stderr, "Time per malloc = %.2f us\n", ta*1.0/NUM_ALLOCS);
   fprintf(stderr, "Time per free   = %.2f us\n", tf*1.0/NUM_ALLOCS);
-  MALLOC_STATS();
+  //MALLOC_STATS();
   fprintf(stderr, "Maximum concurrent request = %zu\n", max_req);
 
   FREE(alloc);

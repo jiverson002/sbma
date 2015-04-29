@@ -881,6 +881,8 @@ kl_mem_destroy(kl_mem_t * const mem)
     goto DONE;
 
   for (i=0; i<mem->num_undes; ++i) {
+    printf("[%5d] - %p %d\n", (int)getpid(), (void*)mem->undes_bin[i],
+      BLOCK_DEFAULT_SIZE);
     /* Release back to system. */
     CALL_SYS_FREE(mem->undes_bin[i], BLOCK_DEFAULT_SIZE);
 
@@ -975,6 +977,8 @@ kl_brick_put(kl_mem_t * const mem, kl_brick_t * const brick)
       mem->undes_bin[mem->num_undes++] = block;
     }
     else {
+      printf("[%5d] - %p %d\n", (int)getpid(), (void*)block,
+        BLOCK_DEFAULT_SIZE);
       /* Release back to system. */
       CALL_SYS_FREE(block, BLOCK_DEFAULT_SIZE);
 
@@ -1030,6 +1034,8 @@ kl_brick_get(kl_mem_t * const mem, size_t const size)
       block = (kl_fix_block_t*)kl_block_alloc(mem, BLOCK_DEFAULT_SIZE);
       if (NULL == block)
         goto FAILURE;
+      printf("[%5d] + %p %d (1)\n", (int)getpid(), (void*)block,
+        BLOCK_DEFAULT_SIZE);
     }
 
     /* Set block bin index (multiplier-1). */
@@ -1194,6 +1200,11 @@ kl_chunk_put(kl_mem_t * const mem, kl_chunk_t * chunk)
   /* Sanity check: chunk size is still valid. */
   assert(KL_G_SIZE(chunk) >= CHUNK_MIN_SIZE);
 
+  if (KL_BLOCK_SIZE(KL_G_SIZE(chunk)) > BLOCK_DEFAULT_SIZE) {
+    printf("[%5d] %10p kl_free %d\n", (int)getpid(), (void*)KL_G_BLOCK(chunk),
+      KL_ISFIRST(chunk) && KL_ISLAST(chunk));
+  }
+
   /* TODO: Implicitly, the following rule prevents large allocations from
    * going into the free chunk data structure.  Thus, it also prevents the
    * limitation described above.  However, in many cases, it would be nice to
@@ -1216,6 +1227,8 @@ kl_chunk_put(kl_mem_t * const mem, kl_chunk_t * chunk)
       /* Accounting. */
       mem->mem_total -= KL_BLOCK_SIZE(KL_G_SIZE(chunk));
 
+      printf("[%5d] - %p %zu\n", (int)getpid(), (void*)block,
+        KL_BLOCK_SIZE(KL_G_SIZE(chunk)));
       CALL_SYS_FREE(block, KL_BLOCK_SIZE(KL_G_SIZE(chunk)));
     }
   }
@@ -1328,6 +1341,8 @@ kl_chunk_get(kl_mem_t * const mem, size_t const size)
         block = (kl_fix_block_t*)kl_block_alloc(mem, BLOCK_DEFAULT_SIZE);
         if (NULL == block)
           goto FAILURE;
+        printf("[%5d] + %p %d (2)\n", (int)getpid(), (void*)block,
+          BLOCK_DEFAULT_SIZE);
       }
 
       /* Set block header and footer size. */
@@ -1442,6 +1457,7 @@ kl_chunk_solo(kl_mem_t * const mem, size_t const size)
   block = (kl_var_block_t*)kl_block_alloc(mem, block_size);
   if (NULL == block)
     goto FAILURE;
+  printf("[%5d] + %p %zu (3)\n", (int)getpid(), (void*)block, block_size);
 
   assert(block_size > BLOCK_DEFAULT_SIZE);
 
@@ -1536,6 +1552,8 @@ KL_malloc(size_t const size)
 
   assert(KL_ISALIGNED(ptr));
 
+  //printf("[%5d] %10p = kl_malloc %zu\n", (int)getpid(), ptr, size);
+
   return ptr;
 }
 
@@ -1612,6 +1630,8 @@ KL_free(void * const ptr)
   }
   LET_LOCK(&(mem.init_lock));
 
+  printf("[%5d] %10p kl_free\n", (int)getpid(), ptr);
+
   alloc = KL_G_ALLOC(ptr);
 
   switch (KL_TYPEOF(alloc)) {
@@ -1619,6 +1639,7 @@ KL_free(void * const ptr)
       kl_brick_put(&mem, (kl_brick_t*)alloc);
       break;
     case KL_CHUNK:
+      printf("[%5d] %10p kl_chunk_put\n", (int)getpid(), ptr);
       kl_chunk_put(&mem, (kl_chunk_t*)alloc);
       break;
   }
@@ -1645,6 +1666,8 @@ KL_mallopt(int const param, int const value)
 #ifdef USE_SBMALLOC
           SB_finalize();
 #endif
+          printf("[%5d] %zu %zu %zu\n", (int)getpid(), mem.sys_ctr,
+            mem.mem_total, mem.mem_max);
           break;
         case M_ENABLED_ON:
 #ifdef USE_SBMALLOC
