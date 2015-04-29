@@ -965,8 +965,11 @@ kl_brick_put(kl_mem_t * const mem, kl_brick_t * const brick)
       BLOCK_PREV(BLOCK_NEXT(block)) = BLOCK_PREV(block);
 
     if (mem->num_undes < UNDES_BIN_NUM) {
-      /* need to zero out memory, so that there are no dangling pointers. */
-      memset(block, 0, BLOCK_DEFAULT_SIZE);
+      BLOCK_HDR(block)  = 0;
+      BLOCK_PREV(block) = NULL;
+      BLOCK_NEXT(block) = NULL;
+      BLOCK_HEAD(block) = NULL;
+      //memset(block, 0, BLOCK_DEFAULT_SIZE);
 
       /* Put block on undesignated stack. */
       mem->undes_bin[mem->num_undes++] = block;
@@ -990,8 +993,8 @@ kl_brick_put(kl_mem_t * const mem, kl_brick_t * const brick)
     {
       BLOCK_PREV(block) = NULL;
       BLOCK_NEXT(block) = mem->brick_bin[bidx];
-      if (NULL != mem->brick_bin[bidx])
-        BLOCK_PREV(mem->brick_bin[bidx]) = block;
+      if (NULL != BLOCK_NEXT(block))
+        BLOCK_PREV(BLOCK_NEXT(block)) = block;
       mem->brick_bin[bidx] = block;
     }
   }
@@ -1037,12 +1040,17 @@ kl_brick_get(kl_mem_t * const mem, size_t const size)
     /* Set block as head of doubly-linked list. */
     BLOCK_PREV(block) = NULL;
     BLOCK_NEXT(block) = mem->brick_bin[bidx];
-    if (NULL != mem->brick_bin[bidx])
-      BLOCK_PREV(mem->brick_bin[bidx]) = block;
+    if (NULL != BLOCK_NEXT(block))
+      BLOCK_PREV(BLOCK_NEXT(block)) = block;
     mem->brick_bin[bidx] = block;
 
     /* Set head of block's singly-linked list to first brick. */
     BLOCK_HEAD(block) = (kl_brick_t*)BLOCK_PTR(block);
+
+    /* Reset pointer for head brick.  This way, dangling pointers will get
+     * reset correctly.  See note in the if(0 == BRICK_HDR(brick)) condition
+     * below. */
+    BRICK_HDR(BLOCK_HEAD(block)) = 0;
   }
   else {                                  /* Use head block. */
   }
@@ -1059,6 +1067,9 @@ kl_brick_get(kl_mem_t * const mem, size_t const size)
       BLOCK_NEXT(BLOCK_PREV(block)) = BLOCK_NEXT(block);
     if (NULL != BLOCK_NEXT(block))
       BLOCK_PREV(BLOCK_NEXT(block)) = BLOCK_PREV(block);
+
+    BLOCK_PREV(block) = NULL;
+    BLOCK_NEXT(block) = NULL;
   }
 
   /* Get brick. */
@@ -1073,6 +1084,12 @@ kl_brick_get(kl_mem_t * const mem, size_t const size)
     if (!KL_ISFULL(block)) {
       /* Set next pointer. */
       BRICK_NEXT(brick) = (kl_brick_t*)KL_G_NEXT((kl_alloc_t*)brick);
+
+      /* Reset pointer for next brick.  If this brick has never been
+       * previously used, then if follows that neither has the next.  Reset
+       * pointers in this way makes it so that memset'ing a block when it is
+       * undesignated unnecessary. */
+      BRICK_HDR(BRICK_NEXT(brick)) = 0;
     }
   }
 

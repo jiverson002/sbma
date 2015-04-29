@@ -141,7 +141,8 @@ do {                                                                        \
 
 /*--------------------------------------------------------------------------*/
 
-//#define USE_MEMALIGN
+
+//#define USE_MMAP
 #if defined(USE_MMAP) && defined(USE_MEMALIGN)
 # undef USE_MMAP
 #endif
@@ -159,8 +160,8 @@ do {                                                                        \
 #ifdef USE_MMAP
 # ifndef _BSD_SOURCE
 #   define _BSD_SOURCE
-#     include <sys/mman.h> /* mmap, munmap */
 # endif
+# include <sys/mman.h> /* mmap, munmap */
 # undef _BSD_SOURCE
 # define SYS_ALLOC_FAIL      MAP_FAILED
 # define CALL_SYS_ALLOC(P,S) \
@@ -180,7 +181,7 @@ do {                                                                        \
 # define SYS_ALLOC_FAIL      NULL
 # define CALL_SYS_ALLOC(P,S) \
   (0 == posix_memalign(&(P),MEMORY_ALLOCATION_ALIGNMENT,S) ? (P) : NULL)
-# define CALL_SYS_FREE(P,S)  free(P)
+# define CALL_SYS_FREE(P,S)  libc_free(P)
 # define CALL_SYS_BZERO(P,S) memset(P, 0, S)
 #endif
 #ifdef USE_SBMALLOC

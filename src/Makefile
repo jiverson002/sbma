@@ -26,6 +26,7 @@ VERSION = 0.0.0-rc1
 # Configuration variables (will be updated automatically by `make config')
 # These can be safely configured manually if one so chooses.
 config_CC=c99
+config_LD=c99
 config_prefix=/usr/local
 config_exec_prefix=/usr/local
 config_includedir=/usr/local/include
@@ -37,6 +38,7 @@ config_openmp=no
 config_mmap=no
 config_memalign=no
 config_sbmalloc=no
+config_libc=no
 
 # Compiler flags
 CFLAGS_debug       = -O0 -g -Wall -Wextra -pedantic
@@ -48,6 +50,7 @@ OPENMP_yes         = -DUSE_OPENMP -fopenmp
 MMAP_yes           = -DUSE_MMAP
 MEMALIGN_yes       = -DUSE_MEMALIGN
 SBMALLOC_yes       = -DUSE_SBMALLOC
+LIBC_yes           = -DUSE_LIBC
 #}}}1
 
 
@@ -62,6 +65,7 @@ SBMALLOC_yes       = -DUSE_SBMALLOC
 #{{{1
 # Default config target parameters
 CC            = c99
+LD            = c99
 prefix        = /usr/local
 exec_prefix   = $(prefix)
 includedir    = $(prefix)/include
@@ -73,6 +77,7 @@ with-openmp   = no
 with-mmap     = no
 with-memalign = no
 with-sbmalloc = no
+with-libc     = no
 
 # Library information
 LIB = libklmalloc.a
@@ -84,7 +89,7 @@ CFLAGS  = $(CFLAGS_$(config_build)) $(PROFILE_$(config_profile))        \
           $(MMAP_$(config_mmap)) $(MEMALIGN_$(config_memalign))         \
           $(SBMALLOC_$(config_sbmalloc))
 LDFLAGS = -I. $(PROFILE_$(config_profile)) $(PTHREAD_$(config_pthread)) \
-          $(OPENMP_$(config_openmp))
+          $(OPENMP_$(config_openmp)) $(LIBC_$(config_libc))
 LDLIBS  = ./$(LIB) -ldl
 
 # Up-to-date file -- whenever a prerequisite of this file changes, any target
@@ -102,26 +107,26 @@ UTD = .UTD
 	$(config_CC) -c $(CFLAGS) $<
 	$(AR) $(ARFLAGS) $@ $*.o
 
-#$(LIB): $(UTD) $(LIB)(sbmalloc.o) $(LIB)(klmalloc.o) $(LIB)(hooks.o)
-$(LIB): $(UTD) $(LIB)(sbmalloc.o) $(LIB)(klmalloc.o)
+#$(LIB): $(UTD) $(LIB)(sbmalloc.o) $(LIB)(klmalloc.o)
+$(LIB): $(UTD) $(LIB)(sbmalloc.o) $(LIB)(klmalloc.o) $(LIB)(hooks.o)
 	$(RANLIB) $@
-	$(RM) sbmalloc.o klmalloc.o
-#	$(RM) sbmalloc.o klmalloc.o hooks.o
+	$(RM) sbmalloc.o klmalloc.o hooks.o
+#	$(RM) sbmalloc.o klmalloc.o
 
 test/check: $(UTD) $(LIB) test/check.c
-	$(config_CC) $(CFLAGS_$(config_build)) $(LDFLAGS) -o $@ $@.c $(LDLIBS)
+	$(config_LD) $(CFLAGS_$(config_build)) $(LDFLAGS) -o $@ $@.c $(LDLIBS)
 #	@$@
 
 test/check1: $(UTD) $(LIB) test/check1.c
-	$(config_CC) $(CFLAGS_$(config_build)) $(LDFLAGS) -o $@ $@.c $(LDLIBS)
+	$(config_LD) $(CFLAGS_$(config_build)) $(LDFLAGS) -o $@ $@.c $(LDLIBS)
 #	@$@
 
 test/check2: $(UTD) $(LIB) test/check2.c
-	$(config_CC) $(CFLAGS_$(config_build)) $(LDFLAGS) -o $@ $@.c $(LDLIBS)
+	$(config_LD) $(CFLAGS_$(config_build)) $(LDFLAGS) -o $@ $@.c $(LDLIBS)
 #	@$@
 
 test/check3: $(UTD) $(LIB) test/check3.c
-	$(config_CC) $(CFLAGS_$(config_build)) $(LDFLAGS) -o $@ $@.c $(LDLIBS)
+	$(config_LD) $(CFLAGS_$(config_build)) $(LDFLAGS) -o $@ $@.c $(LDLIBS)
 #	@$@
 
 $(UTD): sbconfig.h sbmalloc.h klmalloc.h Makefile
@@ -136,6 +141,7 @@ $(UTD): sbconfig.h sbmalloc.h klmalloc.h Makefile
 #{{{1
 config:
 	$(SED_I) -e 's|^config_CC=.*$$|config_CC=$(CC)|' \
+	         -e 's|^config_LD=.*$$|config_LD=$(LD)|' \
            -e 's|^config_prefix=.*$$|config_prefix=$(prefix)|' \
            -e 's|^config_exec_prefix=.*$$|config_exec_prefix=$(exec_prefix)|' \
            -e 's|^config_bindir=.*$$|config_bindir=$(bindir)|' \
@@ -146,6 +152,7 @@ config:
            -e 's|^config_mmap=.*$$|config_mmap=$(with-mmap)|' \
            -e 's|^config_memalign=.*$$|config_memalign=$(with-memalign)|' \
            -e 's|^config_sbmalloc=.*$$|config_sbmalloc=$(with-sbmalloc)|' \
+           -e 's|^config_libc=.*$$|config_libc=$(with-libc)|' \
     Makefile
 	$(MAKE) -s show
 
@@ -157,11 +164,12 @@ install: $(LIB)
 
 show:
 	$(ECHO) "KLMalloc v$(VERSION) configured with: make config \
-CC=$(CC) prefix=$(config_prefix) exec_prefix=$(config_exec_prefix) \
+CC=$(CC) LD=$(LD) prefix=$(config_prefix) exec_prefix=$(config_exec_prefix) \
 includedir=$(config_includedir) libdir=$(libdir) build=$(build) \
 with-profile=$(config_profile) with-pthread=$(config_pthread) \
 with-openmp=$(config_openmp) with-mmap=$(config_mmap) \
-with-memalign=$(config_memalign) with-sbmalloc=$(config_sbmalloc)"
+with-memalign=$(config_memalign) with-sbmalloc=$(config_sbmalloc) \
+with-libc=$(config_libc)"
 
 clean:
 	$(RM) $(LIB) test/check test/check1 test/check2 test/check3 $(UTD)
@@ -182,7 +190,8 @@ help:
 	$(ECHO) "... help"
 	$(ECHO) ""
 	$(ECHO) "The following are valid variables for the \`config' target:"
-	$(ECHO) "... CC=COMPILER (gcc)"
+	$(ECHO) "... CC=COMPILER (c99)"
+	$(ECHO) "... LD=LOADER (c99)"
 	$(ECHO) ""
 	$(ECHO) "The following are valid parameters for the \`config' target:"
 	$(ECHO) "... prefix=DIR (/usr/local)"
@@ -197,6 +206,7 @@ help:
 	$(ECHO) "... with-mmap=[no|yes]"
 	$(ECHO) "... with-memalign=[no|yes]"
 	$(ECHO) "... with-sbmalloc=[no|yes]"
+	$(ECHO) "... with-libc=[no|yes]"
 #}}}1
 
 

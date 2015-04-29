@@ -248,6 +248,7 @@ libc_msync(void * const addr, size_t const len, int const flags)
 }
 
 
+//#define USE_LIBC
 /*************************************************************************/
 /*! Hook: malloc */
 /*************************************************************************/
@@ -256,7 +257,19 @@ malloc(size_t const size)
 {
   HOOK_INIT(calloc);
 
+/*#ifdef USE_LIBC
+  void * ptr = libc_malloc(size);
+#else
+  void * ptr = KL_malloc(size);
+#endif
+  printf("m %p %zu\n", ptr, size);
+  return ptr;*/
+
+#ifdef USE_LIBC
+  return libc_malloc(size);
+#else
   return KL_malloc(size);
+#endif
 }
 
 
@@ -271,7 +284,11 @@ calloc(size_t const num, size_t const size)
   if (internal_calloc == _libc_calloc)
     return internal_calloc(num, size);
 
+#ifdef USE_LIBC
+  return libc_calloc(num, size);
+#else
   return KL_calloc(num, size);
+#endif
 }
 
 
@@ -284,9 +301,13 @@ realloc(void * const ptr, size_t const size)
   HOOK_INIT(calloc);
 
   if (NULL == ptr)
-    return malloc(size);
+    return KL_malloc(size);
 
+#ifdef USE_LIBC
+  return libc_realloc(ptr, size);
+#else
   return KL_realloc(ptr, size);
+#endif
 }
 
 
@@ -308,7 +329,13 @@ free(void * const ptr)
     return;
   }
 
+  /*printf("f %p\n", ptr);*/
+
+#ifdef USE_LIBC
+  libc_free(ptr);
+#else
   KL_free(ptr);
+#endif
 }
 
 
