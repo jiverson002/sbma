@@ -26,7 +26,7 @@
 
 
 /*#define USE_CHECKSUM*/
-#define USE_BULK
+/*#define USE_BULK*/
 
 
 /*--------------------------------------------------------------------------*/
@@ -249,6 +249,9 @@ do {                                                                        \
 
 #define SBMPROTECT(ADDR, LEN, PROT)                                         \
 do {                                                                        \
+  /*printf("[%5d]   %s %zu -- %zu\n", (int)getpid(),\
+    0!=((PROT)&PROT_READ)?0!=((PROT)&PROT_WRITE)?"R/W":"R  ":"W  ",\
+    (size_t)(ADDR), (size_t)(ADDR)+(LEN));*/\
   if (-1 == mprotect((void*)(ADDR), LEN, PROT))                             \
     sb_abort(1);                                                            \
 } while (0)
