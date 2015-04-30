@@ -25,7 +25,8 @@
 /*--------------------------------------------------------------------------*/
 
 
-//#define USE_CHECKSUM
+/*#define USE_CHECKSUM*/
+#define USE_BULK
 
 
 /*--------------------------------------------------------------------------*/
@@ -211,9 +212,8 @@ do {                                                                        \
 
 #define SBMREMAP(ADDR, SIZE, NADDR)                                         \
 do {                                                                        \
-  (ADDR) = (size_t)mremap((void*)ADDR, SIZE, SIZE,                          \
-    MREMAP_MAYMOVE|MREMAP_FIXED, NADDR);                                    \
-  if (MAP_FAILED == (void *)(ADDR))                                         \
+  if (MAP_FAILED == mremap((void*)(ADDR), SIZE, SIZE,                       \
+    MREMAP_MAYMOVE|MREMAP_FIXED, NADDR))                                    \
     sb_abort(1);                                                            \
 } while (0)
 

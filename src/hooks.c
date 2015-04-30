@@ -500,10 +500,17 @@ open(char const * path, int flags, ...)
 extern ssize_t
 read(int const fd, void * const buf, size_t const count)
 {
-  /* SB_load(buf, count, SBPAGE_DIRTY should work here, but it is not */
-  if (1 == SB_exists(buf))
-    SB_load(buf, count, SBPAGE_DIRTY);
-    //memset(buf, 0, count);
+  if (1 == SB_exists(buf)) {
+    /* NOTE: memset() must be used instead of SB_load() for the following
+     * reason. If the relevant memory page has been written to disk and thus,
+     * given no R/W permissions, the using SB_load() with SBPAGE_DIRTY will
+     * give the relevant page appropriate permissions, however, it will cause
+     * the page not be read from disk.  This is incorrect if the page is a
+     * shared page, since then any data that was in the shared page, but not
+     * part of the relevant memory, will be lost. */
+    //(void)SB_load(buf, count, SBPAGE_DIRTY);
+    memset(buf, 0, count);
+  }
 
   return libc_read(fd, buf, count);
 }
@@ -528,7 +535,13 @@ extern size_t
 fread(void * const buf, size_t const size, size_t const num,
       FILE * const stream)
 {
-  (void)SB_load(buf, size*num, SBPAGE_DIRTY);
+  if (1 == SB_exists(buf)) {
+    /* NOTE: For an explaination of why memset() must be used instead of
+     * SB_load(), see discussion in read(). */
+    //(void)SB_load(buf, size*num, SBPAGE_DIRTY);
+    memset(buf, 0, size*num);
+  }
+
 
   return libc_fread(buf, size, num, stream);
 }
