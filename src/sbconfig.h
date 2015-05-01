@@ -26,7 +26,7 @@
 
 
 /*#define USE_CHECKSUM*/
-/*#define USE_BULK*/
+/*#define USE_BULK*/ /* NOT IMPLEMENTED YET */
 
 
 /*--------------------------------------------------------------------------*/
