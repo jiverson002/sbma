@@ -743,8 +743,8 @@ sb_internal_handler(int const sig, siginfo_t * const si, void * const ctx)
 
   /* find the sb_alloc */
   if (NULL == (sb_alloc=sb_internal_find(addr))) {
-    SBWARN(SBDBG_FATAL)("received SIGSEGV on unhandled memory location (%p)",
-      (void*)addr);
+    SBWARN(SBDBG_FATAL)("[%5d] received SIGSEGV on unhandled memory location "
+      "(%p)", (int)getpid(), (void*)addr);
     sb_abort(0);
   }
 

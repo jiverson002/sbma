@@ -1467,7 +1467,7 @@ kl_chunk_solo(kl_mem_t * const mem, size_t const size)
   CHUNK_FTR(chunk) = 0;
 
   /* Sanity check. */
-  assert(block_size == KL_BLOCK_SIZE(KL_G_SIZE(size)));
+  assert(block_size == KL_BLOCK_SIZE(KL_G_SIZE(chunk)));
   assert(block_size == KL_BLOCK_SIZE(KL_CHUNK_SIZE(size)));
 
   LET_LOCK(&(mem->lock));
@@ -1482,6 +1482,36 @@ kl_chunk_solo(kl_mem_t * const mem, size_t const size)
 /****************************************************************************/
 /* =========================================================================*/
 /****************************************************************************/
+
+
+/****************************************************************************/
+/* Return max size of brick. */
+/****************************************************************************/
+KL_EXPORT size_t
+KL_brick_max_size(void)
+{
+  return BRICK_MAX_SIZE;
+}
+
+
+/****************************************************************************/
+/* Return max size of fixed size chunk. */
+/****************************************************************************/
+KL_EXPORT size_t
+KL_chunk_max_size(void)
+{
+  return FIXED_MAX_SIZE;
+}
+
+
+/****************************************************************************/
+/* Return max size of solo chunk. */
+/****************************************************************************/
+KL_EXPORT size_t
+KL_solo_max_size(void)
+{
+  return CHUNK_MAX_SIZE;
+}
 
 
 /****************************************************************************/
