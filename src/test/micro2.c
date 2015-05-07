@@ -169,7 +169,7 @@ int main(void)
   size_t const BRICK_ALLOC_SIZE = KL_brick_max_size();
   size_t const CHUNK_ALLOC_SIZE = KL_chunk_max_size();
   size_t const SOLO_ALLOC_SIZE  = 1lu<<24;              /* 16MB */
-  size_t const MAX_MEM          = 1lu<<31;              /* 4GiB */
+  size_t const MAX_MEM          = 1lu<<32;              /* 4GiB */
 
   seed = SEED;
   srand(seed);

@@ -31,7 +31,7 @@ config_prefix=/usr/local
 config_exec_prefix=/usr/local
 config_includedir=/usr/local/include
 config_libdir=/usr/local/lib
-config_build=release
+config_build=debug
 config_profile=no
 config_pthread=no
 config_openmp=no
@@ -113,7 +113,11 @@ $(LIB): $(UTD) $(LIB)(sbmalloc.o) $(LIB)(klmalloc.o) $(LIB)(hooks.o)
 	$(RM) sbmalloc.o klmalloc.o hooks.o
 #	$(RM) sbmalloc.o klmalloc.o
 
-test/check: $(UTD) $(LIB) test/check.c
+test/micro1: $(UTD) $(LIB) test/micro1.c
+	$(config_LD) $(CFLAGS_$(config_build)) $(LDFLAGS) -o $@ $@.c $(LDLIBS)
+#	@$@
+
+test/micro2: $(UTD) $(LIB) test/micro2.c
 	$(config_LD) $(CFLAGS_$(config_build)) $(LDFLAGS) -o $@ $@.c $(LDLIBS)
 #	@$@
 
@@ -130,7 +134,7 @@ test/check3: $(UTD) $(LIB) test/check3.c
 #	@$@
 
 $(UTD): sbconfig.h sbmalloc.h klmalloc.h Makefile
-	@$(RM) $(LIB) test/check test/check1 test/check2 test/check3
+	@$(RM) $(LIB) test/micro1 test/micro2 test/check1 test/check2 test/check3
 	@$(TOUCH) $(UTD)
 #}}}1
 
@@ -172,12 +176,14 @@ with-memalign=$(config_memalign) with-sbmalloc=$(config_sbmalloc) \
 with-libc=$(config_libc)"
 
 clean:
-	$(RM) $(LIB) test/check test/check1 test/check2 test/check3 $(UTD)
+	$(RM) $(LIB) test/micro1 test/micro2 test/check1 test/check2 test/check3 \
+$(UTD)
 
 help:
 	$(ECHO) "The following are valid targets for this Makefile:"
 	$(ECHO) "... $(LIB) (the default if no target is provided)"
-	$(ECHO) "... test/check"
+	$(ECHO) "... test/micro1"
+	$(ECHO) "... test/micro2"
 	$(ECHO) "... test/check1"
 	$(ECHO) "... test/check2"
 	$(ECHO) "... test/check3"
