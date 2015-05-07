@@ -160,8 +160,8 @@ int main(void)
   struct _timespec ts, te;
   char * buf;
 
-  //size_t const NUM_MEM = (1lu<<32)-(1lu<<29); /* 3.5GiB */
-  size_t const NUM_MEM = (1lu<<30);           /* 1.0GiB */
+  size_t const NUM_MEM = (1lu<<32)-(1lu<<30); /* 3.0GiB */
+  //size_t const NUM_MEM = (1lu<<30);           /* 1.0GiB */
 #ifndef USE_LIBC
   size_t const NUM_SYS = 4;                   /* 4KiB */
 #endif
