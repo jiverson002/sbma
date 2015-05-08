@@ -80,12 +80,33 @@ _getelapsed(struct _timespec const * const ts,
 }
 
 
+/* ============================ BEG CONFIG ================================ */
+static int const USE_LOAD         = 1;
+static int const USE_LAZY         = 0;
+static int const USE_LIBC         = 0;
+
+static size_t const NUM_MEM       = (1lu<<32)-(1lu<<30); /* 3.0GiB */
+//static size_t const NUM_MEM       = (1lu<<28);           /* 1.0GiB */
+static size_t const NUM_SYS       = 1;                   /* 4KiB */
+static char const * const TMPFILE = "/scratch/micro2";
+/* ============================ END CONFIG ================================ */
+
+static int filed=-1;
+static char * pflags=NULL;
+static uintptr_t base=0;
+static size_t page=0;
+static size_t faults=0;
+#define SYNC   1
+#define DIRTY  2
+#define ONDISK 4
+
 #pragma GCC push_options
 #pragma GCC optimize("-O0")
 static void
 _cacheflush(void)
 {
   /* 1<<28 == 256MiB */
+  int ret;
   long unsigned i;
   char * ptr = mmap(NULL, 1<<28, PROT_READ|PROT_WRITE,
     MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
@@ -96,28 +117,18 @@ _cacheflush(void)
       assert((char)i == ptr[i]);
     munmap(ptr, 1<<28);
   }
+
+  if (0 != base) {
+    ret = madvise((void*)base, NUM_MEM, MADV_DONTNEED);
+    assert(-1 != ret);
+  }
+
+  if (-1 != filed) {
+    ret = posix_fadvise(filed, 0, NUM_MEM, POSIX_FADV_DONTNEED);
+    assert(-1 != ret);
+  }
 }
 #pragma GCC pop_options
-
-
-/* ============================ BEG CONFIG ================================ */
-static int const USE_LOAD         = 1;
-static int const USE_LAZY         = 1;
-static int const USE_LIBC         = 1;
-
-//static size_t const NUM_MEM       = (1lu<<32)-(1lu<<30); /* 3.0GiB */
-static size_t const NUM_MEM       = (1lu<<28);           /* 1.0GiB */
-static size_t const NUM_SYS       = 1;                   /* 4KiB */
-static char const * const TMPFILE = "/scratch/micro2";
-/* ============================ END CONFIG ================================ */
-
-static char * pflags=NULL;
-static uintptr_t base=0;
-static size_t page=0;
-static size_t faults=0;
-#define SYNC   1
-#define DIRTY  2
-#define ONDISK 4
 
 static void
 _segvhandler(int const sig, siginfo_t * const si, void * const ctx)
@@ -150,7 +161,7 @@ _segvhandler(int const sig, siginfo_t * const si, void * const ctx)
       }
 
       fd = open(TMPFILE, O_RDONLY);
-      assert(-1 != ret);
+      assert(-1 != fd);
 
       tmp_addr = mmap(NULL, len, PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
       assert(MAP_FAILED != tmp_addr);
@@ -288,7 +299,9 @@ int main(void)
 
   if (1 == USE_LOAD) {
     fd = open(TMPFILE, O_WRONLY|O_CREAT|O_EXCL, S_IRUSR|S_IWUSR);
-    assert(-1 != ret);
+    assert(-1 != fd);
+    filed = open(TMPFILE, O_RDWR);
+    assert(-1 != filed);
 
     buf  = addr;
     size = NUM_MEM;
@@ -320,7 +333,7 @@ int main(void)
   _gettime(&ts);
   if (1 == USE_LIBC && 1 == USE_LOAD && 0 == USE_LAZY) {
     fd = open(TMPFILE, O_RDONLY);
-    assert(-1 != ret);
+    assert(-1 != fd);
 
     buf  = addr;
     size = NUM_MEM;
@@ -339,7 +352,7 @@ int main(void)
     if (1 == USE_LIBC && 1 == USE_LOAD && 1 == USE_LAZY) {
       if (0 == ((uintptr_t)(addr+i)&(page-1))) {
         fd = open(TMPFILE, O_RDONLY);
-        assert(-1 != ret);
+        assert(-1 != fd);
 
         ret = lseek(fd, i, SEEK_SET);
         assert(-1 != ret);
@@ -395,7 +408,7 @@ int main(void)
   _gettime(&ts);
   if (1 == USE_LIBC && 1 == USE_LOAD && 0 == USE_LAZY) {
     fd = open(TMPFILE, O_RDONLY);
-    assert(-1 != ret);
+    assert(-1 != fd);
 
     buf  = addr;
     size = NUM_MEM;
@@ -414,7 +427,7 @@ int main(void)
     if (1 == USE_LIBC && 1 == USE_LOAD && 1 == USE_LAZY) {
       if (0 == ((uintptr_t)(addr+i)&(page-1))) {
         fd = open(TMPFILE, O_RDONLY);
-        assert(-1 != ret);
+        assert(-1 != fd);
 
         ret = lseek(fd, i, SEEK_SET);
         assert(-1 != ret);
@@ -482,7 +495,7 @@ int main(void)
 
   if (1 == USE_LOAD) {
     fd = open(TMPFILE, O_WRONLY);
-    assert(-1 != ret);
+    assert(-1 != fd);
 
     buf  = addr;
     size = NUM_MEM;
@@ -514,7 +527,7 @@ int main(void)
   _gettime(&ts);
   if (1 == USE_LIBC && 1 == USE_LOAD && 0 == USE_LAZY) {
     fd = open(TMPFILE, O_RDONLY);
-    assert(-1 != ret);
+    assert(-1 != fd);
 
     buf  = addr;
     size = NUM_MEM;
@@ -533,7 +546,7 @@ int main(void)
     if (1 == USE_LIBC && 1 == USE_LOAD && 1 == USE_LAZY) {
       if (0 == ((uintptr_t)(addr+i)&(page-1))) {
         fd = open(TMPFILE, O_RDONLY);
-        assert(-1 != ret);
+        assert(-1 != fd);
 
         ret = lseek(fd, i, SEEK_SET);
         assert(-1 != ret);
@@ -589,7 +602,7 @@ int main(void)
   _gettime(&ts);
   if (1 == USE_LIBC && 1 == USE_LOAD && 0 == USE_LAZY) {
     fd = open(TMPFILE, O_RDONLY);
-    assert(-1 != ret);
+    assert(-1 != fd);
 
     buf  = addr;
     size = NUM_MEM;
@@ -608,7 +621,7 @@ int main(void)
     if (1 == USE_LIBC && 1 == USE_LOAD && 1 == USE_LAZY) {
       if (0 == ((uintptr_t)(addr+i)&(page-1))) {
         fd = open(TMPFILE, O_RDONLY);
-        assert(-1 != ret);
+        assert(-1 != fd);
 
         ret = lseek(fd, i, SEEK_SET);
         assert(-1 != ret);
@@ -652,6 +665,8 @@ int main(void)
     assert(0 == ret);
   }
   if (1 == USE_LOAD) {
+    ret = close(filed);
+    assert(-1 != ret);
     ret = unlink(TMPFILE);
     assert(-1 != ret);
   }
