@@ -118,6 +118,10 @@ test/micro1: $(UTD) $(LIB) test/micro1.c
 #	@$@
 
 test/micro2: $(UTD) $(LIB) test/micro2.c
+	$(config_LD) $(CFLAGS_$(config_build)) -o $@ $@.c
+#	@$@
+
+test/micro3: $(UTD) $(LIB) test/micro3.c
 	$(config_LD) $(CFLAGS_$(config_build)) $(LDFLAGS) -o $@ $@.c $(LDLIBS)
 #	@$@
 
@@ -134,7 +138,8 @@ test/check3: $(UTD) $(LIB) test/check3.c
 #	@$@
 
 $(UTD): sbconfig.h sbmalloc.h klmalloc.h Makefile
-	@$(RM) $(LIB) test/micro1 test/micro2 test/check1 test/check2 test/check3
+	@$(RM) $(LIB) test/micro1 test/micro2 test/micro3 test/check1 test/check2 \
+test/check3
 	@$(TOUCH) $(UTD)
 #}}}1
 
@@ -176,14 +181,15 @@ with-memalign=$(config_memalign) with-sbmalloc=$(config_sbmalloc) \
 with-libc=$(config_libc)"
 
 clean:
-	$(RM) $(LIB) test/micro1 test/micro2 test/check1 test/check2 test/check3 \
-$(UTD)
+	$(RM) $(LIB) test/micro1 test/micro2 test/micro3 test/check1 test/check2 \
+test/check3 $(UTD)
 
 help:
 	$(ECHO) "The following are valid targets for this Makefile:"
 	$(ECHO) "... $(LIB) (the default if no target is provided)"
 	$(ECHO) "... test/micro1"
 	$(ECHO) "... test/micro2"
+	$(ECHO) "... test/micro3"
 	$(ECHO) "... test/check1"
 	$(ECHO) "... test/check2"
 	$(ECHO) "... test/check3"
