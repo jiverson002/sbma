@@ -1,0 +1,77 @@
+http://www.linuxinsight.com/proc_sys_vm_max_map_count.html
+
+This file contains the maximum number of memory map areas a process may have.
+Memory map areas are used as a side-effect of calling malloc, directly by mmap
+and mprotect, and also when loading shared libraries.
+
+While most applications need less than a thousand maps, certain programs,
+particularly malloc debuggers, may consume lots of them, e.g., up to one or
+two maps per allocation.
+
+
+==============================================================================
+
+
+http://cba.tiddlyspace.com/increase%20vm.max_map_count%20on%20linux%20to%20avoid%20ORA-4030
+
+The max_map_count file allows for the restriction of the number of VMAs
+(Virtual Memory Areas) that a particular process can own. A Virtual Memory
+Area is a contiguous area of virtual address space. These areas are created
+during the life of the process when the program attempts to memory map a file,
+links to a shared memory segment, or allocates heap space. Tuning this value
+limits the amount of these VMAs that a process can own. Limiting the amount of
+VMAs a process can own can lead to problematic application behavior because
+the system will return out of memory errors when a process reaches its VMA
+limit but can free up lowmem for other kernel uses. If your system is running
+low on memory in the NORMAL zone, then lowering this value will help free up
+memory for kernel use.
+
+
+==============================================================================
+
+
+https://www.novell.com/support/kb/doc.php?id=7000830
+
+1. Are there any side effects due to significantly increasing the
+vm.max_map_count?
+
+Increasing this parameter will potentially increase memory consumption by an
+application and thereby reduce performance of the server. However, this is
+entirely dependent upon an application allocating a large amount of memory
+maps.
+
+2. Is there an absolute maximum number that can be specified for
+vm.max_map_count?
+
+Theoretically, yes -- MAXINT for the architecture. But the server will run out
+of memory long before an application hits these limits.
+
+3. How does increasing vm.max_map_count impact the kernel memory footprint?
+
+Each mapped area needs some kernel memory. At least a vm_area_struct must be
+allocated, i.e. around 128 bytes per map count (plus some small overhead added
+by the SLAB allocator if additional slabs are needed). When vm.max_map_count
+is larger, processes are allowed to make the kernel allocate more memory for
+this purpose.
+
+4. Does the kernel preallocate memory according to this setting?
+
+No. The memory is allocated only when a process actually needs the map areas.
+
+5. Does increasing this limit have any performance impact (e.g. more CPU time
+to scan memory map)?
+
+No. The increase of this limit does not by itself change anything. Only
+processes which actually use a large amount of memory maps are affected.
+
+How are they affected? Well, since there will be more elements in the VM
+red-black tree, all operations on the VMA will take longer. The slow-down of
+most operations is logarithmic, e.g. further mmap's, munmap's et al. as well
+as handling page faults (both major and minor). Some operations will slow down
+linearly, e.g. copying the VMAs when a new process is forked.
+
+In short, there is absolutely no impact on memory footprint or performance for
+processes which use the same number of maps. On the other hand, processes
+where one of the memory mapping functions would have failed with ENOMEM
+because of hitting the limit, will now be allowed to consume the additional
+kernel memory with all the implications described above.
