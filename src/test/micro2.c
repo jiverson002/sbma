@@ -73,7 +73,8 @@ _getelapsed(struct _timespec const * const ts,
   if (te->tv_nsec < ts->tv_nsec) {
     t.tv_nsec = 1000000000UL + te->tv_nsec - ts->tv_nsec;
     t.tv_sec = te->tv_sec - 1 - ts->tv_sec;
-  }else {
+  }
+  else {
     t.tv_nsec = te->tv_nsec - ts->tv_nsec;
     t.tv_sec = te->tv_sec - ts->tv_sec;
   }
@@ -82,11 +83,11 @@ _getelapsed(struct _timespec const * const ts,
 
 
 /* ============================ BEG CONFIG ================================ */
-static int const USE_LOAD         = 1;
-static int const USE_LAZY         = 1;
-static int const USE_LIBC         = 0;
+static int const USE_LOAD         = 0;
+static int const USE_LAZY         = 0;
+static int const USE_LIBC         = 1;
 static int const USE_GHOST        = 0;
-static int const USE_CTX          = 1;
+static int const USE_CTX          = 0;
 
 static size_t const NUM_MEM       = (1lu<<32)-(1lu<<30); /* 3.0GiB */
 //static size_t const NUM_MEM       = (1lu<<28);           /* 1.0GiB */
