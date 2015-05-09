@@ -1,5 +1,5 @@
-#ifndef _BSD_SOURCE
-# define _BSD_SOURCE
+#ifndef _GNU_SOURCE
+# define _GNU_SOURCE
 #endif
 
 #ifdef NDEBUG
@@ -28,12 +28,15 @@
 #endif
 
 #include <assert.h>
+#include <fcntl.h>
 #include <signal.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/mman.h>
+#include <sys/stat.h>
+#include <sys/ucontext.h>
 
 
 struct _timespec
@@ -70,7 +73,8 @@ _getelapsed(struct _timespec const * const ts,
   if (te->tv_nsec < ts->tv_nsec) {
     t.tv_nsec = 1000000000UL + te->tv_nsec - ts->tv_nsec;
     t.tv_sec = te->tv_sec - 1 - ts->tv_sec;
-  }else {
+  }
+  else {
     t.tv_nsec = te->tv_nsec - ts->tv_nsec;
     t.tv_sec = te->tv_sec - ts->tv_sec;
   }
@@ -78,12 +82,35 @@ _getelapsed(struct _timespec const * const ts,
 }
 
 
+/* ============================ BEG CONFIG ================================ */
+static int const USE_LOAD         = 0;
+static int const USE_LAZY         = 0;
+static int const USE_LIBC         = 1;
+static int const USE_GHOST        = 0;
+static int const USE_CTX          = 0;
+
+static size_t const NUM_MEM       = (1lu<<32)-(1lu<<30); /* 3.0GiB */
+//static size_t const NUM_MEM       = (1lu<<28);           /* 1.0GiB */
+static size_t const NUM_SYS       = 1;                   /* 4KiB */
+static char const * const TMPFILE = "/scratch/micro2";
+/* ============================ END CONFIG ================================ */
+
+static int filed=-1;
+static char * pflags=NULL;
+static uintptr_t base=0;
+static size_t page=0;
+static size_t faults=0;
+#define SYNC   1
+#define DIRTY  2
+#define ONDISK 4
+
 #pragma GCC push_options
 #pragma GCC optimize("-O0")
 static void
 _cacheflush(void)
 {
   /* 1<<28 == 256MiB */
+  int ret;
   long unsigned i;
   char * ptr = mmap(NULL, 1<<28, PROT_READ|PROT_WRITE,
     MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
@@ -94,22 +121,28 @@ _cacheflush(void)
       assert((char)i == ptr[i]);
     munmap(ptr, 1<<28);
   }
+
+  if (0 != base && 1 == USE_LOAD) {
+    ret = madvise((void*)base, NUM_MEM, MADV_DONTNEED);
+    assert(-1 != ret);
+  }
+
+  if (-1 != filed) {
+    ret = posix_fadvise(filed, 0, NUM_MEM, POSIX_FADV_DONTNEED);
+    assert(-1 != ret);
+  }
 }
 #pragma GCC pop_options
-
-
-#ifndef USE_LIBC
-static char * pflags=NULL;
-static uintptr_t base=0;
-static size_t page=0;
-#define SYNC  1
-#define DIRTY 2
 
 static void
 _segvhandler(int const sig, siginfo_t * const si, void * const ctx)
 {
-  int ret;
-  uintptr_t addr;
+  int fd, type;
+  size_t size, len, off;
+  ssize_t ret;
+  uintptr_t addr, new;
+  void * tmp_addr;
+  char * buf;
   size_t ip;
 
   assert(SIGSEGV == sig);
@@ -117,21 +150,91 @@ _segvhandler(int const sig, siginfo_t * const si, void * const ctx)
   ip   = ((uintptr_t)si->si_addr-base)/page;
   addr = base+ip*page;
 
-  if (SYNC != (pflags[ip]&SYNC)) {
-    ret = mprotect((void*)addr, page, PROT_READ);
-    assert(0 == ret);
-    pflags[ip] = SYNC;
-  }
-  else if (SYNC == (pflags[ip]&SYNC)) {
-    ret = mprotect((void*)addr, page, PROT_READ|PROT_WRITE);
-    assert(0 == ret);
-    pflags[ip] = DIRTY;
+  if (0 == USE_CTX)
+    type = (SYNC != (pflags[ip]&SYNC)) ? SYNC : DIRTY;
+  else
+    type = (0x2 == (((ucontext_t*)ctx)->uc_mcontext.gregs[REG_ERR]&0x2)) ? DIRTY : SYNC;
+
+  if (SYNC == type) {
+    assert(SYNC != (pflags[ip]&SYNC));
+    assert(DIRTY != (pflags[ip]&DIRTY));
+
+    if (1 == USE_LOAD && ONDISK == (pflags[ip]&ONDISK)) {
+      /* ========================= BEG LOAD =============================== */
+      if (1 == USE_LAZY) {
+        len = page;
+        off = ip*page;
+        new = addr;
+      }
+      else {
+        len = NUM_MEM;
+        off = 0;
+        new = base;
+      }
+
+      fd = open(TMPFILE, O_RDONLY);
+      assert(-1 != fd);
+
+      if (0 == USE_GHOST) {
+        tmp_addr = (void*)addr;
+        ret = mprotect(tmp_addr, len, PROT_WRITE);
+        assert(-1 != ret);
+      }
+      else {
+        tmp_addr = mmap(NULL, len, PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
+        assert(MAP_FAILED != tmp_addr);
+      }
+
+      ret = lseek(fd, off, SEEK_SET);
+      assert(-1 != ret);
+
+      buf  = tmp_addr;
+      size = len;
+      do {
+        ret = read(fd, buf, size);
+        assert(-1 != ret);
+
+        buf  += ret;
+        size -= ret;
+      } while (size > 0);
+
+      ret = mprotect(tmp_addr, len, PROT_READ);
+      assert(-1 != ret);
+
+      if (1 == USE_GHOST) {
+        tmp_addr = mremap(tmp_addr, len, len, MREMAP_MAYMOVE|MREMAP_FIXED, new);
+        assert(MAP_FAILED != tmp_addr);
+      }
+
+      ret = close(fd);
+      assert(-1 != ret);
+      /* ========================= END LOAD =============================== */
+    }
+    else if (1 == USE_LAZY) {
+      ret = mprotect((void*)addr, page, PROT_READ);
+      assert(0 == ret);
+    }
+    else {
+      ret = mprotect((void*)addr, NUM_MEM, PROT_READ);
+      assert(0 == ret);
+    }
+
+    if (1 == USE_LAZY)
+      pflags[ip] = SYNC;
+    else if (0 == USE_LAZY)
+      memset(pflags, SYNC, NUM_MEM/page);
   }
   else {
-    assert(0);
+    if (0 == USE_CTX)
+      assert(SYNC == (pflags[ip]&SYNC));
+
+    ret = mprotect((void*)addr, page, PROT_READ|PROT_WRITE);
+    assert(0 == ret);
+
+    pflags[ip] = DIRTY;
   }
 
-  if (NULL == ctx) {} /* suppress unused warning */
+  faults++;
 }
 
 static void
@@ -149,146 +252,439 @@ _init(void)
   ret = sigaction(SIGSEGV, &act, &oldact);
   assert(0 == ret);
 }
-#endif
-
 
 int main(void)
 {
-  int ret;
-  unsigned long t_rd, t_wr;
+  int fd;
+  size_t size;
+  ssize_t ret;
+  unsigned long t_rd, t_wr, t_rw;
   size_t i;
   struct _timespec ts, te;
-  char * buf;
-
-  size_t const NUM_MEM = (1lu<<32)-(1lu<<30); /* 3.0GiB */
-  //size_t const NUM_MEM = (1lu<<30);           /* 1.0GiB */
-#ifndef USE_LIBC
-  size_t const NUM_SYS = 4;                   /* 4KiB */
-#endif
-
-  assert(0 == (NUM_MEM&(sysconf(_SC_PAGESIZE)-1)));
+  char * addr, * buf;
 
   fprintf(stderr, "==========================\n");
   fprintf(stderr, "General ==================\n");
   fprintf(stderr, "==========================\n");
-#ifndef USE_LIBC
-  fprintf(stderr, "Library      =        sbma\n");
-#else
-  fprintf(stderr, "Library      =        libc\n");
-#endif
-  fprintf(stderr, "MiB I/O      = %11.0f\n", NUM_MEM/1000000.0);
-  fprintf(stderr, "SysPages I/O = %11lu\n",
-    NUM_MEM/sysconf(_SC_PAGESIZE));
+  fprintf(stderr, "  Library      =      %s\n", 1==USE_LIBC?"libc":"sbma");
+  fprintf(stderr, "  MiB I/O      = %9.0f\n", NUM_MEM/1000000.0);
+  fprintf(stderr, "  SysPages I/O = %9lu\n", NUM_MEM/sysconf(_SC_PAGESIZE));
   fprintf(stderr, "\n");
 
-#ifndef USE_LIBC
-  _init();
-
-  buf = mmap(NULL, NUM_MEM, PROT_NONE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
-  assert(MAP_FAILED != buf);
-
-  base = (uintptr_t)buf;
   page = sysconf(_SC_PAGESIZE)*NUM_SYS;
   assert(0 == (NUM_MEM&(page-1)));
 
-  pflags = mmap(NULL, NUM_MEM/page, PROT_READ|PROT_WRITE,
-    MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
-  assert(MAP_FAILED != pflags);
-#else
-  buf = mmap(NULL, NUM_MEM, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
-  assert(MAP_FAILED != buf);
-#endif
+  if (1 == USE_LIBC) {
+    addr = mmap(NULL, NUM_MEM, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
+    assert(MAP_FAILED != addr);
+  }
+  else {
+    _init();
+
+    addr = mmap(NULL, NUM_MEM, PROT_NONE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
+    assert(MAP_FAILED != addr);
+
+    base = (uintptr_t)addr;
+    assert(0 == (NUM_MEM&(page-1)));
+
+    pflags = mmap(NULL, NUM_MEM/page, PROT_READ|PROT_WRITE,
+      MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
+    assert(MAP_FAILED != pflags);
+  }
 
   _cacheflush();
 
   /* ===== Uninitialized memory tests ===== */
+  /* ----- WRITE ---- */
   _gettime(&ts);
   for (i=0; i<NUM_MEM; ++i)
-    buf[i] = (char)i;
+    addr[i] = (char)i;
   _gettime(&te);
   t_wr = _getelapsed(&ts, &te);
 
+  fprintf(stderr, "==========================\n");
+  fprintf(stderr, "Write (new) ==============\n");
+  fprintf(stderr, "==========================\n");
+  fprintf(stderr, "  MiB/s        = %9.0f\n", NUM_MEM/(t_wr/1000000.0));
+  fprintf(stderr, "  SysPages/s   = %9.0f\n",
+    NUM_MEM/sysconf(_SC_PAGESIZE)/(t_wr/1000000.0));
+  if (0 == USE_LIBC)
+    fprintf(stderr, "  # SIGSEGV    = %9zu\n", faults);
+  fprintf(stderr, "\n");
+
+  if (1 == USE_LOAD) {
+    fd = open(TMPFILE, O_WRONLY|O_CREAT|O_EXCL, S_IRUSR|S_IWUSR);
+    assert(-1 != fd);
+    filed = open(TMPFILE, O_RDWR);
+    assert(-1 != filed);
+
+    buf  = addr;
+    size = NUM_MEM;
+    do {
+      ret = write(fd, buf, size);
+      assert(-1 != ret);
+
+      buf  += ret;
+      size -= ret;
+    } while (size > 0);
+
+    ret = close(fd);
+    assert(-1 != ret);
+
+    memset(addr, 0, NUM_MEM);
+  }
+  if (0 == USE_LIBC) {
+    if (0 == USE_LOAD)
+      memset(pflags, 0, NUM_MEM/page);
+    else
+      memset(pflags, ONDISK, NUM_MEM/page);
+    ret = mprotect(addr, NUM_MEM, PROT_NONE);
+    assert(0 == ret);
+    faults = 0;
+  }
   _cacheflush();
 
-#ifndef USE_LIBC
-  ret = mprotect(buf, NUM_MEM, PROT_NONE);
-  assert(0 == ret);
-  memset(pflags, 0, NUM_MEM/page);
-#endif
-
-  _cacheflush();
-
+  /* ----- READ ---- */
   _gettime(&ts);
-  for (i=0; i<NUM_MEM; ++i)
-    assert((char)i == buf[i]);
+  if (1 == USE_LIBC && 1 == USE_LOAD && 0 == USE_LAZY) {
+    fd = open(TMPFILE, O_RDONLY);
+    assert(-1 != fd);
+
+    buf  = addr;
+    size = NUM_MEM;
+    do {
+      ret = read(fd, buf, size);
+      assert(-1 != ret);
+
+      buf  += ret;
+      size -= ret;
+    } while (size > 0);
+
+    ret = close(fd);
+    assert(-1 != ret);
+  }
+  for (i=0; i<NUM_MEM; ++i) {
+    if (1 == USE_LIBC && 1 == USE_LOAD && 1 == USE_LAZY) {
+      if (0 == ((uintptr_t)(addr+i)&(page-1))) {
+        fd = open(TMPFILE, O_RDONLY);
+        assert(-1 != fd);
+
+        ret = lseek(fd, i, SEEK_SET);
+        assert(-1 != ret);
+
+        buf  = addr+i;
+        size = page;
+        do {
+          ret = read(fd, buf, size);
+          assert(-1 != ret);
+
+          buf  += ret;
+          size -= ret;
+        } while (size > 0);
+
+        ret = close(fd);
+        assert(-1 != ret);
+      }
+    }
+    assert((char)i == addr[i]);
+  }
   _gettime(&te);
   t_rd = _getelapsed(&ts, &te);
 
   fprintf(stderr, "==========================\n");
   fprintf(stderr, "Read (new) ===============\n");
   fprintf(stderr, "==========================\n");
-  fprintf(stderr, "  MiB/s      = %11.0f\n",
-    NUM_MEM/(t_rd/1000000.0));
-  fprintf(stderr, "  SysPages/s = %11.0f\n",
+  fprintf(stderr, "  MiB/s        = %9.0f\n", NUM_MEM/(t_rd/1000000.0));
+  fprintf(stderr, "  SysPages/s   = %9.0f\n",
     NUM_MEM/sysconf(_SC_PAGESIZE)/(t_rd/1000000.0));
-  fprintf(stderr, "\n");
-  fprintf(stderr, "==========================\n");
-  fprintf(stderr, "Write (new) ==============\n");
-  fprintf(stderr, "==========================\n");
-  fprintf(stderr, "  MiB/s      = %11.0f\n",
-    NUM_MEM/(t_wr/1000000.0));
-  fprintf(stderr, "  SysPages/s = %11.0f\n",
-    NUM_MEM/sysconf(_SC_PAGESIZE)/(t_wr/1000000.0));
+  if (0 == USE_LIBC)
+    fprintf(stderr, "  # SIGSEGV    = %9zu\n", faults);
   fprintf(stderr, "\n");
 
+  if (1 == USE_LOAD) {
+    if (0 == USE_LIBC) {
+      ret = mprotect(addr, NUM_MEM, PROT_WRITE);
+      assert(0 == ret);
+    }
+    memset(addr, 0, NUM_MEM);
+  }
+  if (0 == USE_LIBC) {
+    if (0 == USE_LOAD)
+      memset(pflags, 0, NUM_MEM/page);
+    else
+      memset(pflags, ONDISK, NUM_MEM/page);
+    ret = mprotect(addr, NUM_MEM, PROT_NONE);
+    assert(0 == ret);
+    faults = 0;
+  }
+  _cacheflush();
+
+  /* ----- READ/WRITE ---- */
+  _gettime(&ts);
+  if (1 == USE_LIBC && 1 == USE_LOAD && 0 == USE_LAZY) {
+    fd = open(TMPFILE, O_RDONLY);
+    assert(-1 != fd);
+
+    buf  = addr;
+    size = NUM_MEM;
+    do {
+      ret = read(fd, buf, size);
+      assert(-1 != ret);
+
+      buf  += ret;
+      size -= ret;
+    } while (size > 0);
+
+    ret = close(fd);
+    assert(-1 != ret);
+  }
+  for (i=0; i<NUM_MEM; ++i) {
+    if (1 == USE_LIBC && 1 == USE_LOAD && 1 == USE_LAZY) {
+      if (0 == ((uintptr_t)(addr+i)&(page-1))) {
+        fd = open(TMPFILE, O_RDONLY);
+        assert(-1 != fd);
+
+        ret = lseek(fd, i, SEEK_SET);
+        assert(-1 != ret);
+
+        buf  = addr+i;
+        size = page;
+        do {
+          ret = read(fd, buf, size);
+          assert(-1 != ret);
+
+          buf  += ret;
+          size -= ret;
+        } while (size > 0);
+
+        ret = close(fd);
+        assert(-1 != ret);
+      }
+    }
+    addr[i]++;
+  }
+  _gettime(&te);
+  t_rw = _getelapsed(&ts, &te);
+
+  for (i=0; i<NUM_MEM; ++i)
+    assert((char)(i+1) == addr[i]);
+
+  fprintf(stderr, "==========================\n");
+  fprintf(stderr, "Read/Write (new) =========\n");
+  fprintf(stderr, "==========================\n");
+  fprintf(stderr, "  MiB/s        = %9.0f\n", NUM_MEM/(t_rw/1000000.0));
+  fprintf(stderr, "  SysPages/s   = %9.0f\n",
+    NUM_MEM/sysconf(_SC_PAGESIZE)/(t_rw/1000000.0));
+  if (0 == USE_LIBC)
+    fprintf(stderr, "  # SIGSEGV    = %9zu\n", faults);
+  fprintf(stderr, "\n");
+
+  if (1 == USE_LOAD) {
+    memset(addr, 0, NUM_MEM);
+  }
+  if (0 == USE_LIBC) {
+    ret = mprotect(addr, NUM_MEM, PROT_NONE);
+    assert(0 == ret);
+    memset(pflags, 0, NUM_MEM/page);
+    faults = 0;
+  }
   _cacheflush();
 
   /* ===== Initialized memory tests ===== */
+  /* ----- WRITE ----- */
   _gettime(&ts);
   for (i=0; i<NUM_MEM; ++i)
-    buf[i] = (char)(NUM_MEM-i);
+    addr[i] = (char)(NUM_MEM-i);
   _gettime(&te);
   t_wr = _getelapsed(&ts, &te);
 
+  fprintf(stderr, "==========================\n");
+  fprintf(stderr, "Write (init) =============\n");
+  fprintf(stderr, "==========================\n");
+  fprintf(stderr, "  MiB/s        = %9.0f\n", NUM_MEM/(t_wr/1000000.0));
+  fprintf(stderr, "  SysPages/s   = %9.0f\n",
+    NUM_MEM/sysconf(_SC_PAGESIZE)/(t_wr/1000000.0));
+  if (0 == USE_LIBC)
+    fprintf(stderr, "  # SIGSEGV    = %9zu\n", faults);
+  fprintf(stderr, "\n");
+
+  if (1 == USE_LOAD) {
+    fd = open(TMPFILE, O_WRONLY);
+    assert(-1 != fd);
+
+    buf  = addr;
+    size = NUM_MEM;
+    do {
+      ret = write(fd, buf, size);
+      assert(-1 != ret);
+
+      buf  += ret;
+      size -= ret;
+    } while (size > 0);
+
+    ret = close(fd);
+    assert(-1 != ret);
+
+    memset(addr, 0, NUM_MEM);
+  }
+  if (0 == USE_LIBC) {
+    if (0 == USE_LOAD)
+      memset(pflags, 0, NUM_MEM/page);
+    else
+      memset(pflags, ONDISK, NUM_MEM/page);
+    ret = mprotect(addr, NUM_MEM, PROT_NONE);
+    assert(0 == ret);
+    faults = 0;
+  }
   _cacheflush();
 
-#ifndef USE_LIBC
-  ret = mprotect(buf, NUM_MEM, PROT_NONE);
-  assert(0 == ret);
-  memset(pflags, 0, NUM_MEM/page);
-#endif
-
-  _cacheflush();
-
+  /* ----- READ ----- */
   _gettime(&ts);
-  for (i=0; i<NUM_MEM; ++i)
-    assert((char)(NUM_MEM-i) == buf[i]);
+  if (1 == USE_LIBC && 1 == USE_LOAD && 0 == USE_LAZY) {
+    fd = open(TMPFILE, O_RDONLY);
+    assert(-1 != fd);
+
+    buf  = addr;
+    size = NUM_MEM;
+    do {
+      ret = read(fd, buf, size);
+      assert(-1 != ret);
+
+      buf  += ret;
+      size -= ret;
+    } while (size > 0);
+
+    ret = close(fd);
+    assert(-1 != ret);
+  }
+  for (i=0; i<NUM_MEM; ++i) {
+    if (1 == USE_LIBC && 1 == USE_LOAD && 1 == USE_LAZY) {
+      if (0 == ((uintptr_t)(addr+i)&(page-1))) {
+        fd = open(TMPFILE, O_RDONLY);
+        assert(-1 != fd);
+
+        ret = lseek(fd, i, SEEK_SET);
+        assert(-1 != ret);
+
+        buf  = addr+i;
+        size = page;
+        do {
+          ret = read(fd, buf, size);
+          assert(-1 != ret);
+
+          buf  += ret;
+          size -= ret;
+        } while (size > 0);
+
+        ret = close(fd);
+        assert(-1 != ret);
+      }
+    }
+    assert((char)(NUM_MEM-i) == addr[i]);
+  }
   _gettime(&te);
   t_rd = _getelapsed(&ts, &te);
 
   fprintf(stderr, "==========================\n");
   fprintf(stderr, "Read (init) ==============\n");
   fprintf(stderr, "==========================\n");
-  fprintf(stderr, "  MiB/s      = %11.0f\n",
-    NUM_MEM/(t_rd/1000000.0));
-  fprintf(stderr, "  SysPages/s = %11.0f\n",
+  fprintf(stderr, "  MiB/s        = %9.0f\n", NUM_MEM/(t_rd/1000000.0));
+  fprintf(stderr, "  SysPages/s   = %9.0f\n",
     NUM_MEM/sysconf(_SC_PAGESIZE)/(t_rd/1000000.0));
+  if (0 == USE_LIBC)
+    fprintf(stderr, "  # SIGSEGV    = %9zu\n", faults);
   fprintf(stderr, "\n");
-  fprintf(stderr, "==========================\n");
-  fprintf(stderr, "Write (init) =============\n");
-  fprintf(stderr, "==========================\n");
-  fprintf(stderr, "  MiB/s      = %11.0f\n",
-    NUM_MEM/(t_wr/1000000.0));
-  fprintf(stderr, "  SysPages/s = %11.0f\n",
-    NUM_MEM/sysconf(_SC_PAGESIZE)/(t_wr/1000000.0));
 
-  /* ===== Release memory ===== */
-  ret = munmap(buf, NUM_MEM);
+  if (1 == USE_LOAD) {
+    if (0 == USE_LIBC) {
+      ret = mprotect(addr, NUM_MEM, PROT_WRITE);
+      assert(0 == ret);
+    }
+    memset(addr, 0, NUM_MEM);
+  }
+  if (0 == USE_LIBC) {
+    if (0 == USE_LOAD)
+      memset(pflags, 0, NUM_MEM/page);
+    else
+      memset(pflags, ONDISK, NUM_MEM/page);
+    ret = mprotect(addr, NUM_MEM, PROT_NONE);
+    assert(0 == ret);
+    faults = 0;
+  }
+  _cacheflush();
+
+  /* ----- READ/WRITE ----- */
+  _gettime(&ts);
+  if (1 == USE_LIBC && 1 == USE_LOAD && 0 == USE_LAZY) {
+    fd = open(TMPFILE, O_RDONLY);
+    assert(-1 != fd);
+
+    buf  = addr;
+    size = NUM_MEM;
+    do {
+      ret = read(fd, buf, size);
+      assert(-1 != ret);
+
+      buf  += ret;
+      size -= ret;
+    } while (size > 0);
+
+    ret = close(fd);
+    assert(-1 != ret);
+  }
+  for (i=0; i<NUM_MEM; ++i) {
+    if (1 == USE_LIBC && 1 == USE_LOAD && 1 == USE_LAZY) {
+      if (0 == ((uintptr_t)(addr+i)&(page-1))) {
+        fd = open(TMPFILE, O_RDONLY);
+        assert(-1 != fd);
+
+        ret = lseek(fd, i, SEEK_SET);
+        assert(-1 != ret);
+
+        buf  = addr+i;
+        size = page;
+        do {
+          ret = read(fd, buf, size);
+          assert(-1 != ret);
+
+          buf  += ret;
+          size -= ret;
+        } while (size > 0);
+
+        ret = close(fd);
+        assert(-1 != ret);
+      }
+    }
+    addr[i]++;
+  }
+  _gettime(&te);
+  t_rw = _getelapsed(&ts, &te);
+
+  for (i=0; i<NUM_MEM; ++i)
+    assert((char)(NUM_MEM-i+1) == addr[i]);
+
+  fprintf(stderr, "==========================\n");
+  fprintf(stderr, "Read/Write (init) ========\n");
+  fprintf(stderr, "==========================\n");
+  fprintf(stderr, "  MiB/s        = %9.0f\n", NUM_MEM/(t_rw/1000000.0));
+  fprintf(stderr, "  SysPages/s   = %9.0f\n",
+    NUM_MEM/sysconf(_SC_PAGESIZE)/(t_rw/1000000.0));
+  if (0 == USE_LIBC)
+    fprintf(stderr, "  # SIGSEGV    = %9zu\n", faults);
+
+  /* ===== Release resources ===== */
+  ret = munmap(addr, NUM_MEM);
   assert(0 == ret);
-#ifndef USE_LIBC
-  ret = munmap(pflags, NUM_MEM/page);
-  assert(0 == ret);
-#endif
+  if (0 == USE_LIBC) {
+    ret = munmap(pflags, NUM_MEM/page);
+    assert(0 == ret);
+  }
+  if (1 == USE_LOAD) {
+    ret = close(filed);
+    assert(-1 != ret);
+    ret = unlink(TMPFILE);
+    assert(-1 != ret);
+  }
 
   return EXIT_SUCCESS;
 }

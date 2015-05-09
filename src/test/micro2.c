@@ -1,9 +1,6 @@
-#ifndef _GNU_SOURCE
-# define _GNU_SOURCE
-#endif
-
-#ifdef NDEBUG
-# undef NDEBUG
+/*===========================================================================*/
+#ifndef _BSD_SOURCE
+# define _BSD_SOURCE
 #endif
 
 #define _POSIX_C_SOURCE 200112L
@@ -27,17 +24,7 @@
 # include <time.h>
 #endif
 
-#include <assert.h>
-#include <fcntl.h>
-#include <signal.h>
-#include <stdint.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
 #include <sys/mman.h>
-#include <sys/stat.h>
-#include <sys/ucontext.h>
-
 
 struct _timespec
 {
@@ -45,7 +32,7 @@ struct _timespec
   long unsigned tv_nsec;
 };
 
-static void
+void
 _gettime(struct _timespec * const t)
 {
 #if defined(HAVE_CLOCK_GETTIME)
@@ -65,7 +52,7 @@ _gettime(struct _timespec * const t)
 #endif
 }
 
-static long unsigned
+long unsigned
 _getelapsed(struct _timespec const * const ts,
             struct _timespec const * const te)
 {
@@ -73,618 +60,477 @@ _getelapsed(struct _timespec const * const ts,
   if (te->tv_nsec < ts->tv_nsec) {
     t.tv_nsec = 1000000000UL + te->tv_nsec - ts->tv_nsec;
     t.tv_sec = te->tv_sec - 1 - ts->tv_sec;
-  }
-  else {
+  }else {
     t.tv_nsec = te->tv_nsec - ts->tv_nsec;
     t.tv_sec = te->tv_sec - ts->tv_sec;
   }
   return (unsigned long)(t.tv_sec * 1000000000UL + t.tv_nsec);
 }
 
-
-/* ============================ BEG CONFIG ================================ */
-static int const USE_LOAD         = 0;
-static int const USE_LAZY         = 0;
-static int const USE_LIBC         = 1;
-static int const USE_GHOST        = 0;
-static int const USE_CTX          = 0;
-
-static size_t const NUM_MEM       = (1lu<<32)-(1lu<<30); /* 3.0GiB */
-//static size_t const NUM_MEM       = (1lu<<28);           /* 1.0GiB */
-static size_t const NUM_SYS       = 1;                   /* 4KiB */
-static char const * const TMPFILE = "/scratch/micro2";
-/* ============================ END CONFIG ================================ */
-
-static int filed=-1;
-static char * pflags=NULL;
-static uintptr_t base=0;
-static size_t page=0;
-static size_t faults=0;
-#define SYNC   1
-#define DIRTY  2
-#define ONDISK 4
-
 #pragma GCC push_options
 #pragma GCC optimize("-O0")
-static void
+void
 _cacheflush(void)
 {
-  /* 1<<28 == 256MiB */
-  int ret;
   long unsigned i;
-  char * ptr = mmap(NULL, 1<<28, PROT_READ|PROT_WRITE,
+  char * ptr = mmap(NULL, 1LU<<32, PROT_READ|PROT_WRITE,
     MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
   if (MAP_FAILED != ptr) {
-    for (i=0; i<1<<28; ++i)
-      ptr[i] = (char)i;
-    for (i=0; i<1<<28; ++i)
-      assert((char)i == ptr[i]);
-    munmap(ptr, 1<<28);
-  }
-
-  if (0 != base && 1 == USE_LOAD) {
-    ret = madvise((void*)base, NUM_MEM, MADV_DONTNEED);
-    assert(-1 != ret);
-  }
-
-  if (-1 != filed) {
-    ret = posix_fadvise(filed, 0, NUM_MEM, POSIX_FADV_DONTNEED);
-    assert(-1 != ret);
+    for (i=0; i<1LU<<32; ++i)
+      ptr[i] = i;
+    munmap(ptr, 1LU<<32);
   }
 }
 #pragma GCC pop_options
+/*===========================================================================*/
 
-static void
-_segvhandler(int const sig, siginfo_t * const si, void * const ctx)
-{
-  int fd, type;
-  size_t size, len, off;
-  ssize_t ret;
-  uintptr_t addr, new;
-  void * tmp_addr;
-  char * buf;
-  size_t ip;
 
-  assert(SIGSEGV == sig);
+#ifdef NDEBUG
+# undef NDEBUG
+# include <assert.h>
+# define NDEBUG
+#endif
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
-  ip   = ((uintptr_t)si->si_addr-base)/page;
-  addr = base+ip*page;
+#include "klmalloc.h"
 
-  if (0 == USE_CTX)
-    type = (SYNC != (pflags[ip]&SYNC)) ? SYNC : DIRTY;
-  else
-    type = (0x2 == (((ucontext_t*)ctx)->uc_mcontext.gregs[REG_ERR]&0x2)) ? DIRTY : SYNC;
 
-  if (SYNC == type) {
-    assert(SYNC != (pflags[ip]&SYNC));
-    assert(DIRTY != (pflags[ip]&DIRTY));
+/* random number generator seed */
+//#define SEED time(NULL)
+//#define SEED 1430937600
+#define SEED 1430939513
 
-    if (1 == USE_LOAD && ONDISK == (pflags[ip]&ONDISK)) {
-      /* ========================= BEG LOAD =============================== */
-      if (1 == USE_LAZY) {
-        len = page;
-        off = ip*page;
-        new = addr;
-      }
-      else {
-        len = NUM_MEM;
-        off = 0;
-        new = base;
-      }
 
-      fd = open(TMPFILE, O_RDONLY);
-      assert(-1 != fd);
-
-      if (0 == USE_GHOST) {
-        tmp_addr = (void*)addr;
-        ret = mprotect(tmp_addr, len, PROT_WRITE);
-        assert(-1 != ret);
-      }
-      else {
-        tmp_addr = mmap(NULL, len, PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
-        assert(MAP_FAILED != tmp_addr);
-      }
-
-      ret = lseek(fd, off, SEEK_SET);
-      assert(-1 != ret);
-
-      buf  = tmp_addr;
-      size = len;
-      do {
-        ret = read(fd, buf, size);
-        assert(-1 != ret);
-
-        buf  += ret;
-        size -= ret;
-      } while (size > 0);
-
-      ret = mprotect(tmp_addr, len, PROT_READ);
-      assert(-1 != ret);
-
-      if (1 == USE_GHOST) {
-        tmp_addr = mremap(tmp_addr, len, len, MREMAP_MAYMOVE|MREMAP_FIXED, new);
-        assert(MAP_FAILED != tmp_addr);
-      }
-
-      ret = close(fd);
-      assert(-1 != ret);
-      /* ========================= END LOAD =============================== */
-    }
-    else if (1 == USE_LAZY) {
-      ret = mprotect((void*)addr, page, PROT_READ);
-      assert(0 == ret);
-    }
-    else {
-      ret = mprotect((void*)addr, NUM_MEM, PROT_READ);
-      assert(0 == ret);
-    }
-
-    if (1 == USE_LAZY)
-      pflags[ip] = SYNC;
-    else if (0 == USE_LAZY)
-      memset(pflags, SYNC, NUM_MEM/page);
-  }
-  else {
-    if (0 == USE_CTX)
-      assert(SYNC == (pflags[ip]&SYNC));
-
-    ret = mprotect((void*)addr, page, PROT_READ|PROT_WRITE);
-    assert(0 == ret);
-
-    pflags[ip] = DIRTY;
-  }
-
-  faults++;
+/* use standard c malloc library or klmalloc library */
+#ifdef USE_LIBC
+# define PFX(F) libc_##F
+# ifdef __cplusplus
+extern "C" {
+# endif
+void * libc_malloc(size_t);
+void libc_free(void*);
+# ifdef __cplusplus
 }
+# endif
+#else
+# include <sbmalloc.h>
+# define PFX(F) KL_##F
+#endif
 
-static void
-_init(void)
-{
-  int ret;
-  struct sigaction act;
-  struct sigaction oldact;
 
-  act.sa_flags     = SA_SIGINFO;
-  act.sa_sigaction = _segvhandler;
+/* probability to memset a previous allocation */
+#define PER_MEMSET 30
+/* probability to free a previous allocation */
+#define PER_FREE   30
 
-  ret = sigemptyset(&(act.sa_mask));
-  assert(0 == ret);
-  ret = sigaction(SIGSEGV, &act, &oldact);
-  assert(0 == ret);
-}
+
+/* different op classes */
+enum {
+  NOOP,
+  FREE,
+  ALLOC,
+  NUM_CLASS_OP
+};
+
+
+/* different allocation classes */
+enum {
+  BRICK_ALLOC,
+  CHUNK_ALLOC,
+  SOLO_ALLOC,
+  NUM_CLASS_ALLOC
+};
+
 
 int main(void)
 {
-  int fd;
-  size_t size;
-  ssize_t ret;
-  unsigned long t_rd, t_wr, t_rw;
-  size_t i;
-  struct _timespec ts, te;
-  char * addr, * buf;
+  size_t i, j, k, l, m, cur_mem=0;;
+  size_t n_alloc=0, n_free=0, n_memset=0, b_alloc=0, b_free=0, b_memset=0;
+  size_t b_brick_alloc=0, b_chunk_alloc=0, b_solo_alloc=0;
+  size_t b_brick_free=0, b_chunk_free=0, b_solo_free=0;
+  size_t b_brick_memset=0, b_chunk_memset=0, b_solo_memset=0;
+  size_t n_brick_alloc=0, n_chunk_alloc=0, n_solo_alloc=0;
+  size_t n_brick_free=0, n_chunk_free=0, n_solo_free=0;
+  size_t n_brick_memset=0, n_chunk_memset=0, n_solo_memset=0;
+  unsigned long t_total=0, seed, _t;
+  unsigned long t_alloc=0, t_free=0, t_new_memset=0, t_init_memset=0;
+  unsigned long t_brick_alloc=0,  t_chunk_alloc=0,  t_solo_alloc=0;
+  unsigned long t_brick_free=0,   t_chunk_free=0,   t_solo_free=0;
+  unsigned long t_new_brick_memset=0, t_new_chunk_memset=0, t_new_solo_memset=0;
+  unsigned long t_init_brick_memset=0, t_init_chunk_memset=0, t_init_solo_memset=0;
+  struct _timespec ts, te, _ts, _te;
+  char * op, * buf;
+  size_t * oprnd;
+  void ** alloc;
 
-  fprintf(stderr, "==========================\n");
-  fprintf(stderr, "General ==================\n");
-  fprintf(stderr, "==========================\n");
-  fprintf(stderr, "  Library      =      %s\n", 1==USE_LIBC?"libc":"sbma");
-  fprintf(stderr, "  MiB I/O      = %9.0f\n", NUM_MEM/1000000.0);
-  fprintf(stderr, "  SysPages I/O = %9lu\n", NUM_MEM/sysconf(_SC_PAGESIZE));
-  fprintf(stderr, "\n");
+  size_t NUM_OPS                = 1<<15;
+  size_t const BRICK_ALLOC_SIZE = KL_brick_max_size();
+  size_t const CHUNK_ALLOC_SIZE = KL_chunk_max_size();
+  size_t const SOLO_ALLOC_SIZE  = 1lu<<24;              /* 16MB */
+  size_t const MAX_MEM          = 1lu<<32;              /* 4GiB */
 
-  page = sysconf(_SC_PAGESIZE)*NUM_SYS;
-  assert(0 == (NUM_MEM&(page-1)));
+  seed = SEED;
+  srand(seed);
+  fprintf(stderr, "===============================\n");
+  fprintf(stderr, "General =======================\n");
+  fprintf(stderr, "===============================\n");
+  fprintf(stderr, "Seed              = %11lu\n", seed);
 
-  if (1 == USE_LIBC) {
-    addr = mmap(NULL, NUM_MEM, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
-    assert(MAP_FAILED != addr);
-  }
-  else {
-    _init();
+  op = (char *) PFX(malloc)(NUM_OPS*sizeof(char));
+  assert(NULL != op);
+  oprnd = (size_t *) PFX(malloc)(NUM_OPS*sizeof(size_t));
+  assert(NULL != oprnd);
+  alloc = (void **) PFX(malloc)(NUM_OPS*sizeof(void *));
+  assert(NULL != alloc);
+  buf = (char *) PFX(malloc)(SOLO_ALLOC_SIZE*sizeof(char));
+  assert(NULL != buf);
+  memset(buf, 1, SOLO_ALLOC_SIZE);
 
-    addr = mmap(NULL, NUM_MEM, PROT_NONE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
-    assert(MAP_FAILED != addr);
+  for (i=0; i<NUM_OPS; ++i) {
+    op[i] = NOOP;
 
-    base = (uintptr_t)addr;
-    assert(0 == (NUM_MEM&(page-1)));
+    if ((j=rand()%100) < PER_FREE) {
+      k = rand()%(i+1);
+      m = i;
+      for (l=k; l<i; ++l) {
+        if ((void*)1 == alloc[l]) {
+          m = l;
+          break;
+        }
+      }
+      if (i == m) {
+        for (l=0; l<k; ++l) {
+          if ((void*)1 == alloc[l]) {
+            m = l;
+            break;
+          }
+        }
+      }
 
-    pflags = mmap(NULL, NUM_MEM/page, PROT_READ|PROT_WRITE,
-      MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
-    assert(MAP_FAILED != pflags);
-  }
+      if (i != m) {
+        op[i]    = FREE;
+        oprnd[i] = m;
+        alloc[i] = (void*)0;  /* set my alloc as invaild.    */
+        alloc[m] = (void*)0;  /* set oprnd alloc as invalid. */
 
-  _cacheflush();
-
-  /* ===== Uninitialized memory tests ===== */
-  /* ----- WRITE ---- */
-  _gettime(&ts);
-  for (i=0; i<NUM_MEM; ++i)
-    addr[i] = (char)i;
-  _gettime(&te);
-  t_wr = _getelapsed(&ts, &te);
-
-  fprintf(stderr, "==========================\n");
-  fprintf(stderr, "Write (new) ==============\n");
-  fprintf(stderr, "==========================\n");
-  fprintf(stderr, "  MiB/s        = %9.0f\n", NUM_MEM/(t_wr/1000000.0));
-  fprintf(stderr, "  SysPages/s   = %9.0f\n",
-    NUM_MEM/sysconf(_SC_PAGESIZE)/(t_wr/1000000.0));
-  if (0 == USE_LIBC)
-    fprintf(stderr, "  # SIGSEGV    = %9zu\n", faults);
-  fprintf(stderr, "\n");
-
-  if (1 == USE_LOAD) {
-    fd = open(TMPFILE, O_WRONLY|O_CREAT|O_EXCL, S_IRUSR|S_IWUSR);
-    assert(-1 != fd);
-    filed = open(TMPFILE, O_RDWR);
-    assert(-1 != filed);
-
-    buf  = addr;
-    size = NUM_MEM;
-    do {
-      ret = write(fd, buf, size);
-      assert(-1 != ret);
-
-      buf  += ret;
-      size -= ret;
-    } while (size > 0);
-
-    ret = close(fd);
-    assert(-1 != ret);
-
-    memset(addr, 0, NUM_MEM);
-  }
-  if (0 == USE_LIBC) {
-    if (0 == USE_LOAD)
-      memset(pflags, 0, NUM_MEM/page);
-    else
-      memset(pflags, ONDISK, NUM_MEM/page);
-    ret = mprotect(addr, NUM_MEM, PROT_NONE);
-    assert(0 == ret);
-    faults = 0;
-  }
-  _cacheflush();
-
-  /* ----- READ ---- */
-  _gettime(&ts);
-  if (1 == USE_LIBC && 1 == USE_LOAD && 0 == USE_LAZY) {
-    fd = open(TMPFILE, O_RDONLY);
-    assert(-1 != fd);
-
-    buf  = addr;
-    size = NUM_MEM;
-    do {
-      ret = read(fd, buf, size);
-      assert(-1 != ret);
-
-      buf  += ret;
-      size -= ret;
-    } while (size > 0);
-
-    ret = close(fd);
-    assert(-1 != ret);
-  }
-  for (i=0; i<NUM_MEM; ++i) {
-    if (1 == USE_LIBC && 1 == USE_LOAD && 1 == USE_LAZY) {
-      if (0 == ((uintptr_t)(addr+i)&(page-1))) {
-        fd = open(TMPFILE, O_RDONLY);
-        assert(-1 != fd);
-
-        ret = lseek(fd, i, SEEK_SET);
-        assert(-1 != ret);
-
-        buf  = addr+i;
-        size = page;
-        do {
-          ret = read(fd, buf, size);
-          assert(-1 != ret);
-
-          buf  += ret;
-          size -= ret;
-        } while (size > 0);
-
-        ret = close(fd);
-        assert(-1 != ret);
+        cur_mem -= oprnd[m];
       }
     }
-    assert((char)i == addr[i]);
-  }
-  _gettime(&te);
-  t_rd = _getelapsed(&ts, &te);
 
-  fprintf(stderr, "==========================\n");
-  fprintf(stderr, "Read (new) ===============\n");
-  fprintf(stderr, "==========================\n");
-  fprintf(stderr, "  MiB/s        = %9.0f\n", NUM_MEM/(t_rd/1000000.0));
-  fprintf(stderr, "  SysPages/s   = %9.0f\n",
-    NUM_MEM/sysconf(_SC_PAGESIZE)/(t_rd/1000000.0));
-  if (0 == USE_LIBC)
-    fprintf(stderr, "  # SIGSEGV    = %9zu\n", faults);
-  fprintf(stderr, "\n");
+    if (NOOP == op[i])  {
+      switch (rand()%NUM_CLASS_ALLOC) {
+        case BRICK_ALLOC:
+          j = rand()%BRICK_ALLOC_SIZE;
+          break;
 
-  if (1 == USE_LOAD) {
-    if (0 == USE_LIBC) {
-      ret = mprotect(addr, NUM_MEM, PROT_WRITE);
-      assert(0 == ret);
-    }
-    memset(addr, 0, NUM_MEM);
-  }
-  if (0 == USE_LIBC) {
-    if (0 == USE_LOAD)
-      memset(pflags, 0, NUM_MEM/page);
-    else
-      memset(pflags, ONDISK, NUM_MEM/page);
-    ret = mprotect(addr, NUM_MEM, PROT_NONE);
-    assert(0 == ret);
-    faults = 0;
-  }
-  _cacheflush();
+        case CHUNK_ALLOC:
+          j = rand()%CHUNK_ALLOC_SIZE;
+          break;
 
-  /* ----- READ/WRITE ---- */
-  _gettime(&ts);
-  if (1 == USE_LIBC && 1 == USE_LOAD && 0 == USE_LAZY) {
-    fd = open(TMPFILE, O_RDONLY);
-    assert(-1 != fd);
+        case SOLO_ALLOC:
+          j = rand()%SOLO_ALLOC_SIZE;
+          break;
+      }
 
-    buf  = addr;
-    size = NUM_MEM;
-    do {
-      ret = read(fd, buf, size);
-      assert(-1 != ret);
+      if (cur_mem+j+1 <= MAX_MEM) {
+        op[i]    = ALLOC;
+        oprnd[i] = ++j;
+        alloc[i] = (void*)1;
 
-      buf  += ret;
-      size -= ret;
-    } while (size > 0);
-
-    ret = close(fd);
-    assert(-1 != ret);
-  }
-  for (i=0; i<NUM_MEM; ++i) {
-    if (1 == USE_LIBC && 1 == USE_LOAD && 1 == USE_LAZY) {
-      if (0 == ((uintptr_t)(addr+i)&(page-1))) {
-        fd = open(TMPFILE, O_RDONLY);
-        assert(-1 != fd);
-
-        ret = lseek(fd, i, SEEK_SET);
-        assert(-1 != ret);
-
-        buf  = addr+i;
-        size = page;
-        do {
-          ret = read(fd, buf, size);
-          assert(-1 != ret);
-
-          buf  += ret;
-          size -= ret;
-        } while (size > 0);
-
-        ret = close(fd);
-        assert(-1 != ret);
+        cur_mem += oprnd[i];
+      }
+      else {
+        break;
       }
     }
-    addr[i]++;
+  }
+  NUM_OPS = i;
+
+  _gettime(&ts);
+  for (i=0; i<NUM_OPS; ++i) {
+    switch (op[i]) {
+      case FREE:
+        _gettime(&_ts);
+        PFX(free)(alloc[oprnd[i]]);
+        alloc[oprnd[i]] = NULL;
+        _gettime(&_te);
+        _t = _getelapsed(&_ts, &_te);
+
+        if (oprnd[oprnd[i]] <= BRICK_ALLOC_SIZE) {
+          t_brick_free += _t;
+          b_brick_free += oprnd[oprnd[i]];
+          n_brick_free++;
+        }
+        else if (oprnd[oprnd[i]] <= CHUNK_ALLOC_SIZE) {
+          t_chunk_free += _t;
+          b_chunk_free += oprnd[oprnd[i]];
+          n_chunk_free++;
+        }
+        else {
+          t_solo_free += _t;
+          b_solo_free += oprnd[oprnd[i]];
+          n_solo_free++;
+        }
+        break;
+
+      case ALLOC:
+        _gettime(&_ts);
+        alloc[i] = PFX(malloc)(oprnd[i]);
+        assert(NULL != alloc[i]);
+        _gettime(&_te);
+        _t = _getelapsed(&_ts, &_te);
+
+        if (oprnd[i] <= BRICK_ALLOC_SIZE) {
+          t_brick_alloc += _t;
+          b_brick_alloc += oprnd[i];
+          n_brick_alloc++;
+        }
+        else if (oprnd[i] <= CHUNK_ALLOC_SIZE) {
+          t_chunk_alloc += _t;
+          b_chunk_alloc += oprnd[i];
+          n_chunk_alloc++;
+        }
+        else {
+          t_solo_alloc += _t;
+          b_solo_alloc += oprnd[i];
+          n_solo_alloc++;
+        }
+        break;
+    }
   }
   _gettime(&te);
-  t_rw = _getelapsed(&ts, &te);
+  t_total += _getelapsed(&ts, &te);
 
-  for (i=0; i<NUM_MEM; ++i)
-    assert((char)(i+1) == addr[i]);
-
-  fprintf(stderr, "==========================\n");
-  fprintf(stderr, "Read/Write (new) =========\n");
-  fprintf(stderr, "==========================\n");
-  fprintf(stderr, "  MiB/s        = %9.0f\n", NUM_MEM/(t_rw/1000000.0));
-  fprintf(stderr, "  SysPages/s   = %9.0f\n",
-    NUM_MEM/sysconf(_SC_PAGESIZE)/(t_rw/1000000.0));
-  if (0 == USE_LIBC)
-    fprintf(stderr, "  # SIGSEGV    = %9zu\n", faults);
-  fprintf(stderr, "\n");
-
-  if (1 == USE_LOAD) {
-    memset(addr, 0, NUM_MEM);
-  }
-  if (0 == USE_LIBC) {
-    ret = mprotect(addr, NUM_MEM, PROT_NONE);
-    assert(0 == ret);
-    memset(pflags, 0, NUM_MEM/page);
-    faults = 0;
-  }
   _cacheflush();
 
-  /* ===== Initialized memory tests ===== */
-  /* ----- WRITE ----- */
-  _gettime(&ts);
-  for (i=0; i<NUM_MEM; ++i)
-    addr[i] = (char)(NUM_MEM-i);
-  _gettime(&te);
-  t_wr = _getelapsed(&ts, &te);
+  /* Memset new buffers */
+  for (i=0; i<NUM_OPS; ++i) {
+    if (NULL != alloc[i]) {
+      if (oprnd[i] <= BRICK_ALLOC_SIZE) {
+        b_brick_memset += oprnd[i];
+        n_brick_memset++;
 
-  fprintf(stderr, "==========================\n");
-  fprintf(stderr, "Write (init) =============\n");
-  fprintf(stderr, "==========================\n");
-  fprintf(stderr, "  MiB/s        = %9.0f\n", NUM_MEM/(t_wr/1000000.0));
-  fprintf(stderr, "  SysPages/s   = %9.0f\n",
-    NUM_MEM/sysconf(_SC_PAGESIZE)/(t_wr/1000000.0));
-  if (0 == USE_LIBC)
-    fprintf(stderr, "  # SIGSEGV    = %9zu\n", faults);
-  fprintf(stderr, "\n");
+        b_brick_free += oprnd[i];
+        n_brick_free++;
+      }
+      else if (oprnd[i] <= CHUNK_ALLOC_SIZE) {
+        b_chunk_memset += oprnd[i];
+        n_chunk_memset++;
 
-  if (1 == USE_LOAD) {
-    fd = open(TMPFILE, O_WRONLY);
-    assert(-1 != fd);
+        b_chunk_free += oprnd[i];
+        n_chunk_free++;
+      }
+      else {
+        b_solo_memset += oprnd[i];
+        n_solo_memset++;
 
-    buf  = addr;
-    size = NUM_MEM;
-    do {
-      ret = write(fd, buf, size);
-      assert(-1 != ret);
-
-      buf  += ret;
-      size -= ret;
-    } while (size > 0);
-
-    ret = close(fd);
-    assert(-1 != ret);
-
-    memset(addr, 0, NUM_MEM);
-  }
-  if (0 == USE_LIBC) {
-    if (0 == USE_LOAD)
-      memset(pflags, 0, NUM_MEM/page);
-    else
-      memset(pflags, ONDISK, NUM_MEM/page);
-    ret = mprotect(addr, NUM_MEM, PROT_NONE);
-    assert(0 == ret);
-    faults = 0;
-  }
-  _cacheflush();
-
-  /* ----- READ ----- */
-  _gettime(&ts);
-  if (1 == USE_LIBC && 1 == USE_LOAD && 0 == USE_LAZY) {
-    fd = open(TMPFILE, O_RDONLY);
-    assert(-1 != fd);
-
-    buf  = addr;
-    size = NUM_MEM;
-    do {
-      ret = read(fd, buf, size);
-      assert(-1 != ret);
-
-      buf  += ret;
-      size -= ret;
-    } while (size > 0);
-
-    ret = close(fd);
-    assert(-1 != ret);
-  }
-  for (i=0; i<NUM_MEM; ++i) {
-    if (1 == USE_LIBC && 1 == USE_LOAD && 1 == USE_LAZY) {
-      if (0 == ((uintptr_t)(addr+i)&(page-1))) {
-        fd = open(TMPFILE, O_RDONLY);
-        assert(-1 != fd);
-
-        ret = lseek(fd, i, SEEK_SET);
-        assert(-1 != ret);
-
-        buf  = addr+i;
-        size = page;
-        do {
-          ret = read(fd, buf, size);
-          assert(-1 != ret);
-
-          buf  += ret;
-          size -= ret;
-        } while (size > 0);
-
-        ret = close(fd);
-        assert(-1 != ret);
+        b_solo_free += oprnd[i];
+        n_solo_free++;
       }
     }
-    assert((char)(NUM_MEM-i) == addr[i]);
   }
-  _gettime(&te);
-  t_rd = _getelapsed(&ts, &te);
+  _gettime(&ts);
+  _gettime(&_ts);
+  for (i=0; i<NUM_OPS; ++i) {
+    if (NULL != alloc[i] && oprnd[i] <= BRICK_ALLOC_SIZE)
+      memset(alloc[i], 1, oprnd[i]);
+  }
+  _gettime(&_te);
+  t_new_brick_memset = _getelapsed(&_ts, &_te);
 
-  fprintf(stderr, "==========================\n");
-  fprintf(stderr, "Read (init) ==============\n");
-  fprintf(stderr, "==========================\n");
-  fprintf(stderr, "  MiB/s        = %9.0f\n", NUM_MEM/(t_rd/1000000.0));
-  fprintf(stderr, "  SysPages/s   = %9.0f\n",
-    NUM_MEM/sysconf(_SC_PAGESIZE)/(t_rd/1000000.0));
-  if (0 == USE_LIBC)
-    fprintf(stderr, "  # SIGSEGV    = %9zu\n", faults);
-  fprintf(stderr, "\n");
-
-  if (1 == USE_LOAD) {
-    if (0 == USE_LIBC) {
-      ret = mprotect(addr, NUM_MEM, PROT_WRITE);
-      assert(0 == ret);
-    }
-    memset(addr, 0, NUM_MEM);
-  }
-  if (0 == USE_LIBC) {
-    if (0 == USE_LOAD)
-      memset(pflags, 0, NUM_MEM/page);
-    else
-      memset(pflags, ONDISK, NUM_MEM/page);
-    ret = mprotect(addr, NUM_MEM, PROT_NONE);
-    assert(0 == ret);
-    faults = 0;
-  }
   _cacheflush();
 
-  /* ----- READ/WRITE ----- */
-  _gettime(&ts);
-  if (1 == USE_LIBC && 1 == USE_LOAD && 0 == USE_LAZY) {
-    fd = open(TMPFILE, O_RDONLY);
-    assert(-1 != fd);
-
-    buf  = addr;
-    size = NUM_MEM;
-    do {
-      ret = read(fd, buf, size);
-      assert(-1 != ret);
-
-      buf  += ret;
-      size -= ret;
-    } while (size > 0);
-
-    ret = close(fd);
-    assert(-1 != ret);
+  _gettime(&_ts);
+  for (i=0; i<NUM_OPS; ++i) {
+    if (NULL != alloc[i] && oprnd[i] > BRICK_ALLOC_SIZE &&
+      oprnd[i] <= CHUNK_ALLOC_SIZE)
+      memset(alloc[i], 1, oprnd[i]);
   }
-  for (i=0; i<NUM_MEM; ++i) {
-    if (1 == USE_LIBC && 1 == USE_LOAD && 1 == USE_LAZY) {
-      if (0 == ((uintptr_t)(addr+i)&(page-1))) {
-        fd = open(TMPFILE, O_RDONLY);
-        assert(-1 != fd);
+  _gettime(&_te);
+  t_new_chunk_memset = _getelapsed(&_ts, &_te);
 
-        ret = lseek(fd, i, SEEK_SET);
-        assert(-1 != ret);
+  _cacheflush();
 
-        buf  = addr+i;
-        size = page;
-        do {
-          ret = read(fd, buf, size);
-          assert(-1 != ret);
-
-          buf  += ret;
-          size -= ret;
-        } while (size > 0);
-
-        ret = close(fd);
-        assert(-1 != ret);
-      }
-    }
-    addr[i]++;
+  _gettime(&_ts);
+  for (i=0; i<NUM_OPS; ++i) {
+    if (NULL != alloc[i] && oprnd[i] > BRICK_ALLOC_SIZE &&
+      oprnd[i] > CHUNK_ALLOC_SIZE)
+      memset(alloc[i], 1, oprnd[i]);
   }
+  _gettime(&_te);
+  t_new_solo_memset = _getelapsed(&_ts, &_te);
   _gettime(&te);
-  t_rw = _getelapsed(&ts, &te);
-
-  for (i=0; i<NUM_MEM; ++i)
-    assert((char)(NUM_MEM-i+1) == addr[i]);
-
-  fprintf(stderr, "==========================\n");
-  fprintf(stderr, "Read/Write (init) ========\n");
-  fprintf(stderr, "==========================\n");
-  fprintf(stderr, "  MiB/s        = %9.0f\n", NUM_MEM/(t_rw/1000000.0));
-  fprintf(stderr, "  SysPages/s   = %9.0f\n",
-    NUM_MEM/sysconf(_SC_PAGESIZE)/(t_rw/1000000.0));
-  if (0 == USE_LIBC)
-    fprintf(stderr, "  # SIGSEGV    = %9zu\n", faults);
-
-  /* ===== Release resources ===== */
-  ret = munmap(addr, NUM_MEM);
-  assert(0 == ret);
-  if (0 == USE_LIBC) {
-    ret = munmap(pflags, NUM_MEM/page);
-    assert(0 == ret);
+  t_total += _getelapsed(&ts, &te);
+  for (i=0; i<NUM_OPS; ++i) {
+    if (NULL != alloc[i])
+      assert(0 == memcmp(buf, alloc[i], oprnd[i]));
   }
-  if (1 == USE_LOAD) {
-    ret = close(filed);
-    assert(-1 != ret);
-    ret = unlink(TMPFILE);
-    assert(-1 != ret);
+
+#ifndef USE_LIBC
+  SB_dumpall();
+#endif
+
+  memset(buf, 2, SOLO_ALLOC_SIZE);
+  _cacheflush();
+
+  /* Memset initialized buffers */
+  _gettime(&ts);
+  _gettime(&_ts);
+  for (i=0; i<NUM_OPS; ++i) {
+    if (NULL != alloc[i] && oprnd[i] <= BRICK_ALLOC_SIZE)
+      memset(alloc[i], 2, oprnd[i]);
   }
+  _gettime(&_te);
+  t_init_brick_memset = _getelapsed(&_ts, &_te);
+
+  _cacheflush();
+
+  _gettime(&_ts);
+  for (i=0; i<NUM_OPS; ++i) {
+    if (NULL != alloc[i] && oprnd[i] > BRICK_ALLOC_SIZE &&
+      oprnd[i] <= CHUNK_ALLOC_SIZE)
+      memset(alloc[i], 2, oprnd[i]);
+  }
+  _gettime(&_te);
+  t_init_chunk_memset = _getelapsed(&_ts, &_te);
+
+  _cacheflush();
+
+  _gettime(&_ts);
+  for (i=0; i<NUM_OPS; ++i) {
+    if (NULL != alloc[i] && oprnd[i] > BRICK_ALLOC_SIZE &&
+      oprnd[i] > CHUNK_ALLOC_SIZE)
+      memset(alloc[i], 2, oprnd[i]);
+  }
+  _gettime(&_te);
+  t_init_solo_memset = _getelapsed(&_ts, &_te);
+  _gettime(&te);
+  t_total += _getelapsed(&ts, &te);
+  for (i=0; i<NUM_OPS; ++i) {
+    if (NULL != alloc[i])
+      assert(0 == memcmp(buf, alloc[i], oprnd[i]));
+  }
+
+  /* Free remaining allocs */
+  _gettime(&ts);
+  _gettime(&_ts);
+  for (i=0; i<NUM_OPS; ++i) {
+    if (NULL != alloc[i] && oprnd[i] <= BRICK_ALLOC_SIZE) {
+      PFX(free)(alloc[i]);
+      alloc[i] = NULL;
+    }
+  }
+  _gettime(&_te);
+  t_brick_free = _getelapsed(&_ts, &_te);
+
+  _cacheflush();
+
+  _gettime(&_ts);
+  for (i=0; i<NUM_OPS; ++i) {
+    if (NULL != alloc[i] && oprnd[i] > BRICK_ALLOC_SIZE &&
+      oprnd[i] <= CHUNK_ALLOC_SIZE)
+    {
+      PFX(free)(alloc[i]);
+      alloc[i] = NULL;
+    }
+  }
+  _gettime(&_te);
+  t_chunk_free = _getelapsed(&_ts, &_te);
+
+  _cacheflush();
+
+  _gettime(&_ts);
+  for (i=0; i<NUM_OPS; ++i) {
+    if (NULL != alloc[i] && oprnd[i] > BRICK_ALLOC_SIZE &&
+      oprnd[i] > CHUNK_ALLOC_SIZE)
+    {
+      PFX(free)(alloc[i]);
+      alloc[i] = NULL;
+    }
+  }
+  _gettime(&_te);
+  t_solo_free = _getelapsed(&_ts, &_te);
+  _gettime(&te);
+  t_total += _getelapsed(&ts, &te);
+
+  PFX(free)(op);
+  PFX(free)(oprnd);
+  PFX(free)(alloc);
+  PFX(free)(buf);
+
+  /* Output */
+  t_alloc       = t_brick_alloc+t_chunk_alloc+t_solo_alloc;
+  t_free        = t_brick_free+t_chunk_free+t_solo_free;
+  t_new_memset  = t_new_brick_memset+t_new_chunk_memset+t_new_solo_memset;
+  t_init_memset = t_init_brick_memset+t_init_chunk_memset+t_init_solo_memset;
+
+  b_alloc  = b_brick_alloc+b_chunk_alloc+b_solo_alloc;
+  b_free   = b_brick_free+b_chunk_free+b_solo_free;
+  b_memset = b_brick_memset+b_chunk_memset+b_solo_memset;
+  n_alloc  = n_brick_alloc+n_chunk_alloc+n_solo_alloc;
+  n_free   = n_brick_free+n_chunk_free+n_solo_free;
+  n_memset = n_brick_memset+n_chunk_memset+n_solo_memset;
+
+  fprintf(stderr, "Num ops           = %11zu\n", NUM_OPS);
+  fprintf(stderr, "Total time        = %11lu ns\n", t_total);
+  fprintf(stderr, "Overhead time     = %11lu ns\n",
+    t_total-t_alloc-t_free-t_new_memset-t_init_memset);
+  fprintf(stderr, "\n");
+  fprintf(stderr, "===============================\n");
+  fprintf(stderr, "Malloc ========================\n");
+  fprintf(stderr, "===============================\n");
+  fprintf(stderr, "  Malloc time     = %11lu ns\n", t_alloc);
+  fprintf(stderr, "  Malloc ops      = %11zu\n", n_alloc);
+  fprintf(stderr, "  Malloc ns/KiB   = %11lu\n", t_alloc/(b_alloc/1024));
+  fprintf(stderr, "    brick ns/KiB  = %11lu\n",
+    t_brick_alloc/(b_brick_alloc/1024));
+  fprintf(stderr, "    chunk ns/KiB  = %11lu\n",
+    t_chunk_alloc/(b_chunk_alloc/1024));
+  fprintf(stderr, "    solo ns/KiB   = %11lu\n",
+    t_solo_alloc/(b_solo_alloc/1024));
+  fprintf(stderr, "\n");
+  fprintf(stderr, "===============================\n");
+  fprintf(stderr, "Free ==========================\n");
+  fprintf(stderr, "===============================\n");
+  fprintf(stderr, "  Free time       = %11lu ns\n", t_free);
+  fprintf(stderr, "  Free ops        = %11zu\n", n_free);
+  fprintf(stderr, "  Free ns/KiB     = %11lu\n", t_free/(b_free/1024));
+  fprintf(stderr, "    brick ns/KiB  = %11lu\n",
+    t_brick_free/(b_brick_free/1024));
+  fprintf(stderr, "    chunk ns/KiB  = %11lu\n",
+    t_chunk_free/(b_chunk_free/1024));
+  fprintf(stderr, "    solo ns/KiB   = %11lu\n",
+    t_solo_free/(b_solo_free/1024));
+  fprintf(stderr, "\n");
+  fprintf(stderr, "===============================\n");
+  fprintf(stderr, "Memset ========================\n");
+  fprintf(stderr, "===============================\n");
+  fprintf(stderr, "  -----------------------------\n");
+  fprintf(stderr, "  New -------------------------\n");
+  fprintf(stderr, "  -----------------------------\n");
+  fprintf(stderr, "  Memset time     = %11lu ns\n", t_new_memset);
+  fprintf(stderr, "  Memset ops      = %11zu\n", n_memset);
+  fprintf(stderr, "  Memset ns/KiB   = %11lu\n", t_new_memset/(b_memset/1024));
+  fprintf(stderr, "    brick ns/KiB  = %11lu\n",
+    t_new_brick_memset/(b_brick_memset/1024));
+  fprintf(stderr, "    chunk ns/KiB  = %11lu\n",
+    t_new_chunk_memset/(b_chunk_memset/1024));
+  fprintf(stderr, "    solo ns/KiB   = %11lu\n",
+    t_new_solo_memset/(b_solo_memset/1024));
+  fprintf(stderr, "  -----------------------------\n");
+  fprintf(stderr, "  Init ------------------------\n");
+  fprintf(stderr, "  -----------------------------\n");
+  fprintf(stderr, "  Memset time     = %11lu ns\n", t_init_memset);
+  fprintf(stderr, "  Memset ops      = %11zu\n", n_memset);
+  fprintf(stderr, "  Memset ns/KiB   = %11lu\n", t_init_memset/(b_memset/1024));
+  fprintf(stderr, "    brick ns/KiB  = %11lu\n",
+    t_init_brick_memset/(b_brick_memset/1024));
+  fprintf(stderr, "    chunk ns/KiB  = %11lu\n",
+    t_init_chunk_memset/(b_chunk_memset/1024));
+  fprintf(stderr, "    solo ns/KiB   = %11lu\n",
+    t_init_solo_memset/(b_solo_memset/1024));
 
   return EXIT_SUCCESS;
 }
