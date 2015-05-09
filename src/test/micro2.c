@@ -81,8 +81,8 @@ _getelapsed(struct _timespec const * const ts,
 
 
 /* ============================ BEG CONFIG ================================ */
-static int const USE_LOAD         = 1;
-static int const USE_LAZY         = 0;
+static int const USE_LOAD         = 0;
+static int const USE_LAZY         = 1;
 static int const USE_LIBC         = 0;
 
 static size_t const NUM_MEM       = (1lu<<32)-(1lu<<30); /* 3.0GiB */
@@ -130,6 +130,8 @@ _cacheflush(void)
 }
 #pragma GCC pop_options
 
+int GO = 0;
+
 static void
 _segvhandler(int const sig, siginfo_t * const si, void * const ctx)
 {
@@ -147,6 +149,8 @@ _segvhandler(int const sig, siginfo_t * const si, void * const ctx)
   addr = base+ip*page;
 
   if (SYNC != (pflags[ip]&SYNC)) {
+    if (GO) printf("SYNC\n");
+
     if (1 == USE_LOAD && ONDISK == (pflags[ip]&ONDISK)) {
       /* ========================= BEG LOAD =============================== */
       if (1 == USE_LAZY) {
@@ -191,23 +195,22 @@ _segvhandler(int const sig, siginfo_t * const si, void * const ctx)
       /* ========================= END LOAD =============================== */
     }
     else if (1 == USE_LAZY) {
-      //printf("mprotect(%zx, %zu, RD [%x])\n", addr, page, pflags[ip]);
       ret = mprotect((void*)addr, page, PROT_READ);
       assert(0 == ret);
     }
     else {
-      //printf("mprotect(%zx, %zu, RD [%x])\n", addr, NUM_MEM, pflags[ip]);
       ret = mprotect((void*)addr, NUM_MEM, PROT_READ);
       assert(0 == ret);
     }
 
-    if (1 == USE_LOAD && 1 == USE_LAZY)
+    if (1 == USE_LAZY)
       pflags[ip] = SYNC;
-    else if (1 == USE_LOAD)
+    else if (0 == USE_LAZY)
       memset(pflags, SYNC, NUM_MEM/page);
   }
   else if (SYNC == (pflags[ip]&SYNC)) {
-    //printf("mprotect(%zx, %zu, RD|WR) [%x]\n", addr, page, pflags[ip]);
+    if (GO) printf("DIRTY\n");
+
     ret = mprotect((void*)addr, page, PROT_READ|PROT_WRITE);
     assert(0 == ret);
 
@@ -297,7 +300,7 @@ int main(void)
     fprintf(stderr, "  # SIGSEGV    = %9zu\n", faults);
   fprintf(stderr, "\n");
 
-  if (1 == USE_LOAD) {
+  //if (1 == USE_LOAD) {
     fd = open(TMPFILE, O_WRONLY|O_CREAT|O_EXCL, S_IRUSR|S_IWUSR);
     assert(-1 != fd);
     filed = open(TMPFILE, O_RDWR);
@@ -317,7 +320,7 @@ int main(void)
     assert(-1 != ret);
 
     memset(addr, 0, NUM_MEM);
-  }
+  //}
   if (0 == USE_LIBC) {
     if (0 == USE_LOAD)
       memset(pflags, 0, NUM_MEM/page);
@@ -328,6 +331,8 @@ int main(void)
     faults = 0;
   }
   _cacheflush();
+
+  GO = 1;
 
   /* ----- READ ---- */
   _gettime(&ts);
@@ -349,8 +354,10 @@ int main(void)
     assert(-1 != ret);
   }
   for (i=0; i<NUM_MEM; ++i) {
-    if (1 == USE_LIBC && 1 == USE_LOAD && 1 == USE_LAZY) {
+    //if (1 == USE_LIBC && 1 == USE_LOAD && 1 == USE_LAZY) {
       if (0 == ((uintptr_t)(addr+i)&(page-1))) {
+        addr[i] = 0; // temporary to give RD/WR permissions
+
         fd = open(TMPFILE, O_RDONLY);
         assert(-1 != fd);
 
@@ -370,8 +377,9 @@ int main(void)
         ret = close(fd);
         assert(-1 != ret);
       }
-    }
+    //}
     assert((char)i == addr[i]);
+    break;
   }
   _gettime(&te);
   t_rd = _getelapsed(&ts, &te);
@@ -385,6 +393,8 @@ int main(void)
   if (0 == USE_LIBC)
     fprintf(stderr, "  # SIGSEGV    = %9zu\n", faults);
   fprintf(stderr, "\n");
+
+  return EXIT_SUCCESS;
 
   if (1 == USE_LOAD) {
     if (0 == USE_LIBC) {
