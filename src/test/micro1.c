@@ -6,27 +6,6 @@
 # undef NDEBUG
 #endif
 
-#define _POSIX_C_SOURCE 200112L
-#if !defined(_WIN32) && (defined(__unix__) || defined(__unix) || \
-    (defined(__APPLE__) && defined(__MACH__)))
-# include <unistd.h>
-#endif
-
-/* try to get access to clock_gettime() */
-#if defined(_POSIX_TIMERS) && _POSIX_TIMERS > 0 && defined(_POSIX_MONOTONIC_CLOCK)
-# include <time.h>
-# define HAVE_CLOCK_GETTIME
-/* then try to get access to gettimeofday() */
-#elif defined(_POSIX_VERSION)
-# undef _POSIX_C_SOURCE
-# include <sys/time.h>
-# define HAVE_GETTIMEOFDAY
-/* if neither of the above are available, default to time() */
-#else
-# undef _POSIX_C_SOURCE
-# include <time.h>
-#endif
-
 #include <assert.h>
 #include <fcntl.h>
 #include <signal.h>
@@ -37,63 +16,22 @@
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <sys/ucontext.h>
-
-
-struct _timespec
-{
-  long unsigned tv_sec;
-  long unsigned tv_nsec;
-};
-
-static void
-_gettime(struct _timespec * const t)
-{
-#if defined(HAVE_CLOCK_GETTIME)
-  struct timespec tt;
-  clock_gettime(CLOCK_MONOTONIC, &tt);
-  t->tv_sec = tt.tv_sec;
-  t->tv_nsec = tt.tv_nsec;
-#elif defined(HAVE_GETTIMEOFDAY)
-  struct timeval tt;
-  gettimeofday(&tt, NULL);
-  t->tv_sec = tt.tv_sec;
-  t->tv_nsec = tt.tv_usec * 1000UL;
-#else
-  time_t tt = time(NULL);
-  t->tv_sec = tt;
-  t->tv_nsec = 0;
-#endif
-}
-
-static long unsigned
-_getelapsed(struct _timespec const * const ts,
-            struct _timespec const * const te)
-{
-  struct _timespec t;
-  if (te->tv_nsec < ts->tv_nsec) {
-    t.tv_nsec = 1000000000UL + te->tv_nsec - ts->tv_nsec;
-    t.tv_sec = te->tv_sec - 1 - ts->tv_sec;
-  }
-  else {
-    t.tv_nsec = te->tv_nsec - ts->tv_nsec;
-    t.tv_sec = te->tv_sec - ts->tv_sec;
-  }
-  return (unsigned long)(t.tv_sec * 1000000000UL + t.tv_nsec);
-}
+#include <time.h>
+#include <unistd.h>
 
 
 /* ============================ BEG CONFIG ================================ */
-static int const USE_LOAD         = 0;
-static int const USE_LAZY         = 0;
-static int const USE_LIBC         = 1;
-static int const USE_GHOST        = 0;
-static int const USE_CTX          = 0;
+static int USE_LIBC   = 0;
+static int USE_LOAD   = 0;
+static int USE_LAZY   = 0;
+static int USE_GHOST  = 0;
+static int USE_CTX    = 0;
 
-static size_t const NUM_MEM       = (1lu<<32)-(1lu<<30); /* 3.0GiB */
-//static size_t const NUM_MEM       = (1lu<<28);           /* 1.0GiB */
-static size_t const NUM_SYS       = 1;                   /* 4KiB */
-static char const * const TMPFILE = "/scratch/micro2";
+static size_t NUM_MEM = (1lu<<32)-(1lu<<30); /* 3.0GiB */
+static size_t NUM_SYS = 1;                   /* 4KiB */
+static char * TMPFILE = "/scratch/micro2";
 /* ============================ END CONFIG ================================ */
+
 
 static int filed=-1;
 static char * pflags=NULL;
@@ -134,15 +72,111 @@ _cacheflush(void)
 }
 #pragma GCC pop_options
 
-static void
+static inline void
+_gettime(struct timespec * const t)
+{
+  struct timespec tt;
+  clock_gettime(CLOCK_MONOTONIC, &tt);
+  t->tv_sec = tt.tv_sec;
+  t->tv_nsec = tt.tv_nsec;
+}
+
+static inline long unsigned
+_getelapsed(struct timespec const * const ts,
+            struct timespec const * const te)
+{
+  struct timespec t;
+  if (te->tv_nsec < ts->tv_nsec) {
+    t.tv_nsec = 1000000000UL + te->tv_nsec - ts->tv_nsec;
+    t.tv_sec = te->tv_sec - 1 - ts->tv_sec;
+  }
+  else {
+    t.tv_nsec = te->tv_nsec - ts->tv_nsec;
+    t.tv_sec = te->tv_sec - ts->tv_sec;
+  }
+  return (unsigned long)(t.tv_sec * 1000000000UL + t.tv_nsec);
+}
+
+static inline void
+_read(void * const addr, size_t const off, size_t size)
+{
+  int fd;
+  ssize_t ret;
+  char * buf;
+  void * tmp_addr;
+
+  if (0 == USE_GHOST) {
+    tmp_addr = (void*)addr;
+
+    if (0 == USE_LIBC) {
+      ret = mprotect(tmp_addr, size, PROT_WRITE);
+      assert(-1 != ret);
+    }
+  }
+  else {
+    tmp_addr = mmap(NULL, size, PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
+    assert(MAP_FAILED != tmp_addr);
+  }
+
+  fd = open(TMPFILE, O_RDONLY);
+  assert(-1 != fd);
+
+  ret = lseek(fd, off, SEEK_SET);
+  assert(-1 != ret);
+
+  buf = (char*)tmp_addr;
+  do {
+    ret = read(fd, buf, size);
+    assert(-1 != ret);
+
+    buf  += ret;
+    size -= ret;
+  } while (size > 0);
+
+  ret = close(fd);
+  assert(-1 != ret);
+
+  if (0 == USE_LIBC) {
+    ret = mprotect(tmp_addr, size, PROT_READ);
+    assert(-1 != ret);
+  }
+
+  if (1 == USE_GHOST) {
+    tmp_addr = mremap(tmp_addr, size, size, MREMAP_MAYMOVE|MREMAP_FIXED, addr);
+    assert(MAP_FAILED != tmp_addr);
+  }
+}
+
+static inline void
+_write(void const * const addr, size_t size)
+{
+  int fd;
+  ssize_t ret;
+  char const * buf;
+
+  fd = open(TMPFILE, O_WRONLY);
+  assert(-1 != fd);
+
+  buf = (char const*)addr;
+  do {
+    ret = write(fd, buf, size);
+    assert(-1 != ret);
+
+    buf  += ret;
+    size -= ret;
+  } while (size > 0);
+
+  ret = close(fd);
+  assert(-1 != ret);
+}
+
+static inline void
 _segvhandler(int const sig, siginfo_t * const si, void * const ctx)
 {
-  int fd, type;
-  size_t size, len, off;
+  int type;
+  size_t len, off;
   ssize_t ret;
   uintptr_t addr, new;
-  void * tmp_addr;
-  char * buf;
   size_t ip;
 
   assert(SIGSEGV == sig);
@@ -172,42 +206,7 @@ _segvhandler(int const sig, siginfo_t * const si, void * const ctx)
         new = base;
       }
 
-      fd = open(TMPFILE, O_RDONLY);
-      assert(-1 != fd);
-
-      if (0 == USE_GHOST) {
-        tmp_addr = (void*)addr;
-        ret = mprotect(tmp_addr, len, PROT_WRITE);
-        assert(-1 != ret);
-      }
-      else {
-        tmp_addr = mmap(NULL, len, PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
-        assert(MAP_FAILED != tmp_addr);
-      }
-
-      ret = lseek(fd, off, SEEK_SET);
-      assert(-1 != ret);
-
-      buf  = tmp_addr;
-      size = len;
-      do {
-        ret = read(fd, buf, size);
-        assert(-1 != ret);
-
-        buf  += ret;
-        size -= ret;
-      } while (size > 0);
-
-      ret = mprotect(tmp_addr, len, PROT_READ);
-      assert(-1 != ret);
-
-      if (1 == USE_GHOST) {
-        tmp_addr = mremap(tmp_addr, len, len, MREMAP_MAYMOVE|MREMAP_FIXED, new);
-        assert(MAP_FAILED != tmp_addr);
-      }
-
-      ret = close(fd);
-      assert(-1 != ret);
+      _read((void*)new, off, len);
       /* ========================= END LOAD =============================== */
     }
     else if (1 == USE_LAZY) {
@@ -237,7 +236,7 @@ _segvhandler(int const sig, siginfo_t * const si, void * const ctx)
   faults++;
 }
 
-static void
+static inline void
 _init(void)
 {
   int ret;
@@ -253,15 +252,58 @@ _init(void)
   assert(0 == ret);
 }
 
-int main(void)
+static inline void
+_parse(int argc, char * argv[])
 {
-  int fd;
-  size_t size;
+  int i;
+
+  for (i=1; i<argc; ++i) {
+    if (0 == strncmp("--load", argv[i], 7)) {
+      USE_LOAD = 1;
+    }
+    else if (0 == strncmp("--lazy", argv[i], 7)) {
+      USE_LAZY = 1;
+    }
+    else if (0 == strncmp("--libc", argv[i], 7)) {
+      USE_LIBC = 1;
+    }
+    else if (0 == strncmp("--ghost", argv[i], 8)) {
+      USE_GHOST = 1;
+    }
+    else if (0 == strncmp("--context", argv[i], 10)) {
+      fprintf(stderr, "--context does not work with optimizations level " \
+        "above -O0\n");
+      USE_CTX = 1;
+    }
+    else if (0 == strncmp("--mem=", argv[i], 6)) {
+      NUM_MEM = atol(argv[i]+6);
+    }
+    else if (0 == strncmp("--sys=", argv[i], 6)) {
+      NUM_SYS = atol(argv[i]+6);
+    }
+    else if (0 == strncmp("--file=", argv[i], 7)) {
+      TMPFILE = argv[i]+7;
+    }
+  }
+
+  if (1 == USE_LIBC)
+    USE_CTX = 0;
+  if (0 == USE_LOAD) {
+    USE_LAZY  = 0;
+    USE_GHOST = 0;
+    USE_CTX   = 0;
+  }
+}
+
+int main(int argc, char * argv[])
+{
   ssize_t ret;
   unsigned long t_rd, t_wr, t_rw;
   size_t i;
-  struct _timespec ts, te;
-  char * addr, * buf;
+  struct timespec ts, te;
+  char * addr;
+
+  _parse(argc, argv);
 
   fprintf(stderr, "==========================\n");
   fprintf(stderr, "General ==================\n");
@@ -269,6 +311,11 @@ int main(void)
   fprintf(stderr, "  Library      =      %s\n", 1==USE_LIBC?"libc":"sbma");
   fprintf(stderr, "  MiB I/O      = %9.0f\n", NUM_MEM/1000000.0);
   fprintf(stderr, "  SysPages I/O = %9lu\n", NUM_MEM/sysconf(_SC_PAGESIZE));
+  fprintf(stderr, "  SysPage mult = %9lu\n", NUM_SYS);
+  fprintf(stderr, "  Options      = %s%s%s%s\n", 1==USE_LOAD?"load,":"",
+    1==USE_LAZY?"lazy,":"", 1==USE_GHOST?"ghost,":"",
+    1==USE_CTX?"context,":"");
+  fprintf(stderr, "  Temp file    = %s\n", TMPFILE);
   fprintf(stderr, "\n");
 
   page = sysconf(_SC_PAGESIZE)*NUM_SYS;
@@ -313,23 +360,10 @@ int main(void)
   fprintf(stderr, "\n");
 
   if (1 == USE_LOAD) {
-    fd = open(TMPFILE, O_WRONLY|O_CREAT|O_EXCL, S_IRUSR|S_IWUSR);
-    assert(-1 != fd);
-    filed = open(TMPFILE, O_RDWR);
+    filed = open(TMPFILE, O_RDWR|O_CREAT|O_EXCL, S_IRUSR|S_IWUSR);
     assert(-1 != filed);
 
-    buf  = addr;
-    size = NUM_MEM;
-    do {
-      ret = write(fd, buf, size);
-      assert(-1 != ret);
-
-      buf  += ret;
-      size -= ret;
-    } while (size > 0);
-
-    ret = close(fd);
-    assert(-1 != ret);
+    _write(addr, NUM_MEM);
 
     memset(addr, 0, NUM_MEM);
   }
@@ -347,44 +381,12 @@ int main(void)
   /* ----- READ ---- */
   _gettime(&ts);
   if (1 == USE_LIBC && 1 == USE_LOAD && 0 == USE_LAZY) {
-    fd = open(TMPFILE, O_RDONLY);
-    assert(-1 != fd);
-
-    buf  = addr;
-    size = NUM_MEM;
-    do {
-      ret = read(fd, buf, size);
-      assert(-1 != ret);
-
-      buf  += ret;
-      size -= ret;
-    } while (size > 0);
-
-    ret = close(fd);
-    assert(-1 != ret);
+    _read(addr, 0, NUM_MEM);
   }
   for (i=0; i<NUM_MEM; ++i) {
     if (1 == USE_LIBC && 1 == USE_LOAD && 1 == USE_LAZY) {
-      if (0 == ((uintptr_t)(addr+i)&(page-1))) {
-        fd = open(TMPFILE, O_RDONLY);
-        assert(-1 != fd);
-
-        ret = lseek(fd, i, SEEK_SET);
-        assert(-1 != ret);
-
-        buf  = addr+i;
-        size = page;
-        do {
-          ret = read(fd, buf, size);
-          assert(-1 != ret);
-
-          buf  += ret;
-          size -= ret;
-        } while (size > 0);
-
-        ret = close(fd);
-        assert(-1 != ret);
-      }
+      if (0 == ((uintptr_t)(addr+i)&(page-1)))
+        _read(addr+i, i, page);
     }
     assert((char)i == addr[i]);
   }
@@ -422,44 +424,12 @@ int main(void)
   /* ----- READ/WRITE ---- */
   _gettime(&ts);
   if (1 == USE_LIBC && 1 == USE_LOAD && 0 == USE_LAZY) {
-    fd = open(TMPFILE, O_RDONLY);
-    assert(-1 != fd);
-
-    buf  = addr;
-    size = NUM_MEM;
-    do {
-      ret = read(fd, buf, size);
-      assert(-1 != ret);
-
-      buf  += ret;
-      size -= ret;
-    } while (size > 0);
-
-    ret = close(fd);
-    assert(-1 != ret);
+    _read(addr, 0, NUM_MEM);
   }
   for (i=0; i<NUM_MEM; ++i) {
     if (1 == USE_LIBC && 1 == USE_LOAD && 1 == USE_LAZY) {
-      if (0 == ((uintptr_t)(addr+i)&(page-1))) {
-        fd = open(TMPFILE, O_RDONLY);
-        assert(-1 != fd);
-
-        ret = lseek(fd, i, SEEK_SET);
-        assert(-1 != ret);
-
-        buf  = addr+i;
-        size = page;
-        do {
-          ret = read(fd, buf, size);
-          assert(-1 != ret);
-
-          buf  += ret;
-          size -= ret;
-        } while (size > 0);
-
-        ret = close(fd);
-        assert(-1 != ret);
-      }
+      if (0 == ((uintptr_t)(addr+i)&(page-1)))
+        _read(addr+i, i, page);
     }
     addr[i]++;
   }
@@ -509,21 +479,7 @@ int main(void)
   fprintf(stderr, "\n");
 
   if (1 == USE_LOAD) {
-    fd = open(TMPFILE, O_WRONLY);
-    assert(-1 != fd);
-
-    buf  = addr;
-    size = NUM_MEM;
-    do {
-      ret = write(fd, buf, size);
-      assert(-1 != ret);
-
-      buf  += ret;
-      size -= ret;
-    } while (size > 0);
-
-    ret = close(fd);
-    assert(-1 != ret);
+    _write(addr, NUM_MEM);
 
     memset(addr, 0, NUM_MEM);
   }
@@ -541,44 +497,12 @@ int main(void)
   /* ----- READ ----- */
   _gettime(&ts);
   if (1 == USE_LIBC && 1 == USE_LOAD && 0 == USE_LAZY) {
-    fd = open(TMPFILE, O_RDONLY);
-    assert(-1 != fd);
-
-    buf  = addr;
-    size = NUM_MEM;
-    do {
-      ret = read(fd, buf, size);
-      assert(-1 != ret);
-
-      buf  += ret;
-      size -= ret;
-    } while (size > 0);
-
-    ret = close(fd);
-    assert(-1 != ret);
+    _read(addr, 0, NUM_MEM);
   }
   for (i=0; i<NUM_MEM; ++i) {
     if (1 == USE_LIBC && 1 == USE_LOAD && 1 == USE_LAZY) {
-      if (0 == ((uintptr_t)(addr+i)&(page-1))) {
-        fd = open(TMPFILE, O_RDONLY);
-        assert(-1 != fd);
-
-        ret = lseek(fd, i, SEEK_SET);
-        assert(-1 != ret);
-
-        buf  = addr+i;
-        size = page;
-        do {
-          ret = read(fd, buf, size);
-          assert(-1 != ret);
-
-          buf  += ret;
-          size -= ret;
-        } while (size > 0);
-
-        ret = close(fd);
-        assert(-1 != ret);
-      }
+      if (0 == ((uintptr_t)(addr+i)&(page-1)))
+        _read(addr+i, i, page);
     }
     assert((char)(NUM_MEM-i) == addr[i]);
   }
@@ -616,44 +540,12 @@ int main(void)
   /* ----- READ/WRITE ----- */
   _gettime(&ts);
   if (1 == USE_LIBC && 1 == USE_LOAD && 0 == USE_LAZY) {
-    fd = open(TMPFILE, O_RDONLY);
-    assert(-1 != fd);
-
-    buf  = addr;
-    size = NUM_MEM;
-    do {
-      ret = read(fd, buf, size);
-      assert(-1 != ret);
-
-      buf  += ret;
-      size -= ret;
-    } while (size > 0);
-
-    ret = close(fd);
-    assert(-1 != ret);
+    _read(addr, 0, NUM_MEM);
   }
   for (i=0; i<NUM_MEM; ++i) {
     if (1 == USE_LIBC && 1 == USE_LOAD && 1 == USE_LAZY) {
-      if (0 == ((uintptr_t)(addr+i)&(page-1))) {
-        fd = open(TMPFILE, O_RDONLY);
-        assert(-1 != fd);
-
-        ret = lseek(fd, i, SEEK_SET);
-        assert(-1 != ret);
-
-        buf  = addr+i;
-        size = page;
-        do {
-          ret = read(fd, buf, size);
-          assert(-1 != ret);
-
-          buf  += ret;
-          size -= ret;
-        } while (size > 0);
-
-        ret = close(fd);
-        assert(-1 != ret);
-      }
+      if (0 == ((uintptr_t)(addr+i)&(page-1)))
+        _read(addr+i, i, page);
     }
     addr[i]++;
   }

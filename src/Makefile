@@ -114,14 +114,10 @@ $(LIB): $(UTD) $(LIB)(sbmalloc.o) $(LIB)(klmalloc.o) $(LIB)(hooks.o)
 #	$(RM) sbmalloc.o klmalloc.o
 
 test/micro1: $(UTD) $(LIB) test/micro1.c
-	$(config_LD) $(CFLAGS_$(config_build)) $(LDFLAGS) -o $@ $@.c $(LDLIBS)
-#	@$@
-
-test/micro2: $(UTD) $(LIB) test/micro2.c
 	$(config_LD) $(CFLAGS_$(config_build)) -o $@ $@.c
 #	@$@
 
-test/micro3: $(UTD) $(LIB) test/micro3.c
+test/micro2: $(UTD) $(LIB) test/micro2.c
 	$(config_LD) $(CFLAGS_$(config_build)) $(LDFLAGS) -o $@ $@.c $(LDLIBS)
 #	@$@
 
