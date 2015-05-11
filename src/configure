@@ -59,7 +59,7 @@ function target_link_libraries {
     IFS=','
     declare -a arr=( ${target[$t]} )
     IFS=' '
-    target[${t}]="${arr[0]}, $@"
+    target[${t}]="${arr[0]}, $@, ${arr[2]}"
   else
     # target does not exist
     echo "target ${t} does not exist"
@@ -83,6 +83,49 @@ function add_dependencies {
     # target does not exist
     echo "target ${t} does not exist"
   fi
+#}}}2
+}
+
+function install_libraries {
+#{{{2
+  for l in $@ ; do
+    check_exists lib ${l}
+
+    if [ 1 -eq $? ] ; then
+      install_lib+=${l}
+    else
+      # library does not exist
+      echo "library ${l} does not exist"
+    fi
+  done
+#}}}2
+}
+
+function install_targets {
+#{{{2
+  for t in $@ ; do
+    check_exists target ${t}
+
+    if [ 1 -eq $? ] ; then
+      install_target+=${t}
+    else
+      # target does not exist
+      echo "target ${t} does not exist"
+    fi
+  done
+#}}}2
+}
+
+function install_headers {
+#{{{2
+  for h in $@ ; do
+    if [ -f $h ] ; then
+      install_header+=${h}
+    else
+      # header does not exist
+      echo "header ${h} does not exist"
+    fi
+  done
 #}}}2
 }
 
@@ -166,6 +209,9 @@ declare -A BUILD=( \
 
 declare -A lib
 declare -A target
+declare -a install_lib
+declare -a install_target
+declare -a install_header
 declare -A with
 #}}}1
 
@@ -375,11 +421,29 @@ p \#--------------------------------------------------------------------------
 p \# SYSTEM TARGETS
 p \#--------------------------------------------------------------------------
 p \#{{{1
-p 'install: $(LIB)'
-p '	@$(ECHO) $(includedir)/klmalloc.h > $(INSTALLLOG)'
-p '	@$(ECHO) $(libdir)/$(LIB) >> $(INSTALLLOG)'
-p '	$(INSTALL) klmalloc.h $(includedir)'
-p '	$(INSTALL) $(LIB) $(libdir)'
+n 'install:'
+for h in ${install_header[@]} ; do
+  n " ${h}"
+done
+for l in ${install_lib[@]} ; do
+  n " ${l}"
+done
+for t in ${install_target[@]} ; do
+  n " ${t}"
+done
+p
+for h in ${install_header[@]} ; do
+  p "	@\$(ECHO) \$(includedir)/${h} > \$(INSTALLLOG)"
+  p "	\$(INSTALL) ${h} \$(includedir)"
+done
+for l in ${install_lib[@]} ; do
+  p "	@\$(ECHO) \$(libdir)/${l} > \$(INSTALLLOG)"
+  p "	\$(INSTALL) ${l} \$(libdir)"
+done
+for t in ${install_target[@]} ; do
+  p "	@\$(ECHO) \$(exec_prefix)/${t} > \$(INSTALLLOG)"
+  p "	\$(INSTALL) ${t} \$(exec_prefix)"
+done
 p
 p 'show:'
 p '	$(ECHO) "KLMalloc v$(VERSION) configured with: configure"'
@@ -435,6 +499,7 @@ p  'mv -f klmalloc-$(VERSION).tar.gz src && \'
 p  'rm -rf klmalloc-$(VERSION)'
 p
 p 'maintainer-clean:'
-p '	rm -f klmalloc-$(VERSION).tar.gz'
 p '	make clean > /dev/null'
+p '	rm -f Makefile'
+p '	rm -f klmalloc-$(VERSION).tar.gz'
 p \#}}}1
