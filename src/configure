@@ -1,0 +1,440 @@
+#!/bin/bash
+
+
+#****************************************************************************#
+# Functions                                                                  #
+#****************************************************************************#
+#{{{1
+function check_exists {
+#{{{2
+  local -n arr=$1
+  if test "${arr[$2]+isset}" ; then
+    return 1
+  else
+    return 0
+  fi
+#}}}2
+}
+
+function add_library {
+#{{{2
+  l=$1
+  shift
+
+  check_exists lib ${l}
+
+  if [ 1 -eq $? ] ; then
+   # library already exists
+    echo "library ${l} is added more than once"
+  else
+   lib+=( [${l}]="$@" )
+  fi
+#}}}2
+}
+
+function add_executable {
+#{{{2
+  t=$1
+  shift
+
+  check_exists target ${t}
+
+  if [ 1 -eq $? ] ; then
+    # target already exists
+    echo "target ${t} is added more than once"
+  else
+    target+=( [${t}]="$@" )
+  fi
+#}}}2
+}
+
+function target_link_libraries {
+#{{{2
+  t=$1
+  shift
+
+  check_exists target ${t}
+
+  if [ 1 -eq $? ] ; then
+    IFS=','
+    declare -a arr=( ${target[$t]} )
+    IFS=' '
+    target[${t}]="${arr[0]}, $@"
+  else
+    # target does not exist
+    echo "target ${t} does not exist"
+  fi
+#}}}2
+}
+
+function add_dependencies {
+#{{{2
+  t=$1
+  shift
+
+  check_exists target ${t}
+
+  if [ 1 -eq $? ] ; then
+    IFS=','
+    declare -a arr=( ${target[$t]} )
+    IFS=' '
+    target[${t}]="${arr[0]}, ${arr[1]}, ${arr[2]} $@"
+  else
+    # target does not exist
+    echo "target ${t} does not exist"
+  fi
+#}}}2
+}
+
+function add_with_param {
+#{{{2
+  w=$1
+  shift
+
+  check_exists with ${w}
+
+  if [ 1 -eq $? ] ; then
+    # with param already exists
+    echo "with param ${w} is added more than once"
+  else
+    str="$1"
+    shift
+    for p in "$@" ; do
+      str="${str},$p"
+    done
+    with+=( [${w}]="${str}" )
+  fi
+#}}}2
+}
+
+function p {
+#{{{2
+  echo "$@" >> Makefile
+#}}}2
+}
+
+function n {
+#{{{2
+  echo -n "$@" >> Makefile
+#}}}2
+}
+
+function fill_arrs {
+#{{{2
+  local -n a0=$1
+  local -n a1=$3
+  local -n a2=$4
+
+  IFS=','
+  a1=( ${a0[$2]} )
+  IFS=' '
+
+  while read k v ; do
+    a2+=( [$k]="$v" )
+  done < <(awk -F',' '{for(i=2;i<=NF;++i) {print $i}}' <<< ${a0[$2]} | \
+           awk -F'=' '{print $1,$2}')
+#}}}2
+}
+#}}}1
+
+
+#****************************************************************************#
+# Default variables                                                          #
+#****************************************************************************#
+#{{{1
+declare -A OPTS=( \
+  [CC]='c99' \
+  [LD]='c99' \
+  [CFLAGS]='-I.' \
+  [LDFLAGS]='-I.' \
+  [LDLIBS]=''
+)
+
+declare -A CONFIG=( \
+  ['prefix']='/usr/local' \
+  ['exec_prefix']='$(prefix)' \
+  ['includedir']='$(prefix)/include' \
+  ['libdir']='$(exec_prefix)/lib' \
+  ['build']='debug'
+)
+
+declare -A BUILD=( \
+  [debug]='-O0 -g -Wall -Wextra -pedantic' \
+  [release]='-O3 -DNDEBUG -Wall -Wextra -pedantic' \
+  [releaseinfo]='-O2 -g -Wall -Wextra -pedantic'
+)
+
+declare -A lib
+declare -A target
+declare -A with
+#}}}1
+
+
+#****************************************************************************#
+# Load user's input file                                                     #
+#****************************************************************************#
+. kmake.in
+
+
+#****************************************************************************#
+# Setup default params                                                       #
+#****************************************************************************#
+#{{{1
+declare -A params
+params+=( ['build']=debug )
+for w in ${!with[@]} ; do
+  declare -a arr1
+  declare -A arr2
+  fill_arrs with ${w} arr1 arr2
+  params+=( ["with-${w}"]=${arr1[0]} )
+  unset arr1
+  unset arr2
+done
+#}}}1
+
+
+#****************************************************************************#
+# Parse command line                                                         #
+#****************************************************************************#
+#{{{1
+for i in "$@" ; do
+  case $i in
+    --with-*)
+      w=${i#--}
+      w=${w%%=*}
+      if test "${params[${w}]+isset}" ; then
+        declare -a arr1
+        declare -A arr2
+        fill_arrs with ${w#with-} arr1 arr2
+
+        if test "${arr2[${i#*=}]+isset}" ; then
+          params[${w}]=${i#*=}
+        else
+          # invalid option
+          echo "\`${i#*=}' is not a valid option for parameter \`${i%%=*}'"
+        fi
+        unset arr1
+        unset arr2
+      else
+        # invalid parameter
+        echo "\`${i%%=*}' is not a valid parameter"
+      fi
+      shift
+      ;;
+    --prefix=*)
+      CONFIG['prefix']=${i#*=}
+      shift
+      ;;
+    --exec_prefix=*)
+      CONFIG['exec_prefix']=${i#*=}
+      shift
+      ;;
+    --includedir=*)
+      CONFIG['includedir']=${i#*=}
+      shift
+      ;;
+    --libdir=*)
+      CONFIG['libdir']=${i#*=}
+      shift
+      ;;
+    --build=*)
+      CONFIG['build']=${i#*=}
+      shift
+      ;;
+    *)
+      # unknown option
+      echo "\`${i%%=*}' is not a valid parameter"
+    ;;
+  esac
+done
+#}}}1
+
+
+#****************************************************************************#
+# Generate the Makefile                                                      #
+#****************************************************************************#
+rm -f Makefile
+touch Makefile
+
+p .POSIX:
+p .SILENT: help maintainer-clean show
+p
+p
+p \#--------------------------------------------------------------------------
+p \# CACHE VARIABLES
+p \#--------------------------------------------------------------------------
+p \#{{{1
+p \# Program variables
+p 'AR = ar'
+p 'ARFLAGS = -cr'
+p 'RANLIB = ranlib'
+p 'RM = rm -f'
+p 'ECHO = echo'
+p 'TOUCH = touch'
+p 'SED = sed'
+p 'SED_I = $(SED) -i'
+p 'INSTALL = install -CDv --mode=0644'
+p 'INSTALLLOG = InstallManifest.txt'
+p
+p \# Config parameters
+for config in "${!CONFIG[@]}" ; do
+  p "${config} = ${CONFIG[${config}]}"
+done
+p
+p \# Compiler parameters
+p "CC = ${OPTS[CC]}"
+p "LD = ${OPTS[LD]}"
+p "CFLAGS = ${OPTS[CFLAGS]} \$(AUTOFLAGS)"
+p "LDFLAGS = ${OPTS[LDFLAGS]} \$(AUTOFLAGS)"
+p "LDLIBS = ${OPTS[LDLIBS]}"
+p \#}}}1
+p
+p
+p \#==========================================================================
+p \# DO NOT CHANGE ANYTHING BELOW HERE
+p \#==========================================================================
+p
+p
+p \#--------------------------------------------------------------------------
+p \# INTERNAL VARIABLES
+p \#--------------------------------------------------------------------------
+p \#{{{1
+p \# Version information
+p DATE    = \"`date`\"
+p COMMIT  = \"`git rev-parse --short HEAD`\"
+p VERSION = \"0.0.0-rc1\"
+p
+p "AUTOFLAGS = \\"
+if [ 'x' != "x${BUILD[${CONFIG['build']}]}" ] ; then
+  p " ${BUILD[${CONFIG['build']}]}\\"
+fi
+p ' -DVERSION=$(VERSION) -DDATE=$(DATE) -DCOMMIT=$(COMMIT)\'
+for w in "${!with[@]}" ; do
+  declare -a arr1
+  declare -A arr2
+  fill_arrs with ${w} arr1 arr2
+  if [ 'x' != "x${arr2[${params["with-${w}"]}]}" ] ; then
+    n " ${arr2[${params["with-${w}"]}]}"
+  fi
+  unset arr1
+  unset arr2
+done
+p
+p
+p \# Up-to-date file -- this file is used to ensure that any time the Makefile
+p \# is manually updated, libraries and targets will be rebuilt. This is done
+p \# by removing said files whenever the rule for this file is executed.
+p UTD = .UTD
+p \#}}}1
+p
+p
+p \#--------------------------------------------------------------------------
+p \# COMPILE TARGETS
+p \#--------------------------------------------------------------------------
+p \#{{{1
+p '.c.a:'
+p '	$(CC) -c $(CFLAGS) $<'
+p '	$(AR) $(ARFLAGS) $@ $*.o'
+p
+for l in ${!lib[@]} ; do
+  n "${l}: \$(UTD)"
+  for d in ${lib[${l}]} ; do
+    n " ${l}(${d})"
+  done
+  p
+  p "	\$(RANLIB) \$@"
+  p "	\$(RM) ${lib[${l}]}"
+  p
+done
+for t in ${!target[@]} ; do
+  IFS=','
+  declare -a arr1=( ${target[${t}]} )
+  IFS=' '
+  n "${t}: \$(UTD) ${arr1[0]}"
+  declare -a arr2=( ${arr1[1]} )
+  for d in ${arr2[@]} ; do
+    if [[ "${d}" == *.a ]] ; then
+      n " ${d}"
+    fi
+  done
+  if [ "x" != "x${arr1[2]}" ] ; then
+    p " ${arr1[2]}"
+  else
+    p
+  fi
+  p "	\$(LD) \$(LDFLAGS) -o \$@ ${arr1[0]} ${arr1[1]} \$(LDLIBS)"
+  p
+done
+p "\$(UTD): Makefile"
+p "	@\$(RM) ${!lib[@]} ${!target[@]}"
+p	'	@$(TOUCH) $(UTD)'
+p \#}}}1
+p
+p
+p \#--------------------------------------------------------------------------
+p \# SYSTEM TARGETS
+p \#--------------------------------------------------------------------------
+p \#{{{1
+p 'install: $(LIB)'
+p '	@$(ECHO) $(includedir)/klmalloc.h > $(INSTALLLOG)'
+p '	@$(ECHO) $(libdir)/$(LIB) >> $(INSTALLLOG)'
+p '	$(INSTALL) klmalloc.h $(includedir)'
+p '	$(INSTALL) $(LIB) $(libdir)'
+p
+p 'show:'
+p '	$(ECHO) "KLMalloc v$(VERSION) configured with: configure"'
+n '	$(ECHO) "'
+for config in "${!CONFIG[@]}" ; do
+  n "${config}=\$(${config}) "
+done
+for w in "${!with[@]}" ; do
+  n "with-${w}=${params["with-${w}"]} "
+done
+p '"'
+p
+p 'clean:'
+p "	\$(RM) ${!lib[@]} ${!target[@]} \$(UTD)"
+p
+p 'help:'
+p	'	$(ECHO) "The following are valid targets for this Makefile:"'
+i=0
+for l in ${!lib[@]} ; do
+  if [ 0 -eq ${i} ] ; then
+    p "	\$(ECHO) \"... ${l} (the default if no target is provided)\""
+  else
+    p "	\$(ECHO) \"... ${l}\""
+  fi
+  let i=i+1
+done
+for t in ${!target[@]} ; do
+  p "	\$(ECHO) \"... ${t}\""
+done
+p	'	$(ECHO) "... install"'
+p	'	$(ECHO) "... show"'
+p	'	$(ECHO) "... clean"'
+p	'	$(ECHO) "... dist (non-portable)"'
+p	'	$(ECHO) "... maintainer-clean (non-portable)"'
+p	'	$(ECHO) "... help"'
+p \#}}}1
+p
+p
+p \#--------------------------------------------------------------------------
+p \# MAINTAINER TARGETS \(NON-PORTABLE\)
+p \#--------------------------------------------------------------------------
+p \#{{{1
+p 'dist:'
+p '	cd .. && \'
+p  'mkdir klmalloc-$(VERSION) && \'
+p  'ln -s ../src klmalloc-$(VERSION)/src && \'
+p  'cp src/Makefile . && \'
+p  'make -sC klmalloc-$(VERSION)/src maintainer-clean > /dev/null && \'
+p  'sed -i '"'"'s|^COMMIT \+=.*$$|COMMIT='"'"'"$(COMMIT)"'"'"'|'"'"' src/Makefile && \'
+p  'tar --exclude=.* -czhf klmalloc-$(VERSION).tar.gz klmalloc-$(VERSION) && \'
+p  'mv -f Makefile src && \'
+p  'mv -f klmalloc-$(VERSION).tar.gz src && \'
+p  'rm -rf klmalloc-$(VERSION)'
+p
+p 'maintainer-clean:'
+p '	rm -f klmalloc-$(VERSION).tar.gz'
+p '	make clean > /dev/null'
+p \#}}}1
