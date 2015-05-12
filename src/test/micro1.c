@@ -26,6 +26,10 @@
 //#define USE_LAZY
 //#define USE_GHOST
 //#define USE_CTX
+//#define USE_RAND
+#define USE_RD
+#define USE_WR
+#define USE_RW
 
 #if defined(USE_LIBC)
 # if defined(USE_CTX)
@@ -33,9 +37,6 @@
 # endif
 #endif
 #if !defined(USE_LOAD)
-# if defined(USE_LAZY)
-#   undef USE_LAZY
-# endif
 # if defined(USE_GHOST)
 #   undef USE_GHOST
 # endif
@@ -44,13 +45,15 @@
 # endif
 #endif
 
-static size_t NUM_MEM = (1lu<<32)-(1lu<<30); /* 3.0GiB */
+//static size_t NUM_MEM = (1lu<<32)-(1lu<<30); /* 3.0GiB */
+static size_t NUM_MEM = (1lu<<31)-(1lu<<29); /* 1.5GiB */
 static size_t NUM_SYS = 1;                   /* 4KiB */
-static char * TMPFILE = "/scratch/micro2";
+static char * TMPFILE = "/scratch/micro1";
+
+typedef unsigned type_t;
 /* ============================ END CONFIG ================================ */
 
 
-static int filed=-1;
 static char * pflags=NULL;
 static uintptr_t base=0;
 static size_t page=0;
@@ -62,10 +65,19 @@ static size_t faults=0;
 #pragma GCC push_options
 #pragma GCC optimize("-O0")
 static void
+_membarrier(void)
+{
+  __asm volatile("": : :"memory"); \
+  __sync_synchronize();
+}
+#pragma GCC pop_options
+
+#pragma GCC push_options
+#pragma GCC optimize("-O0")
+static void
 _cacheflush(void)
 {
   /* 1<<28 == 256MiB */
-  int ret;
   long unsigned i;
   char * ptr = mmap(NULL, 1<<28, PROT_READ|PROT_WRITE,
     MAP_PRIVATE|MAP_ANONYMOUS|MAP_NORESERVE, -1, 0);
@@ -75,18 +87,6 @@ _cacheflush(void)
     for (i=0; i<1<<28; ++i)
       assert((char)i == ptr[i]);
     munmap(ptr, 1<<28);
-  }
-
-#if defined(USE_LOAD)
-  if (0 != base) {
-    ret = madvise((void*)base, NUM_MEM, MADV_DONTNEED);
-    assert(-1 != ret);
-  }
-#endif
-
-  if (-1 != filed) {
-    ret = posix_fadvise(filed, 0, NUM_MEM, POSIX_FADV_DONTNEED);
-    assert(-1 != ret);
   }
 }
 #pragma GCC pop_options
@@ -126,11 +126,10 @@ _read(void * const addr, size_t const off, size_t size)
 
 #if !defined(USE_GHOST)
   tmp_addr = (void*)addr;
-
-#if !defined(USE_LIBC)
+# if !defined(USE_LIBC)
   ret = mprotect(tmp_addr, size, PROT_WRITE);
   assert(-1 != ret);
-#endif
+# endif
 #else
   tmp_addr = mmap(NULL, size, PROT_WRITE,
     MAP_PRIVATE|MAP_ANONYMOUS|MAP_NORESERVE, -1, 0);
@@ -287,30 +286,51 @@ _parse(int argc, char * argv[])
 
 int main(int argc, char * argv[])
 {
+#if defined(USE_LOAD)
+  int fd;
+#endif
+  size_t i, j, ii, jj, kk;
   ssize_t ret;
   unsigned long t_rd, t_wr, t_rw;
-  size_t i;
   struct timespec ts, te;
-  char * addr;
+  type_t tmp;
+  type_t * addr, * rnum;
 
   _parse(argc, argv);
 
   fprintf(stderr, "==========================\n");
   fprintf(stderr, "General ==================\n");
   fprintf(stderr, "==========================\n");
-  /*fprintf(stderr, "  Library      =      %s\n", 1==USE_LIBC?"libc":"sbma");*/
+#if defined(USE_LIBC)
+  fprintf(stderr, "  Library      =      libc\n");
+#else
+  fprintf(stderr, "  Library      =      sbma\n");
+#endif
   fprintf(stderr, "  MiB I/O      = %9.0f\n", NUM_MEM/1000000.0);
   fprintf(stderr, "  SysPages I/O = %9lu\n", NUM_MEM/sysconf(_SC_PAGESIZE));
   fprintf(stderr, "  SysPage mult = %9lu\n", NUM_SYS);
-  /*fprintf(stderr, "  Options      = %s%s%s%s\n", 1==USE_LOAD?"load,":"",
-    1==USE_LAZY?"lazy,":"", 1==USE_GHOST?"ghost,":"",
-    1==USE_CTX?"context,":"");*/
+  fprintf(stderr, "  Options      = ");
+#if defined(USE_LOAD)
+  fprintf(stderr, "load,");
+#endif
+#if defined(USE_LAZY)
+  fprintf(stderr, "lazy,");
+#endif
+#if defined(USE_GHOST)
+  fprintf(stderr, "ghost,");
+#endif
+#if defined(USE_CTX)
+  fprintf(stderr, "context,");
+#endif
+  fprintf(stderr, "\n");
   fprintf(stderr, "  Temp file    = %s\n", TMPFILE);
   fprintf(stderr, "\n");
 
   page = sysconf(_SC_PAGESIZE)*NUM_SYS;
   assert(0 == (NUM_MEM&(page-1)));
 
+  /* ===== Acquire resources ===== */
+{
 #if defined(USE_LIBC)
   addr = mmap(NULL, NUM_MEM, PROT_READ|PROT_WRITE,
     MAP_PRIVATE|MAP_ANONYMOUS|MAP_NORESERVE, -1, 0);
@@ -330,15 +350,65 @@ int main(int argc, char * argv[])
   base = (uintptr_t)addr;
   assert(0 == (NUM_MEM&(page-1)));
 
+  rnum = mmap(NULL, NUM_MEM, PROT_READ|PROT_WRITE,
+    MAP_PRIVATE|MAP_ANONYMOUS|MAP_NORESERVE, -1, 0);
+  assert(MAP_FAILED != rnum);
+}
+
+  /* ===== Generate random array ===== */
+{
+  for (i=0; i<NUM_MEM/sizeof(type_t); ++i)
+    rnum[i] = i;
+  for (i=0; i<(NUM_MEM/sizeof(type_t)-1); ++i) {
+    j = rand()%((NUM_MEM/sizeof(type_t)-1)-i)+i;
+    tmp = rnum[j];
+    rnum[j] = rnum[i];
+    rnum[i] = tmp;
+  }
+}
+
   _cacheflush();
 
-  /* ===== Uninitialized memory tests ===== */
-  /* ----- WRITE ---- */
+  /* ----- WRITE (new) ---- */
+#if defined(USE_WR)
+{
   _gettime(&ts);
-  for (i=0; i<NUM_MEM; ++i)
-    addr[i] = (char)i;
+#if defined(USE_RAND)
+    ii = rnum[0];
+#else
+    ii = 0;
+#endif
+  addr[ii] = rnum[ii];
+  for (i=1; i<NUM_MEM/sizeof(type_t); ++i) {
+#if defined(USE_RAND)
+    ii = rnum[i];
+    jj = rnum[i-1];
+#else
+    ii = i;
+    jj = i-1;
+#endif
+    addr[ii] = addr[jj]+rnum[ii];
+  }
+  _membarrier();
   _gettime(&te);
   t_wr = _getelapsed(&ts, &te);
+
+#if defined(USE_RAND)
+    ii = rnum[0];
+#else
+    ii = 0;
+#endif
+  assert(rnum[ii] == addr[ii]);
+  for (i=1; i<NUM_MEM/sizeof(type_t); ++i) {
+#if defined(USE_RAND)
+    ii = rnum[i];
+    jj = rnum[i-1];
+#else
+    ii = i;
+    jj = i-1;
+#endif
+    assert(addr[jj]+rnum[ii] == addr[ii]);
+  }
 
   fprintf(stderr, "==========================\n");
   fprintf(stderr, "Write (new) ==============\n");
@@ -351,120 +421,57 @@ int main(int argc, char * argv[])
 #endif
   fprintf(stderr, "\n");
 
-#if defined(USE_LOAD)
-  filed = open(TMPFILE, O_RDWR|O_CREAT|O_EXCL, S_IRUSR|S_IWUSR);
-  assert(-1 != filed);
-
-  _write(addr, NUM_MEM);
-
-  memset(addr, 0, NUM_MEM);
-#endif
 #if !defined(USE_LIBC)
-# if !defined(USE_LOAD)
   memset(pflags, 0, NUM_MEM/page);
-# else
-  memset(pflags, ONDISK, NUM_MEM/page);
-# endif
   ret = mprotect(addr, NUM_MEM, PROT_NONE);
   assert(0 == ret);
   faults = 0;
 #endif
-  _cacheflush();
 
-  /* ----- READ ---- */
+  _cacheflush();
+}
+#endif
+
+  /* ----- WRITE (init) ---- */
+#if defined(USE_WR)
+{
   _gettime(&ts);
-#if  defined(USE_LIBC) && defined(USE_LOAD) && !defined(USE_LAZY)
-  _read(addr, 0, NUM_MEM);
+#if defined(USE_RAND)
+    ii = rnum[0];
+#else
+    ii = 0;
 #endif
-  for (i=0; i<NUM_MEM; ++i) {
-#if defined(USE_LIBC) && defined(USE_LOAD) && defined(USE_LAZY)
-    if (0 == ((uintptr_t)(addr+i)&(page-1)))
-      _read(addr+i, i, page);
+  addr[ii] = rnum[ii];
+  for (i=1; i<NUM_MEM/sizeof(type_t); ++i) {
+#if defined(USE_RAND)
+    ii = rnum[i];
+    jj = rnum[i-1];
+#else
+    ii = i;
+    jj = i-1;
 #endif
-    assert((char)i == addr[i]);
+    addr[ii] = addr[jj]+rnum[ii];
   }
-  _gettime(&te);
-  t_rd = _getelapsed(&ts, &te);
-
-  fprintf(stderr, "==========================\n");
-  fprintf(stderr, "Read (new) ===============\n");
-  fprintf(stderr, "==========================\n");
-  fprintf(stderr, "  MiB/s        = %9.0f\n", NUM_MEM/(t_rd/1000000.0));
-  fprintf(stderr, "  SysPages/s   = %9.0f\n",
-    NUM_MEM/sysconf(_SC_PAGESIZE)/(t_rd/1000000.0));
-#if !defined(USE_LIBC)
-  fprintf(stderr, "  # SIGSEGV    = %9zu\n", faults);
-#endif
-  fprintf(stderr, "\n");
-
-#if defined(USE_LOAD)
-# if !defined(USE_LIBC)
-  ret = mprotect(addr, NUM_MEM, PROT_WRITE);
-  assert(0 == ret);
-# endif
-  memset(addr, 0, NUM_MEM);
-#endif
-#if !defined(USE_LIBC)
-# if !defined(USE_LOAD)
-  memset(pflags, 0, NUM_MEM/page);
-# else
-  memset(pflags, ONDISK, NUM_MEM/page);
-#endif
-  ret = mprotect(addr, NUM_MEM, PROT_NONE);
-  assert(0 == ret);
-  faults = 0;
-#endif
-  _cacheflush();
-
-  /* ----- READ/WRITE ---- */
-  _gettime(&ts);
-#if defined(USE_LIBC) && defined(USE_LOAD) && !defined(USE_LAZY)
-  _read(addr, 0, NUM_MEM);
-#endif
-  for (i=0; i<NUM_MEM; ++i) {
-#if defined(USE_LIBC) && defined(USE_LOAD) && defined(USE_LAZY)
-    if (0 == ((uintptr_t)(addr+i)&(page-1)))
-      _read(addr+i, i, page);
-#endif
-    addr[i]++;
-  }
-  _gettime(&te);
-  t_rw = _getelapsed(&ts, &te);
-
-  for (i=0; i<NUM_MEM; ++i)
-    assert((char)(i+1) == addr[i]);
-
-  fprintf(stderr, "==========================\n");
-  fprintf(stderr, "Read/Write (new) =========\n");
-  fprintf(stderr, "==========================\n");
-  fprintf(stderr, "  MiB/s        = %9.0f\n", NUM_MEM/(t_rw/1000000.0));
-  fprintf(stderr, "  SysPages/s   = %9.0f\n",
-    NUM_MEM/sysconf(_SC_PAGESIZE)/(t_rw/1000000.0));
-#if !defined(USE_LIBC)
-  fprintf(stderr, "  # SIGSEGV    = %9zu\n", faults);
-#endif
-  fprintf(stderr, "\n");
-
-#if defined(USE_LOAD)
-  memset(addr, 0, NUM_MEM);
-#endif
-#if !defined(USE_LIBC)
-  ret = mprotect(addr, NUM_MEM, PROT_NONE);
-  assert(0 == ret);
-  memset(pflags, 0, NUM_MEM/page);
-  faults = 0;
-#endif
-  _cacheflush();
-  ret = madvise((void*)base, NUM_MEM, MADV_DONTNEED);
-  assert(-1 != ret);
-
-  /* ===== Initialized memory tests ===== */
-  /* ----- WRITE ----- */
-  _gettime(&ts);
-  for (i=0; i<NUM_MEM; ++i)
-    addr[i] = (char)(NUM_MEM-i);
+  _membarrier();
   _gettime(&te);
   t_wr = _getelapsed(&ts, &te);
+
+#if defined(USE_RAND)
+    ii = rnum[0];
+#else
+    ii = 0;
+#endif
+  assert(rnum[ii] == addr[ii]);
+  for (i=1; i<NUM_MEM/sizeof(type_t); ++i) {
+#if defined(USE_RAND)
+    ii = rnum[i];
+    jj = rnum[i-1];
+#else
+    ii = i;
+    jj = i-1;
+#endif
+    assert(addr[jj]+rnum[ii] == addr[ii]);
+  }
 
   fprintf(stderr, "==========================\n");
   fprintf(stderr, "Write (init) =============\n");
@@ -477,39 +484,89 @@ int main(int argc, char * argv[])
 #endif
   fprintf(stderr, "\n");
 
-#if defined(USE_LOAD)
-  _write(addr, NUM_MEM);
-  memset(addr, 0, NUM_MEM);
-#endif
 #if !defined(USE_LIBC)
 # if !defined(USE_LOAD)
   memset(pflags, 0, NUM_MEM/page);
-# else
-  memset(pflags, ONDISK, NUM_MEM/page);
 # endif
-  ret = mprotect(addr, NUM_MEM, PROT_NONE);
-  assert(0 == ret);
   faults = 0;
 #endif
+
   _cacheflush();
+}
+#endif
+
+  /* ----- FILE SETUP ---- */
+#if defined(USE_LOAD)
+{
+  fd = open(TMPFILE, O_RDWR|O_CREAT|O_EXCL, S_IRUSR|S_IWUSR);
+  assert(-1 != fd);
+
+  _write(addr, NUM_MEM);
+
+  memset(addr, 0, NUM_MEM);
+
+# if !defined(USE_LIBC)
+  memset(pflags, ONDISK, NUM_MEM/page);
+# endif
+
+  _cacheflush();
+}
+#endif
+#if !defined(USE_LIBC)
+{
+  ret = mprotect(addr, NUM_MEM, PROT_NONE);
+  assert(0 == ret);
+
+  _cacheflush();
+}
+#endif
 
   /* ----- READ ----- */
+#if defined(USE_RD)
+{
+#if defined(USE_LOAD)
+# if !defined(USE_LIBC)
+  ret = madvise((void*)base, NUM_MEM, MADV_DONTNEED);
+  assert(-1 != ret);
+# endif
+  ret = posix_fadvise(fd, 0, NUM_MEM, POSIX_FADV_DONTNEED);
+  assert(-1 != ret);
+#endif
+
   _gettime(&ts);
 #if defined(USE_LIBC) && defined(USE_LOAD) && !defined(USE_LAZY)
   _read(addr, 0, NUM_MEM);
 #endif
-  for (i=0; i<NUM_MEM; ++i) {
-#if defined(USE_LIBC) && defined(USE_LOAD) && defined(USE_LAZY)
-    if (0 == ((uintptr_t)(addr+i)&(page-1)))
-      _read(addr+i, i, page);
+#if defined(USE_RAND)
+  ii = rnum[0];
+#else
+  ii = 0;
 #endif
-    assert((char)(NUM_MEM-i) == addr[i]);
+#if defined(USE_LIBC) && defined(USE_LOAD) && defined(USE_LAZY)
+  if (0 == ((uintptr_t)(addr+ii)&(page-1)))
+    _read(addr+ii, ii*sizeof(type_t), page);
+#endif
+  assert(rnum[ii] == addr[ii]);
+  for (i=1; i<NUM_MEM/sizeof(type_t); ++i) {
+#if defined(USE_RAND)
+    ii = rnum[i];
+    jj = rnum[i-1];
+#else
+    ii = i;
+    jj = i-1;
+#endif
+#if defined(USE_LIBC) && defined(USE_LOAD) && defined(USE_LAZY)
+    if (0 == ((uintptr_t)(addr+ii)&(page-1)))
+      _read(addr+ii, ii*sizeof(type_t), page);
+#endif
+    assert(addr[jj]+rnum[ii] == addr[ii]);
   }
+  _membarrier();
   _gettime(&te);
   t_rd = _getelapsed(&ts, &te);
 
   fprintf(stderr, "==========================\n");
-  fprintf(stderr, "Read (init) ==============\n");
+  fprintf(stderr, "Read =====================\n");
   fprintf(stderr, "==========================\n");
   fprintf(stderr, "  MiB/s        = %9.0f\n", NUM_MEM/(t_rd/1000000.0));
   fprintf(stderr, "  SysPages/s   = %9.0f\n",
@@ -536,28 +593,87 @@ int main(int argc, char * argv[])
   assert(0 == ret);
   faults = 0;
 #endif
+
   _cacheflush();
+}
+#endif
 
   /* ----- READ/WRITE ----- */
+#if defined(USE_RW)
+{
+#if defined(USE_LOAD)
+# if !defined(USE_LIBC)
+  ret = madvise((void*)base, NUM_MEM, MADV_DONTNEED);
+  assert(-1 != ret);
+# endif
+  ret = posix_fadvise(fd, 0, NUM_MEM, POSIX_FADV_DONTNEED);
+  assert(-1 != ret);
+#endif
+
   _gettime(&ts);
 #if defined(USE_LIBC) && defined(USE_LOAD) && !defined(USE_LAZY)
   _read(addr, 0, NUM_MEM);
 #endif
-  for (i=0; i<NUM_MEM; ++i) {
-#if defined(USE_LIBC) && defined(USE_LOAD) && defined(USE_LAZY)
-    if (0 == ((uintptr_t)(addr+i)&(page-1)))
-      _read(addr+i, i, page);
+#if defined(USE_RAND)
+  ii = rnum[0];
+#else
+  ii = 0;
 #endif
-    addr[i]++;
+#if defined(USE_LIBC) && defined(USE_LOAD) && defined(USE_LAZY)
+  if (0 == ((uintptr_t)(addr+ii)&(page-1)))
+    _read(addr+ii, ii*sizeof(type_t), page);
+#endif
+  addr[ii] += rnum[ii];
+  for (i=1; i<NUM_MEM/sizeof(type_t); ++i) {
+#if defined(USE_RAND)
+    ii = rnum[i];
+    jj = rnum[i-1];
+#else
+    ii = i;
+    jj = i-1;
+#endif
+#if defined(USE_LIBC) && defined(USE_LOAD) && defined(USE_LAZY)
+    if (0 == ((uintptr_t)(addr+ii)&(page-1)))
+      _read(addr+ii, ii*sizeof(type_t), page);
+#endif
+    addr[ii] += addr[jj]+rnum[ii];
   }
+  _membarrier();
   _gettime(&te);
   t_rw = _getelapsed(&ts, &te);
 
-  for (i=0; i<NUM_MEM; ++i)
-    assert((char)(NUM_MEM-i+1) == addr[i]);
+#if defined(USE_RAND)
+  ii = rnum[1];
+  jj = rnum[0];
+#else
+  ii = 1;
+  jj = 0;
+#endif
+  addr[ii] -= addr[jj]+rnum[ii];
+  addr[jj] -= rnum[jj];
+  assert(rnum[jj] == addr[jj]);
+  assert(addr[jj]+rnum[ii] == addr[ii]);
+  addr[jj] += rnum[jj];
+  addr[ii] += addr[jj]+rnum[ii];
+  for (i=2; i<NUM_MEM/sizeof(type_t); ++i) {
+#if defined(USE_RAND)
+    ii = rnum[i];
+    jj = rnum[i-1];
+    kk = rnum[i-2];
+#else
+    ii = i;
+    jj = i-1;
+    kk = i-2;
+#endif
+    addr[ii] -= addr[jj]+rnum[ii];
+    addr[jj] -= addr[kk]+rnum[jj];
+    assert(addr[jj]+rnum[ii] == addr[ii]);
+    addr[jj] += addr[kk]+rnum[jj];
+    addr[ii] += addr[jj]+rnum[ii];
+  }
 
   fprintf(stderr, "==========================\n");
-  fprintf(stderr, "Read/Write (init) ========\n");
+  fprintf(stderr, "Read/Write ===============\n");
   fprintf(stderr, "==========================\n");
   fprintf(stderr, "  MiB/s        = %9.0f\n", NUM_MEM/(t_rw/1000000.0));
   fprintf(stderr, "  SysPages/s   = %9.0f\n",
@@ -565,20 +681,26 @@ int main(int argc, char * argv[])
 #if !defined(USE_LIBC)
   fprintf(stderr, "  # SIGSEGV    = %9zu\n", faults);
 #endif
+}
+#endif
 
   /* ===== Release resources ===== */
+{
   ret = munmap(addr, NUM_MEM);
+  assert(0 == ret);
+  ret = munmap(rnum, NUM_MEM);
   assert(0 == ret);
 #if !defined(USE_LIBC)
   ret = munmap(pflags, NUM_MEM/page);
   assert(0 == ret);
 #endif
 #if defined(USE_LOAD)
-  ret = close(filed);
+  ret = close(fd);
   assert(-1 != ret);
   ret = unlink(TMPFILE);
   assert(-1 != ret);
 #endif
+}
 
   return EXIT_SUCCESS;
 }

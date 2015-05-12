@@ -371,14 +371,14 @@ sb_internal_load_range(struct sb_alloc * const sb_alloc,
     //SBFADVISE(fd, ip_beg*psize, (ip_end-ip_beg)*psize,
     //  POSIX_FADV_WILLNEED|POSIX_FADV_SEQUENTIAL|POSIX_FADV_NOREUSE);
 
-#if defined(USE_PTHREAD) && defined(USE_BULK)
-    /* mmap a page into a temporary address with write privileges. */
-# ifdef USE_CHECKSUM
-    SBMMAP(tmp_addr, (ip_end-ip_beg)*psize, PROT_READ|PROT_WRITE);
-# else
-    SBMMAP(tmp_addr, (ip_end-ip_beg)*psize, PROT_WRITE);
-# endif
-#elif !defined(USE_PTHREAD)
+//#if defined(USE_PTHREAD) && defined(USE_BULK)
+//    /* mmap a page into a temporary address with write privileges. */
+//# ifdef USE_CHECKSUM
+//    SBMMAP(tmp_addr, (ip_end-ip_beg)*psize, PROT_READ|PROT_WRITE);
+//# else
+//    SBMMAP(tmp_addr, (ip_end-ip_beg)*psize, PROT_WRITE);
+//# endif
+//#elif !defined(USE_PTHREAD)
 # ifdef USE_CHECKSUM
     SBMPROTECT(app_addr+(ip_beg*psize), (ip_end-ip_beg)*psize,
       PROT_READ|PROT_WRITE);
@@ -386,7 +386,7 @@ sb_internal_load_range(struct sb_alloc * const sb_alloc,
     SBMPROTECT(app_addr+(ip_beg*psize), (ip_end-ip_beg)*psize, PROT_WRITE);
 # endif
     tmp_addr = app_addr;
-#endif
+//#endif
 
     /* Load only those pages which are on disk and are not already synched
      * with the disk or dirty. */
@@ -415,21 +415,21 @@ sb_internal_load_range(struct sb_alloc * const sb_alloc,
             ipfirst = ip;
         }
         else if (-1 != ipfirst) {
-#if defined(USE_PTHREAD) && !defined(USE_BULK)
-# ifdef USE_CHECKSUM
-          SBMMAP(tmp_addr, (ip-ipfirst)*psize, PROT_READ|PROT_WRITE);
-# else
-          SBMMAP(tmp_addr, (ip-ipfirst)*psize, PROT_WRITE);
-# endif
-#endif
+//#if defined(USE_PTHREAD) && !defined(USE_BULK)
+//# ifdef USE_CHECKSUM
+//          SBMMAP(tmp_addr, (ip-ipfirst)*psize, PROT_READ|PROT_WRITE);
+//# else
+//          SBMMAP(tmp_addr, (ip-ipfirst)*psize, PROT_WRITE);
+//# endif
+//#endif
 
-#if defined(USE_PTHREAD) && !defined(USE_BULK)
-          off = 0;
-#elif defined(USE_PTHREAD)
-          off = (ipfirst-ip_beg)*psize;
-#else
+//#if defined(USE_PTHREAD) && !defined(USE_BULK)
+//          off = 0;
+//#elif defined(USE_PTHREAD)
+//          off = (ipfirst-ip_beg)*psize;
+//#else
           off = ipfirst*psize;
-#endif
+//#endif
 
           buf   = (char*)(tmp_addr+off);
           tsize = (ip-ipfirst)*psize;
@@ -453,14 +453,14 @@ sb_internal_load_range(struct sb_alloc * const sb_alloc,
           }
 #endif
 
-#if defined(USE_PTHREAD) && !defined(USE_BULK)
-          /* remove write privileges from temporary pages and grant read-only
-           * privileges. */
-          SBMPROTECT(tmp_addr+off, (ip-ipfirst)*psize, PROT_READ);
-          /* mremap temporary pages to the correct location in persistent
-           * memory region. */
-          SBMREMAP(tmp_addr+off, (ip-ipfirst)*psize, app_addr+(ipfirst*psize));
-#endif
+//#if defined(USE_PTHREAD) && !defined(USE_BULK)
+//          /* remove write privileges from temporary pages and grant read-only
+//           * privileges. */
+//          SBMPROTECT(tmp_addr+off, (ip-ipfirst)*psize, PROT_READ);
+//          /* mremap temporary pages to the correct location in persistent
+//           * memory region. */
+//          SBMREMAP(tmp_addr+off, (ip-ipfirst)*psize, app_addr+(ipfirst*psize));
+//#endif
 
           /*#pragma omp critical*/
           numrd += (ip-ipfirst);
@@ -474,15 +474,15 @@ sb_internal_load_range(struct sb_alloc * const sb_alloc,
         sb_abort(1);
     }
 
-#if !defined(USE_PTHREAD)
+//#if !defined(USE_PTHREAD)
     /* remove write privileges from pages and grant read-only privileges. */
     SBMPROTECT(app_addr+(ip_beg*psize), (ip_end-ip_beg)*psize, PROT_READ);
-# ifdef USE_BULK
-    /* mremap temporary pages to the correct location in persistent memory
-     * region. */
-    SBMREMAP(tmp_addr, (ip_end-ip_beg)*psize, app_addr+(ip_beg*psize));
-# endif
-#endif
+//# ifdef USE_BULK
+//    /* mremap temporary pages to the correct location in persistent memory
+//     * region. */
+//    SBMREMAP(tmp_addr, (ip_end-ip_beg)*psize, app_addr+(ip_beg*psize));
+//# endif
+//#endif
 
     for (ip=ip_beg; ip<ip_end; ++ip) {
       if (SBISSET(pflags[ip], SBPAGE_DUMP)) {
@@ -499,12 +499,12 @@ sb_internal_load_range(struct sb_alloc * const sb_alloc,
         /* + SYNC flag */
         pflags[ip] |= SBPAGE_SYNC;
       }
-#if !defined(USE_PTHREAD)
+//#if !defined(USE_PTHREAD)
       /* leave dirty pages dirty */
       else if (SBISSET(pflags[ip], SBPAGE_DIRTY)) {
         SBMPROTECT(app_addr+(ip*psize), psize, PROT_READ|PROT_WRITE);
       }
-#endif
+//#endif
     }
 
     numrd = SB_TO_SYS(numrd, psize);
@@ -805,6 +805,9 @@ sb_internal_destroy(void)
   if (-1 == sigaction(SIGSEGV, &(sb_info.oldact), NULL))
     sb_abort(1);
   SB_FREE_LOCK(&(sb_info.lock));
+
+  fprintf(stderr, "numrd=%zu\n", sb_info.numrd);
+  fprintf(stderr, "numwr=%zu\n", sb_info.numwr);
 
   DONE:
   SB_LET_LOCK(&(sb_info.init_lock));
