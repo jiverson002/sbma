@@ -299,11 +299,11 @@ int main(int argc, char * argv[])
   fprintf(stderr, "  # SIGSEGV    = %9zu\n", faults);
 #endif
   fprintf(stderr, "\n");
-}
-#endif
 
   impl_flush();
   _cacheflush();
+}
+#endif
 
   /* ----- WRITE (init) ----- */
 #if defined(USE_WR)
@@ -375,8 +375,13 @@ int main(int argc, char * argv[])
 }
 #endif
 
+  /* ===== Flush resources ===== */
+#if defined(USE_WR) || defined(USE_LOAD)
+{
   impl_flush();
   _cacheflush();
+}
+#endif
 
   /* ----- READ ----- */
 #if defined(USE_RD)
@@ -420,11 +425,11 @@ int main(int argc, char * argv[])
   fprintf(stderr, "  # SIGSEGV    = %9zu\n", faults);
 #endif
   fprintf(stderr, "\n");
-}
-#endif
 
   impl_flush();
   _cacheflush();
+}
+#endif
 
   /* ----- READ/WRITE ----- */
 #if defined(USE_RW)

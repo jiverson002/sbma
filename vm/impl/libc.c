@@ -33,7 +33,6 @@ impl_destroy(void)
   assert(0 == ret);
 }
 
-
 extern void
 impl_flush(void)
 {
@@ -73,7 +72,7 @@ impl_fetch_page(void * const addr, size_t const off, size_t const size)
   if (0 == ((uintptr_t)addr&(_siz_pag-1)))
     io_read(addr, off, size);
 # endif
-#else
+#endif
   if (NULL == addr || 0 == off || 0 == size) {}
 }
 

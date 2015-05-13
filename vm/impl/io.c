@@ -2,7 +2,7 @@
 
 #if defined (USE_LOAD)
 
-static char const * _tmp_file;
+static char const * _tmp_file=NULL;
 
 extern void
 io_init(char const * const __tmp_file)

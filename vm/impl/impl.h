@@ -31,6 +31,10 @@
 #define DIRTY  2
 #define ONDISK 4
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #if defined(USE_LOAD)
 /* io.c */
 extern void io_init(char const * const);
@@ -47,3 +51,7 @@ extern void         impl_flush(void);
 extern void         impl_ondisk(void);
 extern void         impl_fetch_bulk(void * const, size_t const, size_t const);
 extern void         impl_fetch_page(void * const, size_t const, size_t const);
+
+#ifdef __cplusplus
+}
+#endif

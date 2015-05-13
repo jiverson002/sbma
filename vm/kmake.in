@@ -18,3 +18,4 @@ add_with_param op    all  all='-DUSE_RD -DUSE_WR -DUSE_RW'\
                           wrrw='-DUSE_WR -DUSE_RW'
 
 add_executable micro micro.c impl/io.c impl/libc.c impl/sbma.c
+add_dependencies micro impl/impl.h
