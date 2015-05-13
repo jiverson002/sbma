@@ -1,0 +1,20 @@
+# compiler options
+add_with_param profile no no= yes='-DUSE_PROFILE -pg'
+
+# program options
+add_with_param load  no   no= yes='-DUSE_LOAD'
+add_with_param lazy  no   no= yes='-DUSE_LAZY'
+add_with_param ghost no   no= yes='-DUSE_GHOST'
+add_with_param ctx   no   no= yes='-DUSE_CTX'
+add_with_param rand  no   no= yes='-DUSE_RAND'
+add_with_param lock  no   no= yes='-DUSE_LOCK'
+add_with_param lib   libc libc='-DUSE_LIBC' sbma='-DUSE_SBMA'
+add_with_param op    all  all='-DUSE_RD -DUSE_WR -DUSE_RW'\
+                          rd='-DUSE_RD'\
+                          wr='-DUSE_WR'\
+                          rw='-USE_RW'\
+                          rdwr='-DUSE_RD -DUSE_WR'\
+                          rdrw='-DUSE_RD -DUSE_RW'\
+                          wrrw='-DUSE_WR -DUSE_RW'
+
+add_executable micro micro.c impl/io.c impl/libc.c impl/sbma.c
