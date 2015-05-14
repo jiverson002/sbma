@@ -19,6 +19,14 @@
 
 /*--------------------------------------------------------------------------*/
 
+/* BUGS:
+    - This code needs to be updated somehow so that acct(CHARGE) always
+      happens before load_range(). Else, data is being loaded before we know
+      it can be safely loaded without over-committing memory.
+ */
+
+/*--------------------------------------------------------------------------*/
+
 
 /****************************************************************************/
 /* Function prototypes for hooks. */
@@ -96,10 +104,10 @@ static struct sb_info
   size_t numwf;             /* total number of write segfaults */
   size_t numrd;             /* total number of pages read */
   size_t numwr;             /* total number of pages written */
-  size_t curpages;          /* current bytes loaded */
-  size_t numpages;          /* current bytes allocated */
-  size_t totpages;          /* total bytes allocated */
-  size_t maxpages;          /* maximum number of bytes loaded */
+  size_t curpages;          /* current pages loaded */
+  size_t numpages;          /* current pages allocated */
+  size_t totpages;          /* total pages allocated */
+  size_t maxpages;          /* maximum number of pages allocated */
 
   size_t pagesize;          /* bytes per sbmalloc page */
   size_t minsize;           /* minimum allocation in bytes handled by sbmalloc */
@@ -337,8 +345,8 @@ sb_internal_acct(int const acct_type, size_t const arg)
 /****************************************************************************/
 static size_t
 sb_internal_load_range(struct sb_alloc * const sb_alloc,
-                          size_t const ip_beg, size_t const npages,
-                          int const state)
+                       size_t const ip_beg, size_t const npages,
+                       int const state)
 {
 #ifdef USE_CHECKSUM
   size_t i;
@@ -353,6 +361,8 @@ sb_internal_load_range(struct sb_alloc * const sb_alloc,
   if (NULL == sb_alloc)
     return 0;
   if (npages > sb_alloc->npages)
+    return 0;
+  if (ip_beg > sb_alloc->npages-npages)
     return 0;
 
   psize    = sb_info.pagesize;
@@ -540,7 +550,7 @@ sb_internal_load_range(struct sb_alloc * const sb_alloc,
 /****************************************************************************/
 static size_t
 sb_internal_sync_range(struct sb_alloc * const sb_alloc,
-                          size_t const ip_beg, size_t const npages)
+                       size_t const ip_beg, size_t const npages)
 {
 #ifdef USE_CHECKSUM
   size_t i;
@@ -555,6 +565,8 @@ sb_internal_sync_range(struct sb_alloc * const sb_alloc,
   if (NULL == sb_alloc)
     return 0;
   if (npages > sb_alloc->npages)
+    return 0;
+  if (ip_beg > sb_alloc->npages-npages)
     return 0;
 
   psize    = sb_info.pagesize;
@@ -643,6 +655,8 @@ sb_internal_sync_range(struct sb_alloc * const sb_alloc,
 
       sb_assert(sb_alloc->ld_pages > 0);
       sb_alloc->ld_pages--;
+      sb_assert(sb_alloc->ch_pages > 0);
+      sb_alloc->ch_pages--;
     }
   }
 
@@ -660,7 +674,7 @@ sb_internal_sync_range(struct sb_alloc * const sb_alloc,
 /****************************************************************************/
 extern size_t
 sb_internal_dump_range(struct sb_alloc * const sb_alloc,
-                          size_t const ip_beg, size_t const npages)
+                       size_t const ip_beg, size_t const npages)
 {
   size_t ip, psize, app_addr, ip_end, num=0;
   char * pflags;
@@ -668,6 +682,8 @@ sb_internal_dump_range(struct sb_alloc * const sb_alloc,
   if (NULL == sb_alloc)
     return 0;
   if (npages > sb_alloc->npages)
+    return 0;
+  if (ip_beg > sb_alloc->npages-npages)
     return 0;
 
   psize    = sb_info.pagesize;
@@ -686,6 +702,8 @@ sb_internal_dump_range(struct sb_alloc * const sb_alloc,
     {
       sb_assert(sb_alloc->ld_pages > 0);
       sb_alloc->ld_pages--;
+      sb_assert(sb_alloc->ch_pages > 0);
+      sb_alloc->ch_pages--;
     }
 
     /* - SYNC/DIRTY/ONDISK flag */
@@ -693,6 +711,37 @@ sb_internal_dump_range(struct sb_alloc * const sb_alloc,
     /* + DUMP flag */
     sb_alloc->pflags[ip] |= SBPAGE_DUMP;
   }
+
+  /* convert to system pages */
+  return SB_TO_SYS(num, psize);
+}
+
+
+/****************************************************************************/
+/*! Counts the number of pages of an allocation which are not in a specific
+ * state. */
+/****************************************************************************/
+static size_t
+sb_internal_probe(struct sb_alloc * const sb_alloc, size_t const ip_beg,
+                  size_t const npages, size_t const state)
+{
+  size_t ip, psize, ip_end, num=0;
+  char * pflags;
+
+  if (NULL == sb_alloc)
+    return 0;
+  if (npages > sb_alloc->npages)
+    return 0;
+  if (ip_beg > sb_alloc->npages-npages)
+    return 0;
+
+  psize    = sb_info.pagesize;
+  pflags   = sb_alloc->pflags;
+  ip_end   = ip_beg+npages;
+
+  /* count pages in state*/
+  for (ip=ip_beg; ip<ip_end; ++ip)
+    num += !(pflags[ip]&state);
 
   /* convert to system pages */
   return SB_TO_SYS(num, psize);
@@ -753,38 +802,57 @@ sb_internal_handler(int const sig, siginfo_t * const si, void * const ctx)
 
   if (!(SBISSET(sb_alloc->pflags[ip], SBPAGE_SYNC))) {
     if (0 == sb_opts[SBOPT_LAZYREAD]) {
-      ch_pages = sb_alloc->npages-sb_alloc->ld_pages;
-
-      rd_num = sb_internal_load_range(sb_alloc, 0, sb_alloc->npages,
-        SBPAGE_SYNC);
+      /* charge any pages which aren't charged */
+      ch_pages = sb_alloc->npages-sb_alloc->ch_pages;
     }
     else {
-      if (0 == sb_alloc->ld_pages) {
-        sb_assert(0 == sb_alloc->ch_pages);
+      /* if no pages have been charged for this allocation, then charge the
+       * whole allocation */
+      if (0 == sb_alloc->ch_pages) {
+        sb_assert(0 == sb_alloc->ld_pages);
         ch_pages = sb_alloc->npages;
       }
+      /* otherwise, this allocation has already been charged once completely;
+       * now we must only charge for pages which have since been dumped */
       else if (SBISSET(sb_alloc->pflags[ip], SBPAGE_DUMP)) {
         sb_assert(sb_alloc->ch_pages < sb_alloc->npages);
         ch_pages = 1;
       }
+    }
+  }
+  else {
+    /* by the nature of this signal handler, this offending page is
+     * necessarily charged. */
+    ch_pages = 0;
+  }
+  sb_alloc->ch_pages += ch_pages;
 
-      /* charging all pages, but loading only 1. */
+  /* convert to system pages */
+  ch_pages = SB_TO_SYS(ch_pages, sb_info.pagesize);
+
+  /* charge for the pages to be loaded before actually loading them to ensure
+   * there is room in memory */
+  //SB_LET_LOCK(&(sb_alloc->lock));
+  sb_internal_acct(SBACCT_CHARGE, ch_pages);
+  //SB_GET_LOCK(&(sb_alloc->lock));
+
+  if (!(SBISSET(sb_alloc->pflags[ip], SBPAGE_SYNC))) {
+    if (0 == sb_opts[SBOPT_LAZYREAD]) {
+      rd_num = sb_internal_load_range(sb_alloc, 0, sb_alloc->npages,
+        SBPAGE_SYNC);
+    }
+    else {
       rd_num = sb_internal_load_range(sb_alloc, ip, 1, SBPAGE_SYNC);
     }
-    sb_alloc->ch_pages += ch_pages;
   }
   else {
     (void)sb_internal_load_range(sb_alloc, ip, 1, SBPAGE_DIRTY);
   }
 
-  /* convert to system pages */
-  ch_pages = SB_TO_SYS(ch_pages, sb_info.pagesize);
-
   SB_LET_LOCK(&(sb_alloc->lock));
 
   sb_internal_acct(SBACCT_RDFAULT, rd_num);
   sb_internal_acct(SBACCT_WRFAULT, wr_num);
-  sb_internal_acct(SBACCT_CHARGE, ch_pages);
 
   if (NULL == ctx) {} /* suppress unused warning */
 }
@@ -1023,9 +1091,6 @@ SB_sync(void const * const addr, size_t len)
   num      = sb_internal_sync_range(sb_alloc, ipfirst, ipend-ipfirst);
   ld_pages = ld_pages-sb_alloc->ld_pages;
 
-  /* discharge */
-  sb_alloc->ch_pages -= ld_pages;
-
   /* convert to system pages */
   ld_pages = SB_TO_SYS(ld_pages, psize);
 
@@ -1050,13 +1115,13 @@ SB_syncall(void)
   SB_INIT_CHECK
 
   SB_GET_LOCK(&(sb_info.lock));
+
   for (sb_alloc=sb_info.head; NULL!=sb_alloc; sb_alloc=sb_alloc->next) {
     SB_GET_LOCK(&(sb_alloc->lock));
-    sb_alloc->ch_pages -= sb_alloc->ld_pages;
-    sb_assert(0 == sb_alloc->ch_pages);
     ld_pages += sb_alloc->ld_pages;
     num      += sb_internal_sync_range(sb_alloc, 0, sb_alloc->npages);
     sb_assert(0 == sb_alloc->ld_pages);
+    sb_assert(0 == sb_alloc->ch_pages);
     SB_LET_LOCK(&(sb_alloc->lock));
   }
   SB_LET_LOCK(&(sb_info.lock));
@@ -1141,9 +1206,18 @@ SB_load(void const * const addr, size_t len, int const state)
 #endif
 
   if (ipfirst < ipend) {
+    _ld_pages1 = sb_internal_probe(sb_alloc, ipfirst, ipend-ipfirst,
+      SBPAGE_SYNC|SBPAGE_DIRTY);
+    //SB_LET_LOCK(&(sb_alloc->lock));
+    sb_internal_acct(SBACCT_CHARGE, _ld_pages1);
+    //SB_GET_LOCK(&(sb_alloc->lock));
+
     ld_pages = sb_alloc->ld_pages;
     num      = sb_internal_load_range(sb_alloc, ipfirst, ipend-ipfirst, state);
     ld_pages = sb_alloc->ld_pages-ld_pages;
+
+    sb_assert(_ld_pages1 == SB_TO_SYS(ld_pages, psize));
+    _ld_pages1 = 0;
   }
 
   num      = num + _num1 + _num2;
@@ -1158,7 +1232,7 @@ SB_load(void const * const addr, size_t len, int const state)
   SB_LET_LOCK(&(sb_alloc->lock));
 
   sb_internal_acct(SBACCT_READ, num);
-  sb_internal_acct(SBACCT_CHARGE, ld_pages);
+  //sb_internal_acct(SBACCT_CHARGE, ld_pages);
 
   return ld_pages;
 }
@@ -1247,9 +1321,6 @@ SB_dump(void const * const addr, size_t len)
     ld_pages = sb_alloc->ld_pages;
     (void)sb_internal_dump_range(sb_alloc, ipfirst, ipend-ipfirst);
     ld_pages = ld_pages-sb_alloc->ld_pages;
-
-    /* discharge */
-    sb_alloc->ch_pages -= ld_pages;
 
     /* convert to system pages */
     ld_pages = SB_TO_SYS(ld_pages, psize);

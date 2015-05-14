@@ -221,6 +221,7 @@ libc_write(int const fd, void const * const buf, size_t const count)
 
   HOOK_INIT(write);
 
+  //printf("%s\n", __func__);
   SB_load(buf, count, SBPAGE_SYNC);
 
   return _libc_write(fd, buf, count);
@@ -522,6 +523,7 @@ read(int const fd, void * const buf, size_t const count)
 extern ssize_t
 write(int const fd, void const * const buf, size_t const count)
 {
+  //printf("%s\n", __func__);
   SB_load(buf, count, SBPAGE_SYNC);
 
   return libc_write(fd, buf, count);
@@ -554,6 +556,7 @@ extern size_t
 fwrite(void const * const buf, size_t const size, size_t const num,
        FILE * const stream)
 {
+  //printf("%s\n", __func__);
   (void)SB_load(buf, size, SBPAGE_SYNC);
 
   return libc_fwrite(buf, size, num, stream);
@@ -566,6 +569,7 @@ fwrite(void const * const buf, size_t const size, size_t const num,
 extern int
 mlock(void const * const addr, size_t const len)
 {
+  //printf("%s\n", __func__);
   (void)SB_load(addr, len, SBPAGE_SYNC);
 
   return libc_mlock(addr, len);
