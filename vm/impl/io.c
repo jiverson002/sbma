@@ -3,11 +3,21 @@
 #if defined (USE_LOAD)
 
 static char const * _tmp_file=NULL;
+static size_t _num_mem;
 
 extern void
-io_init(char const * const __tmp_file)
+io_init(char const * const __tmp_file, size_t const __num_mem)
 {
   _tmp_file = __tmp_file;
+  _num_mem  = __num_mem;
+}
+
+extern void
+io_destroy(void)
+{
+  int ret;
+  ret = unlink(_tmp_file);
+  assert(-1 != ret);
 }
 
 extern void
@@ -66,7 +76,7 @@ io_write(void const * const addr, size_t size)
   ssize_t ret;
   char const * buf;
 
-  fd = open(_tmp_file, O_WRONLY);
+  fd = open(_tmp_file, O_WRONLY|O_CREAT|O_EXCL, S_IRUSR|S_IWUSR);
   assert(-1 != fd);
 
   buf = (char const*)addr;
@@ -77,6 +87,21 @@ io_write(void const * const addr, size_t size)
     buf  += ret;
     size -= ret;
   } while (size > 0);
+
+  ret = close(fd);
+  assert(-1 != ret);
+}
+
+extern void
+io_flush(void)
+{
+  int ret, fd;
+
+  fd = open(_tmp_file, O_RDONLY);
+  assert(-1 != fd);
+
+  ret = posix_fadvise(fd, 0, _num_mem, POSIX_FADV_DONTNEED);
+  assert(-1 != ret);
 
   ret = close(fd);
   assert(-1 != ret);

@@ -6,14 +6,13 @@
 #define DIRTY  2
 #define ONDISK 4
 
-size_t faults=0;
-
 static char * _pflags=NULL;
 static uintptr_t _base=0;
 static size_t _siz_pag=0;
 static size_t _num_mem=0;
 static size_t _num_sys=0;
 static size_t _num_pag=0;
+static size_t _faults=0;
 
 static inline void
 sbma_segvhandler(int const sig, siginfo_t * const si, void * const ctx)
@@ -70,7 +69,7 @@ sbma_segvhandler(int const sig, siginfo_t * const si, void * const ctx)
     _pflags[ip] = DIRTY;
   }
 
-  faults++;
+  _faults++;
 
 #if !defined(USE_CTX)
   if (NULL == ctx) {} /* supress unused warning */
@@ -149,7 +148,7 @@ impl_flush(void)
   ret = mprotect((void*)_base, _num_mem, PROT_NONE);
   assert(0 == ret);
 
-  faults = 0;
+  _faults = 0;
 }
 
 extern void
@@ -168,6 +167,12 @@ extern void
 impl_fetch_page(void * const addr, size_t const off, size_t const size)
 {
   if (NULL == addr || 0 == off || 0 == size) {}
+}
+
+extern void
+impl_aux_info(int const len1, int const len2)
+{
+  fprintf(stderr, "  %-*s = %*zu\n", len1, "# SIGSEGV", len2, _faults);
 }
 
 #endif

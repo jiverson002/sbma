@@ -76,4 +76,10 @@ impl_fetch_page(void * const addr, size_t const off, size_t const size)
   if (NULL == addr || 0 == off || 0 == size) {}
 }
 
+extern void
+impl_aux_info(int const len1, int const len2)
+{
+  if (0 == len1 || 0 == len2) {}
+}
+
 #endif

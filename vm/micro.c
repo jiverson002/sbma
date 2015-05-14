@@ -2,6 +2,8 @@
 /*
 #define USE_LIBC
 
+#define USE_SBMA
+
 #define USE_LOAD
 
 #define USE_LAZY
@@ -33,24 +35,6 @@
 /* ======================= INTERNAL CONFIG ================================ */
 
 
-#if defined(USE_LIBC)
-# if defined(USE_CTX)
-#   undef USE_CTX
-# endif
-#endif
-#if !defined(USE_LOAD)
-# if defined(USE_GHOST)
-#   undef USE_GHOST
-# endif
-# if defined(USE_CTX)
-#   undef USE_CTX
-# endif
-#endif
-
-
-/* ============================ END CONFIG ================================ */
-
-
 #ifndef _GNU_SOURCE
 # define _GNU_SOURCE
 #endif
@@ -61,19 +45,15 @@
 
 #include <assert.h>
 #include <fcntl.h>
-#include <signal.h>
-#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
-#include <sys/ucontext.h>
 #include <time.h>
 #include <unistd.h>
 
 #include "impl/impl.h"
-
 
 #define XSTR(X) #X
 #define STR(X)  XSTR(X)
@@ -84,7 +64,6 @@ static size_t NUM_SYS = DEFAULT_NUM_SYS;
 static size_t NUM_PAG = 0;
 static char * TMPFILE = DEFAULT_TMPFILE;
 
-extern char * pflags;
 extern size_t faults;
 
 #pragma GCC push_options
@@ -111,6 +90,7 @@ _cacheflush(void)
     munmap(ptr, 1<<28);
   }
 }
+#pragma GCC pop_options
 
 static inline void
 _gettime(struct timespec * const t)
@@ -136,7 +116,6 @@ _getelapsed(struct timespec const * const ts,
   }
   return (unsigned long)(t.tv_sec * 1000000000UL + t.tv_nsec);
 }
-#pragma GCC pop_options
 
 static inline void
 _parse(int argc, char * argv[])
@@ -163,9 +142,6 @@ _parse(int argc, char * argv[])
 
 int main(int argc, char * argv[])
 {
-#if defined(USE_LOAD)
-  int fd;
-#endif
   size_t i, j, ii, jj, elem;
   ssize_t ret;
 #if defined(USE_RD)
@@ -295,9 +271,7 @@ int main(int argc, char * argv[])
   fprintf(stderr, "  MiB/s        = %9.0f\n", NUM_MEM/(t_wr/1000000.0));
   fprintf(stderr, "  SysPages/s   = %9.0f\n",
     NUM_MEM/sysconf(_SC_PAGESIZE)/(t_wr/1000000.0));
-#if defined(USE_SBMA)
-  fprintf(stderr, "  # SIGSEGV    = %9zu\n", faults);
-#endif
+  impl_aux_info(12, 9);
   fprintf(stderr, "\n");
 
   impl_flush();
@@ -352,9 +326,7 @@ int main(int argc, char * argv[])
   fprintf(stderr, "  MiB/s        = %9.0f\n", NUM_MEM/(t_wr/1000000.0));
   fprintf(stderr, "  SysPages/s   = %9.0f\n",
     NUM_MEM/sysconf(_SC_PAGESIZE)/(t_wr/1000000.0));
-#if defined(USE_SBMA)
-  fprintf(stderr, "  # SIGSEGV    = %9zu\n", faults);
-#endif
+  impl_aux_info(12, 9);
   fprintf(stderr, "\n");
 }
 #endif
@@ -363,9 +335,6 @@ int main(int argc, char * argv[])
 #if defined(USE_LOAD)
 {
   io_init(TMPFILE);
-
-  fd = open(TMPFILE, O_RDWR|O_CREAT|O_EXCL, S_IRUSR|S_IWUSR);
-  assert(-1 != fd);
 
   io_write(addr, NUM_MEM);
 
@@ -379,6 +348,7 @@ int main(int argc, char * argv[])
 #if defined(USE_WR) || defined(USE_LOAD)
 {
   impl_flush();
+  io_flush();
   _cacheflush();
 }
 #endif
@@ -386,11 +356,6 @@ int main(int argc, char * argv[])
   /* ----- READ ----- */
 #if defined(USE_RD)
 {
-#if defined(USE_LOAD)
-  ret = posix_fadvise(fd, 0, NUM_MEM, POSIX_FADV_DONTNEED);
-  assert(-1 != ret);
-#endif
-
   _gettime(&ts);
   impl_fetch_bulk(addr, 0, NUM_MEM);
 #if defined(USE_RAND)
@@ -421,12 +386,11 @@ int main(int argc, char * argv[])
   fprintf(stderr, "  MiB/s        = %9.0f\n", NUM_MEM/(t_rd/1000000.0));
   fprintf(stderr, "  SysPages/s   = %9.0f\n",
     NUM_MEM/sysconf(_SC_PAGESIZE)/(t_rd/1000000.0));
-#if defined(USE_SBMA)
-  fprintf(stderr, "  # SIGSEGV    = %9zu\n", faults);
-#endif
+  impl_aux_info(12, 9);
   fprintf(stderr, "\n");
 
   impl_flush();
+  io_flush();
   _cacheflush();
 }
 #endif
@@ -434,11 +398,6 @@ int main(int argc, char * argv[])
   /* ----- READ/WRITE ----- */
 #if defined(USE_RW)
 {
-#if defined(USE_LOAD)
-  ret = posix_fadvise(fd, 0, NUM_MEM, POSIX_FADV_DONTNEED);
-  assert(-1 != ret);
-#endif
-
   _gettime(&ts);
   impl_fetch_bulk(addr, 0, NUM_MEM);
 #if defined(USE_RAND)
@@ -499,25 +458,17 @@ int main(int argc, char * argv[])
   fprintf(stderr, "  MiB/s        = %9.0f\n", NUM_MEM/(t_rw/1000000.0));
   fprintf(stderr, "  SysPages/s   = %9.0f\n",
     NUM_MEM/sysconf(_SC_PAGESIZE)/(t_rw/1000000.0));
-#if defined(USE_SBMA)
-  fprintf(stderr, "  # SIGSEGV    = %9zu\n", faults);
-#endif
+  impl_aux_info(12, 9);
 }
 #endif
 
   /* ===== Release resources ===== */
 {
   impl_destroy();
+  io_destroy();
 
   ret = munmap(rnum, NUM_MEM);
   assert(0 == ret);
-
-#if defined(USE_LOAD)
-  ret = close(fd);
-  assert(-1 != ret);
-  ret = unlink(TMPFILE);
-  assert(-1 != ret);
-#endif
 }
 
   return EXIT_SUCCESS;
