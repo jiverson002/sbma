@@ -1,15 +1,23 @@
+# build information
+program_build_date `date`
+program_build_commit `git rev-parse --short HEAD`
+program_build_version 0.0.0-rc1
+
 # compiler options
-add_with_param profile no no= yes='-DUSE_PROFILE -pg'
+add_enable_param profile  'enable profiling' '' '-DUSE_PROFILE -pg'
 
 # program options
-add_with_param load  no   no= yes='-DUSE_LOAD'
-add_with_param lazy  no   no= yes='-DUSE_LAZY'
-add_with_param ghost no   no= yes='-DUSE_GHOST'
-add_with_param ctx   no   no= yes='-DUSE_CTX'
-add_with_param rand  no   no= yes='-DUSE_RAND'
-add_with_param lock  no   no= yes='-DUSE_LOCK'
-add_with_param lib   libc libc='-DUSE_LIBC' sbma='-DUSE_SBMA'
-add_with_param op    all  all='-DUSE_RD -DUSE_WR -DUSE_RW'\
+add_enable_param load  'enable disk I/O' '' '-DUSE_LOAD'
+add_enable_param lazy  'enable lazy reading' '' '-DUSE_LAZY'
+add_enable_param ghost 'enable ghost pages' '' '-DUSE_GHOST'
+add_enable_param ctx   'enable use of kernel context' '' '-DUSE_CTX'
+add_enable_param rand  'enable random permutation of data' '' '-DUSE_RAND'
+add_enable_param lock  'enable thread locks' '' '-DUSE_LOCK'
+
+add_with_param lib 'use memory protection library'\
+                     libc libc='-DUSE_LIBC' sbma='-DUSE_SBMA'
+add_with_param op  'use memory access operations'\
+                     all  all='-DUSE_RD -DUSE_WR -DUSE_RW'\
                           rd='-DUSE_RD'\
                           wr='-DUSE_WR'\
                           rw='-USE_RW'\

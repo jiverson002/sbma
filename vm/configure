@@ -129,6 +129,27 @@ function install_headers {
 #}}}2
 }
 
+function add_enable_param {
+#{{{2
+  e=$1
+  shift
+
+  check_exists enablep ${e}
+
+  if [ 1 -eq $? ] ; then
+    # enable param already exists
+    echo "enable param ${e} is added more than once"
+  else
+    str="$1"
+    shift
+    for p in "$@" ; do
+      str="${str},$p"
+    done
+    enablep+=( [${e}]="${str}" )
+  fi
+#}}}2
+}
+
 function add_with_param {
 #{{{2
   w=$1
@@ -148,6 +169,18 @@ function add_with_param {
     with+=( [${w}]="${str}" )
   fi
 #}}}2
+}
+
+function program_build_date {
+  date="$@"
+}
+
+function program_build_version {
+  version="$@"
+}
+
+function program_build_commit {
+  commit="$@"
 }
 
 function p {
@@ -174,9 +207,46 @@ function fill_arrs {
 
   while read k v ; do
     a2+=( [$k]="$v" )
-  done < <(awk -F',' '{for(i=2;i<=NF;++i) {print $i}}' <<< ${a0[$2]} | \
+  done < <(awk -F',' '{for(i=3;i<=NF;++i) {print $i}}' <<< ${a0[$2]} | \
            awk -F'=' '{print $1,$2}')
 #}}}2
+}
+
+function usage {
+  echo "Installation directories:"
+  printf "  %-25s %.60s\n" "--prefix=PREFIX"\
+    "install arch-independent files in PREFIX [/usr/local]"
+  printf "  %-25s %.60s\n" "--exec-prefix=EPREFIX"\
+    "install arch-dependent files in EPREFIX [PREFIX]"
+  echo ""
+
+  echo "Fine tuning of the installation directories:"
+  printf "  %-25s %.60s\n" "--bindir=DIR" "user executables [EPREFIX/bin]"
+  printf "  %-25s %.60s\n" "--libdir=DIR" "object code libraries [EPREFIX/lib]"
+  printf "  %-25s %.60s\n" "--includedir=DIR" "C header files [PREFIX/include]"
+  echo ""
+
+  echo "Build types:"
+  printf "  %-25s %.60s\n" "--build=BUILD" "configure build type [debug]"
+  echo ""
+
+  echo "Optional features:"
+  for e in ${!enablep[@]} ; do
+    declare -a arr1
+    declare -A arr2
+    fill_arrs enablep ${e} arr1 arr2
+    printf "  %-25s %.60s\n" "--enable-${e}" "${arr1[0]} [no]"
+    unset arr1
+    unset arr2
+  done
+  for w in ${!with[@]} ; do
+    declare -a arr1
+    declare -A arr2
+    fill_arrs with ${w} arr1 arr2
+    printf "  %-25s %.60s\n" "--with-${w}=${w^^}" "${arr1[0]} [${arr1[1]}]"
+    unset arr1
+    unset arr2
+  done
 }
 #}}}1
 
@@ -198,7 +268,6 @@ declare -A CONFIG=( \
   ['exec_prefix']='$(prefix)' \
   ['includedir']='$(prefix)/include' \
   ['libdir']='$(exec_prefix)/lib' \
-  ['build']='debug'
 )
 
 declare -A BUILD=( \
@@ -213,6 +282,7 @@ declare -a install_lib
 declare -a install_target
 declare -a install_header
 declare -A with
+declare -A enablep
 #}}}1
 
 
@@ -228,11 +298,14 @@ declare -A with
 #{{{1
 declare -A params
 params+=( ['build']=debug )
+for e in ${!enablep[@]} ; do
+  params+=( ["enable-${e}"]=no )
+done
 for w in ${!with[@]} ; do
   declare -a arr1
   declare -A arr2
   fill_arrs with ${w} arr1 arr2
-  params+=( ["with-${w}"]=${arr1[0]} )
+  params+=( ["with-${w}"]=${arr1[1]} )
   unset arr1
   unset arr2
 done
@@ -245,6 +318,17 @@ done
 #{{{1
 for i in "$@" ; do
   case $i in
+    --enable-*)
+      e=${i#--}
+      if test "${params[${e}]+isset}" ; then
+        params[${e}]=yes
+      else
+        # invalid parameter
+        echo "\`${i%%=*}' is not a valid parameter"
+      fi
+      shift
+      ;;
+
     --with-*)
       w=${i#--}
       w=${w%%=*}
@@ -284,8 +368,16 @@ for i in "$@" ; do
       shift
       ;;
     --build=*)
-      CONFIG['build']=${i#*=}
+      if test "${BUILD[${i#*=}]+isset}" ; then
+        params['build']=${i#*=}
+      else
+        # invalid build type
+        echo "\`${i#*=}' is not a valid build type"
+      fi
       shift
+      ;;
+    --help)
+      usage
       ;;
     *)
       # unknown option
@@ -346,15 +438,27 @@ p \# INTERNAL VARIABLES
 p \#--------------------------------------------------------------------------
 p \#{{{1
 p \# Version information
-p DATE    = \"`date`\"
-p COMMIT  = \"`git rev-parse --short HEAD`\"
-p VERSION = \"0.0.0-rc1\"
+p DATE    = \"${date}\"
+p COMMIT  = \"${commit}\"
+p VERSION = \"${version}\"
 p
 p "AUTOFLAGS = \\"
-if [ 'x' != "x${BUILD[${CONFIG['build']}]}" ] ; then
-  p " ${BUILD[${CONFIG['build']}]}\\"
+if [ 'x' != "x${BUILD[${params['build']}]}" ] ; then
+  p " ${BUILD[${params['build']}]}\\"
 fi
 p ' -DVERSION=$(VERSION) -DDATE=$(DATE) -DCOMMIT=$(COMMIT)\'
+
+for e in "${!enablep[@]}" ; do
+  IFS=','
+  declare -a arr1=( ${enablep[${e}]} )
+  IFS=' '
+  if [ "yes" == "${params["enable-${e}"]}" ] ; then
+    n " ${arr1[2]}"
+  elif [ "x" != "x${arr1[1]}" ] ; then
+    n " ${arr1[1]}"
+  fi
+  unset arr1
+done
 for w in "${!with[@]}" ; do
   declare -a arr1
   declare -A arr2

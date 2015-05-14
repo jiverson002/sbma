@@ -30,7 +30,7 @@ io_read(void * const addr, size_t const off, size_t size)
   assert(MAP_FAILED != tmp_addr);
 #endif
 
-  fd = open(TMPFILE, O_RDONLY);
+  fd = open(_tmp_file, O_RDONLY);
   assert(-1 != fd);
 
   ret = lseek(fd, off, SEEK_SET);
@@ -66,7 +66,7 @@ io_write(void const * const addr, size_t size)
   ssize_t ret;
   char const * buf;
 
-  fd = open(TMPFILE, O_WRONLY);
+  fd = open(_tmp_file, O_WRONLY);
   assert(-1 != fd);
 
   buf = (char const*)addr;

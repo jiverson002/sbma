@@ -295,7 +295,7 @@ int main(int argc, char * argv[])
   fprintf(stderr, "  MiB/s        = %9.0f\n", NUM_MEM/(t_wr/1000000.0));
   fprintf(stderr, "  SysPages/s   = %9.0f\n",
     NUM_MEM/sysconf(_SC_PAGESIZE)/(t_wr/1000000.0));
-#if !defined(USE_LIBC)
+#if defined(USE_SBMA)
   fprintf(stderr, "  # SIGSEGV    = %9zu\n", faults);
 #endif
   fprintf(stderr, "\n");
@@ -352,7 +352,7 @@ int main(int argc, char * argv[])
   fprintf(stderr, "  MiB/s        = %9.0f\n", NUM_MEM/(t_wr/1000000.0));
   fprintf(stderr, "  SysPages/s   = %9.0f\n",
     NUM_MEM/sysconf(_SC_PAGESIZE)/(t_wr/1000000.0));
-#if !defined(USE_LIBC)
+#if defined(USE_SBMA)
   fprintf(stderr, "  # SIGSEGV    = %9zu\n", faults);
 #endif
   fprintf(stderr, "\n");
@@ -421,7 +421,7 @@ int main(int argc, char * argv[])
   fprintf(stderr, "  MiB/s        = %9.0f\n", NUM_MEM/(t_rd/1000000.0));
   fprintf(stderr, "  SysPages/s   = %9.0f\n",
     NUM_MEM/sysconf(_SC_PAGESIZE)/(t_rd/1000000.0));
-#if !defined(USE_LIBC)
+#if defined(USE_SBMA)
   fprintf(stderr, "  # SIGSEGV    = %9zu\n", faults);
 #endif
   fprintf(stderr, "\n");
@@ -499,7 +499,7 @@ int main(int argc, char * argv[])
   fprintf(stderr, "  MiB/s        = %9.0f\n", NUM_MEM/(t_rw/1000000.0));
   fprintf(stderr, "  SysPages/s   = %9.0f\n",
     NUM_MEM/sysconf(_SC_PAGESIZE)/(t_rw/1000000.0));
-#if !defined(USE_LIBC)
+#if defined(USE_SBMA)
   fprintf(stderr, "  # SIGSEGV    = %9zu\n", faults);
 #endif
 }

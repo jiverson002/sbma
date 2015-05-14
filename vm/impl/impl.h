@@ -8,15 +8,14 @@
 
 #include <assert.h>
 #include <stdint.h>
-#include <stdlib.h>
 #include <string.h>
 #include <sys/mman.h>
-#include <sys/stat.h>
 #include <time.h>
 #include <unistd.h>
 
 #if defined(USE_LOAD)
 # include <fcntl.h>
+# include <sys/stat.h>
 #endif
 
 #if defined(USE_SBMA)
@@ -26,10 +25,6 @@
 #if defined(USE_CTX)
 # include <sys/ucontext.h>
 #endif
-
-#define SYNC   1
-#define DIRTY  2
-#define ONDISK 4
 
 #ifdef __cplusplus
 extern "C" {

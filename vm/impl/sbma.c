@@ -2,6 +2,10 @@
 
 #if defined(USE_SBMA)
 
+#define SYNC   1
+#define DIRTY  2
+#define ONDISK 4
+
 size_t faults=0;
 
 static char * _pflags=NULL;
