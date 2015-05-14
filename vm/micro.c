@@ -334,7 +334,7 @@ int main(int argc, char * argv[])
   /* ===== File setup ===== */
 #if defined(USE_LOAD)
 {
-  io_init(TMPFILE);
+  io_init(TMPFILE, NUM_MEM);
 
   io_write(addr, NUM_MEM);
 

@@ -50,7 +50,7 @@ extern "C" {
 
 #if defined(USE_LOAD)
 /* io.c */
-extern void io_init(char const * const);
+extern void io_init(char const * const __tmp_file, size_t const __num_mem);
 extern void io_destroy(void);
 extern void io_read(void * const, size_t const, size_t);
 extern void io_write(void const * const, size_t);
