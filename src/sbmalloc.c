@@ -1540,3 +1540,48 @@ SB_finalize(void)
 {
   sb_internal_destroy();
 }
+
+
+/****************************************************************************/
+/*! Report swap usage. */
+/****************************************************************************/
+extern int
+SB_swap_usage(int const tag)
+{
+  int fd=-1;
+  size_t size, used;
+  ssize_t ret, retval=-1;
+  char * tok;
+  char buf[16384], file[FILENAME_MAX];
+
+  if (-1 == (fd=open("/proc/swaps", O_RDONLY)))
+    goto CLEANUP;
+
+  if (-1 == libc_read(fd, buf, sizeof(buf)))
+    goto CLEANUP;
+
+  /* skip header line */
+  tok = strtok(buf, "\n");
+
+  /* loop through swap lines */
+  tok = strtok(NULL, "\n");
+  while (NULL != tok) {
+    if (3 != (ret=sscanf(tok, "%s %*s %zu %zu", file, &size, &used)))
+      goto CLEANUP;
+    if (0 > printf("[%5d:%d] swap usage on %s: %zu / %zu\n", (int)getpid(),
+      tag, file, used, size))
+    {
+      goto CLEANUP;
+    }
+    tok = strtok(NULL, "\n");
+  }
+
+  retval = 0;
+
+CLEANUP:
+  if (-1 == retval)
+    printf("swap usage failed\n");
+  if (-1 != fd)
+    close(fd);
+  return retval;
+}
