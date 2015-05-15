@@ -388,6 +388,7 @@ sb_internal_load_range(struct sb_alloc * const sb_alloc,
 //# else
 //    SBMMAP(tmp_addr, (ip_end-ip_beg)*psize, PROT_WRITE);
 //# endif
+//    SBMLOCK(tmp_addr, (ip_end-ip_beg)*psize);
 //#elif !defined(USE_PTHREAD)
 # ifdef USE_CHECKSUM
     SBMPROTECT(app_addr+(ip_beg*psize), (ip_end-ip_beg)*psize,
@@ -396,6 +397,7 @@ sb_internal_load_range(struct sb_alloc * const sb_alloc,
     SBMPROTECT(app_addr+(ip_beg*psize), (ip_end-ip_beg)*psize, PROT_WRITE);
 # endif
     tmp_addr = app_addr;
+    SBMLOCK(tmp_addr+(ip_beg*psize), (ip_end-ip_beg)*psize);
 //#endif
 
     /* Load only those pages which are on disk and are not already synched
@@ -536,9 +538,8 @@ sb_internal_load_range(struct sb_alloc * const sb_alloc,
 
     SBMPROTECT(app_addr+(ip_beg*psize), (ip_end-ip_beg)*psize,
       PROT_READ|PROT_WRITE);
+    SBMLOCK(app_addr+(ip_beg*psize), (ip_end-ip_beg)*psize);
   }
-
-  SBMLOCK(app_addr+(ip_beg*psize), (ip_end-ip_beg)*psize);
 
   return numrd;
 }
@@ -924,6 +925,7 @@ sb_internal_init(void)
   if (-1 == getrlimit(RLIMIT_MEMLOCK, &lim))
     goto CLEANUP;
   lim.rlim_cur = lim.rlim_max;
+  /*printf("[%5d] %zu %zu\n", (int)getpid(), lim.rlim_cur, lim.rlim_max);*/
   if (-1 == setrlimit(RLIMIT_MEMLOCK, &lim))
     goto CLEANUP;
 
@@ -1398,6 +1400,7 @@ SB_malloc(size_t const len)
 
   /* read/write protect internal memory */
   SBMPROTECT(app_addr+npages*psize, meta_size, PROT_READ|PROT_WRITE);
+  SBMLOCK(app_addr+npages*psize, meta_size);
 
   /* allocate the allocation structure */
   sb_alloc = (struct sb_alloc*)(app_addr+npages*psize);
@@ -1514,6 +1517,7 @@ SB_free(void * const addr)
   if (-1 == unlink(sb_alloc->fname))
     sb_abort(1);
 
+  SBMUNLOCK(sb_alloc->app_addr, sb_alloc->msize);
   SBMUNMAP(sb_alloc->app_addr, sb_alloc->msize);
 }
 
