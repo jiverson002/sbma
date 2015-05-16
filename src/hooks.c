@@ -221,9 +221,6 @@ libc_write(int const fd, void const * const buf, size_t const count)
 
   HOOK_INIT(write);
 
-  //printf("%s\n", __func__);
-  (void)SB_mtouch((void*)buf, count);
-
   return _libc_write(fd, buf, count);
 }
 

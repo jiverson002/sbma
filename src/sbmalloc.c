@@ -1,6 +1,28 @@
-#include "sbconfig.h"
+#ifndef _GNU_SOURCE
+# define _GNU_SOURCE
+#endif
 
-#include <assert.h>       /* assert */
+#ifndef _POSIX_C_SOURCE
+# define _POSIX_C_SOURCE 200112L
+#else
+# if _POSIX_C_SOURCE < 200112L
+#   undef _POSIX_C_SOURCE
+#   define _POSIX_C_SOURCE 200112L
+# endif
+#endif
+
+#ifdef _BDMPI
+# ifndef USE_PTHREAD
+#   define USE_PTHREAD
+# endif
+#endif
+
+#ifdef NDEBUG
+# undef NDEBUG
+# include <assert.h>      /* assert */
+# define NDEBUG
+#endif
+
 #include <errno.h>        /* errno */
 #include <fcntl.h>        /* O_RDWR, O_CREAT, O_EXCL, open, posix_fadvise */
 #include <malloc.h>       /* struct mallinfo */
@@ -13,25 +35,142 @@
 #include <sys/resource.h> /* rlimit */
 #include <sys/stat.h>     /* S_IRUSR, S_IWUSR, open */
 #include <sys/time.h>     /* rlimit */
-#include <sys/types.h>    /* open */
+#include <sys/types.h>    /* open, ssize_t */
 #include <unistd.h>       /* close, read, write, sysconf */
 
 #include "sbmalloc.h"     /* sbmalloc library */
 
 
-#undef sb_abort
-#define sb_abort(...) assert(0)
+#ifdef USE_PTHREAD
+# define SBDEADLOCK 0   /* 0: no deadlock diagnostics, */
+                        /* 1: deadlock diagnostics */
 
+# include <pthread.h>   /* pthread library */
+# include <syscall.h>   /* SYS_gettid, syscall */
+# include <time.h>      /* CLOCK_REALTIME, struct timespec, clock_gettime */
 
-#undef SB_INIT_CHECK
+# define _SB_GET_LOCK(LOCK)                                                 \
+do {                                                                        \
+  int ret = pthread_mutex_lock(LOCK);                                       \
+  assert(0 == ret);                                                         \
+  if (SBDEADLOCK) printf("[%5d] mtx get %s:%d %s (%p)\n",                   \
+    (int)syscall(SYS_gettid), __func__, __LINE__, #LOCK, (void*)(LOCK));    \
+} while (0)
+
+# define SB_INIT_LOCK(LOCK)                                                 \
+do {                                                                        \
+  int ret = pthread_mutex_init(LOCK, NULL);                                 \
+  assert(0 == ret);                                                         \
+} while (0)
+
+# define SB_FREE_LOCK(LOCK)                                                 \
+do {                                                                        \
+  int ret = pthread_mutex_destroy(LOCK);                                    \
+  assert(0 == ret);                                                         \
+} while (0)
+
+# if !defined(SBDEADLOACK) || SBDEADLOCK == 0
+#   define SB_GET_LOCK(LOCK) _SB_GET_LOCK(LOCK)
+# else
+#   define SB_GET_LOCK(LOCK)                                                \
+do {                                                                        \
+  int ret;                                                                  \
+  struct timespec ts;                                                       \
+  ret = clock_gettime(CLOCK_REALTIME, &ts);                                 \
+  assert(0 == ret);                                                         \
+  ts.tv_sec += 10;                                                          \
+  ret = pthread_mutex_timedlock(LOCK, &ts)));                               \
+  if (ETIMEDOUT == ret) {                                                   \
+    printf("[%5d] mtx lock timed-out %s:%d %s (%p)\n",                      \
+      (int)syscall(SYS_gettid), __func__, __LINE__, #LOCK, (void*)(LOCK));  \
+    _SB_GET_LOCK(LOCK);                                                     \
+  }                                                                         \
+  assert(0 == ret || ETIMEDOUT == ret);                                     \
+  if (SBDEADLOCK) printf("[%5d] mtx get %s:%d %s (%p)\n",                   \
+    (int)syscall(SYS_gettid), __func__, __LINE__, #LOCK, (void*)(LOCK));    \
+} while (0)
+# endif
+
+# define SB_LET_LOCK(LOCK)                                                  \
+do {                                                                        \
+  int ret = pthread_mutex_unlock(LOCK);                                     \
+  assert(0 == ret);                                                         \
+  if (SBDEADLOCK) printf("[%5d] mtx let %s:%d %s (%p)\n",                   \
+    (int)syscall(SYS_gettid), __func__, __LINE__, #LOCK, (void*)(LOCK));    \
+} while (0)
+#else
+# define SB_INIT_LOCK(LOCK)
+# define SB_FREE_LOCK(LOCK)
+# define SB_GET_LOCK(LOCK)
+# define SB_LET_LOCK(LOCK)
+#endif
+
+#define SB_TO_SYS(NPAGES, PAGESIZE) \
+  ((NPAGES)*(PAGESIZE)/sysconf(_SC_PAGESIZE))
+
 #define SB_INIT_CHECK\
   if (0 == sb_info.init)\
     __info_init__();
+
+#define MMAP_FLAGS MAP_PRIVATE|MAP_ANONYMOUS|MAP_NORESERVE
+
+#define SBMMAP(ADDR, LEN, PROT)                                             \
+do {                                                                        \
+  (ADDR) = (uintptr_t)mmap(NULL, LEN, PROT, MMAP_FLAGS, -1, 0);             \
+  assert(MAP_FAILED != (void*)(ADDR));                                      \
+} while (0)
+
+#define SBMREMAP(ADDR, SIZE, NADDR)                                         \
+do {                                                                        \
+  void * SBMREMAP_addr = mremap((void*)(ADDR), SIZE, SIZE,                  \
+    MREMAP_MAYMOVE|MREMAP_FIXED, NADDR);                                    \
+  assert(MAP_FAILED != SBMREMAP_addr);                                      \
+} while (0)
+
+#define SBMUNMAP(ADDR, LEN)                                                 \
+do {                                                                        \
+  int ret = munmap((void*)(ADDR), LEN);                                     \
+  assert(-1 != ret);                                                        \
+} while (0)
+
+#define SBMLOCK(ADDR, LEN)                                                  \
+do {                                                                        \
+  int ret = libc_mlock((void*)(ADDR), LEN);                                 \
+  assert(-1 != ret);                                                        \
+} while (0)
+
+#define SBMUNLOCK(ADDR, LEN)                                                \
+do {                                                                        \
+  int ret = libc_munlock((void*)(ADDR), LEN);                               \
+  assert(-1 != ret);                                                        \
+} while (0)
+
+#define SBMADVISE(ADDR, LEN, FLAG)                                          \
+do {                                                                        \
+  int ret = madvise((void*)(ADDR), LEN, FLAG);                              \
+  assert(-1 != ret);                                                        \
+} while (0)
+
+#define SBMPROTECT(ADDR, LEN, PROT)                                         \
+do {                                                                        \
+  /*printf("[%5d]   %s %zu -- %zu\n", (int)getpid(),\
+    0!=((PROT)&PROT_READ)?0!=((PROT)&PROT_WRITE)?"R/W":"R  ":"W  ",\
+    (size_t)(ADDR), (size_t)(ADDR)+(LEN));*/\
+  int ret = mprotect((void*)(ADDR), LEN, PROT);                             \
+  assert(-1 != ret);                                                        \
+} while (0)
+
+#define SBFADVISE(FD, OFF, LEN, FLAG)                                       \
+do {                                                                        \
+  int ret = posix_fadvise(FD, OFF, LEN, FLAG);                              \
+  assert(-1 != ret);                                                        \
+} while (0)
 
 
 /****************************************************************************/
 /* Function prototypes for hooks. */
 /****************************************************************************/
+extern int     libc_open(char const * path, int flags, ...);
 extern ssize_t libc_read(int const fd, void * const buf, size_t const count);
 extern ssize_t libc_write(int const fd, void const * const buf, size_t const count);
 extern int     libc_mlock(void const * const addr, size_t const len);
@@ -45,8 +184,26 @@ extern int     libc_munlock(void const * const addr, size_t const len);
 {\
   SB_GET_LOCK(&(sb_info.lock));\
   (FIELD) += (VAL);\
-  SB_GET_LOCK(&(sb_info.lock));\
+  SB_LET_LOCK(&(sb_info.lock));\
 }
+
+
+/****************************************************************************/
+/*
+ *  Page state code bits:
+ *
+ *    bit 0 ==    0:                     1: synchronized
+ *    bit 1 ==    0: clean               1: dirty
+ *    bit 2 ==    0:                     1: stored on disk
+ */
+/****************************************************************************/
+enum sb_states
+{
+  SBPAGE_SYNC   = 1,
+  SBPAGE_DIRTY  = 2,
+  SBPAGE_DUMP   = 4,
+  SBPAGE_ONDISK = 8
+};
 
 
 /****************************************************************************/
@@ -87,9 +244,8 @@ static struct sb_info
   size_t numrd;             /* total number of pages read */
   size_t numwr;             /* total number of pages written */
   size_t curpages;          /* current pages loaded */
-  size_t numpages;          /* current pages allocated */
-  size_t totpages;          /* total pages allocated */
   size_t maxpages;          /* maximum number of pages allocated */
+  size_t numpages;          /* current pages allocated */
 
   char fstem[FILENAME_MAX]; /* the file stem where the data is stored */
 
@@ -112,9 +268,8 @@ static struct sb_info
   .numrd             = 0,
   .numwr             = 0,
   .curpages          = 0,
-  .numpages          = 0,
-  .totpages          = 0,
   .maxpages          = 0,
+  .numpages          = 0,
   .fstem             = {'/', 't', 'm', 'p', '/', '\0'},
   .head              = NULL,
   .acct_charge_cb    = NULL,
@@ -135,18 +290,6 @@ static int sb_opts[SBOPT_NUM]=
   [SBOPT_NUMPAGES]    = 1,
   [SBOPT_LAZYREAD]    = 0,
   [SBOPT_MULTITHREAD] = 1
-};
-
-
-/****************************************************************************/
-/* Debug strings. */
-/****************************************************************************/
-static char sb_dbg_str[SBDBG_NUM][100]=
-{
-  [SBDBG_FATAL] = "error",
-  [SBDBG_DIAG]  = "diagnostic",
-  [SBDBG_LEAK]  = "memory",
-  [SBDBG_INFO]  = "info"
 };
 
 
@@ -267,24 +410,26 @@ __swap_in__(struct sb_alloc * const __alloc, size_t const __beg,
   SBMLOCK(addr, __num*psize);
 
   /* open the file for reading */
-  fd = open(__alloc->fname, O_RDONLY);
+  fd = libc_open(__alloc->fname, O_RDONLY);
   assert(-1 != fd);
 
   /* load only those sbpages which were previously written to disk and have
    * not since been dumped */
   for (ipfirst=-1,ip=__beg; ip<=end; ++ip) {
-    /* make sure no flags are set besides possibly SBPAGE_ONDISK */
-    assert(__if_flags__(flags[ip], 0, ~SBPAGE_ONDISK));
-
-    if (ip != end && __if_flags__(flags[ip], SBPAGE_ONDISK, 0)) {
-      if (-1 == ipfirst)
-        ipfirst = ip;
+    if (ip != end) {
+      /* make sure no flags are set besides possibly SBPAGE_ONDISK */
+      assert(__if_flags__(flags[ip], 0, ~SBPAGE_ONDISK));
 
       /* + SYNC flag */
       flags[ip] |= SBPAGE_SYNC;
     }
+
+    if (ip != end && __if_flags__(flags[ip], SBPAGE_ONDISK, 0)) {
+      if (-1 == ipfirst)
+        ipfirst = ip;
+    }
     else if (-1 != ipfirst) {
-      ret = __pread__(fd, (void*)(addr+(ipfirst*psize)),
+      ret = __pread__(fd, (void*)(addr+((ipfirst-__beg)*psize)),
         (ip-ipfirst)*psize, ipfirst*psize);
       assert(-1 != ret);
 
@@ -331,8 +476,6 @@ __swap_out__(struct sb_alloc * const __alloc, size_t const __beg,
     return -1;
   if (__beg > __alloc->n_pages-__num)
     return -1;
-  if (__num > __alloc->ld_pages)
-    return -1;
 
   /* shortcut by checking to see if no pages are currently loaded */
   /* TODO: if we track the number of dirty pages, then this can do a better
@@ -347,29 +490,38 @@ __swap_out__(struct sb_alloc * const __alloc, size_t const __beg,
   end   = __beg+__num;
 
   /* open the file for writing */
-  fd = open(__alloc->fname, O_WRONLY);
+  fd = libc_open(__alloc->fname, O_WRONLY);
   assert(-1 != fd);
 
   /* go over the pages and write the ones that have changed. perform the
    * writes in contigous chunks of changed pages. */
   for (ipfirst=-1,ip=__beg; ip<=end; ++ip) {
-    /* make sure that either SBPAGE_SYNC or SBPAGE_DIRTY is set and no other
-     * flags besides possibly SBPAGE_ONDISK */
-    assert((__if_flags__(flags[ip], SBPAGE_SYNC, 0) ||
-            __if_flags__(flags[ip], SBPAGE_DIRTY, 0)) &&
-            __if_flags__(flags[ip], 0, ~(SBPAGE_SYNC|SBPAGE_DIRTY|SBPAGE_ONDISK)));
+    if (ip != end && __if_flags__(flags[ip], 0, SBPAGE_DIRTY)) {
+      /* make sure that flags besides possibly SBPAGE_SYNC or SBPAGE_ONDISK */
+      assert(__if_flags__(flags[ip], 0, ~(SBPAGE_SYNC|SBPAGE_ONDISK)));
 
-    /* - all flags */
-    flags[ip] = 0;
+      if (__if_flags__(flags[ip], SBPAGE_SYNC, 0)) {
+        assert(__alloc->ld_pages > 0);
+        __alloc->ld_pages--;
+      }
+
+      /* - all flags except ONDISK */
+      flags[ip] &= SBPAGE_ONDISK;
+    }
 
     if (ip != end && __if_flags__(flags[ip], SBPAGE_DIRTY, 0)) {
+      /* make sure that flags besides possibly SBPAGE_DIRTY or SBPAGE_ONDISK */
+      assert(__if_flags__(flags[ip], 0, ~(SBPAGE_DIRTY|SBPAGE_ONDISK)));
       if (-1 == ipfirst)
         ipfirst = ip;
+
+      assert(__alloc->ld_pages > 0);
+      __alloc->ld_pages--;
 
       flags[ip] = SBPAGE_ONDISK;
     }
     else if (-1 != ipfirst) {
-      ret = __pwrite__(fd, (void*)(addr+(ipfirst*psize)), __num*psize,
+      ret = __pwrite__(fd, (void*)(addr+(ipfirst*psize)), (ip-ipfirst)*psize,
         ipfirst*psize);
       assert(-1 != ret);
 
@@ -388,9 +540,6 @@ __swap_out__(struct sb_alloc * const __alloc, size_t const __beg,
   SBMUNLOCK(addr+(__beg*psize), __num*psize);
   SBMPROTECT(addr+(__beg*psize), __num*psize, PROT_NONE);
   SBMADVISE(addr+(__beg*psize), __num*psize, MADV_DONTNEED);
-
-  /* decrement the number of loaded sbpages for the alloction */
-  __alloc->ld_pages -= __num;
 
   /* return the number of syspages written to disk */
   return SB_TO_SYS(numwr, psize);
@@ -536,22 +685,26 @@ __info_segv__(int const sig, siginfo_t * const si, void * const ctx)
 
     /* swap in the required memory */
     if (0 == sb_opts[SBOPT_LAZYREAD]) {
-      ld_pages = SB_TO_SYS(alloc->n_pages-alloc->ld_pages, psize);
+      ld_pages = alloc->n_pages-alloc->ld_pages;
       numrd    = __swap_in__(alloc, 0, alloc->n_pages);
+      assert(-1 != numrd);
     }
     else {
-      ld_pages = SB_TO_SYS(1, psize);
+      ld_pages = 1;
       numrd    = __swap_in__(alloc, ip, 1);
+      assert(-1 != numrd);
     }
 
     /* release lock on alloction */
     SB_LET_LOCK(&(alloc->lock));
 
-    /* track number of read faults, syspages read from disk, and syspages
-     * currently loaded */
+    /* track number of read faults, syspages read from disk, syspages
+     * currently loaded, and high water mark for syspages loaded */
     __INFO_TRACK__(sb_info.numrf, 1);
     __INFO_TRACK__(sb_info.numrd, numrd);
-    __INFO_TRACK__(sb_info.curpages, ld_pages);
+    __INFO_TRACK__(sb_info.curpages, SB_TO_SYS(ld_pages, psize));
+    __INFO_TRACK__(sb_info.maxpages,
+      sb_info.curpages>sb_info.maxpages?sb_info.curpages-sb_info.maxpages:0);
   }
   else {
     /* sanity check */
@@ -562,7 +715,7 @@ __info_segv__(int const sig, siginfo_t * const si, void * const ctx)
     flags[ip] = SBPAGE_DIRTY;
 
     /* update protection to read-write */
-    SBMPROTECT(addr+(ip*psize), psize, PROT_READ|PROT_WRITE);
+    SBMPROTECT(alloc->base+(ip*psize), psize, PROT_READ|PROT_WRITE);
 
     /* release lock on alloction */
     SB_LET_LOCK(&(alloc->lock));
@@ -648,8 +801,7 @@ extern void *
 SB_mmap(size_t const __len)
 {
   int fd=-1;
-  size_t psize, m_len, m_pages, ld_pages;
-  size_t addr=MAP_FAILED;
+  size_t ip, psize, m_len, m_pages, ld_pages, addr=MAP_FAILED;
   char * fname, * flags;
   struct sb_alloc * alloc;
 
@@ -662,7 +814,7 @@ SB_mmap(size_t const __len)
   /* compute allocation sizes */
   psize    = sb_info.pagesize;
   ld_pages = 1+((__len-1)/psize);
-  m_len    = (sizeof(struct sb_alloc))+(ld_pages+1)+(100+strlen(sb_info.fstem));
+  m_len    = (sizeof(struct sb_alloc))+ld_pages+(100+strlen(sb_info.fstem));
   m_pages  = 1+((m_len-1)/psize);
 
   /* invoke charge callback function before allocating any memory */
@@ -682,7 +834,10 @@ SB_mmap(size_t const __len)
   /* set pointer for the per-page flag vector */
   flags = (char*)((uintptr_t)alloc+sizeof(struct sb_alloc));
   /* set pointer for the filename for storage purposes */
-  fname = (char*)((uintptr_t)flags+(ld_pages+1));
+  fname = (char*)((uintptr_t)flags+ld_pages);
+
+  for (ip=0; ip<ld_pages; ++ip)
+    flags[ip] = SBPAGE_SYNC;
 
   /* create and truncate the file to size */
   if (0 > sprintf(fname, "%s%d-%p", sb_info.fstem, (int)getpid(),
@@ -690,7 +845,7 @@ SB_mmap(size_t const __len)
   {
     goto CLEANUP;
   }
-  if (-1 == (fd=open(fname, O_RDWR|O_CREAT|O_EXCL, S_IRUSR|S_IWUSR))) {
+  if (-1 == (fd=libc_open(fname, O_RDWR|O_CREAT|O_EXCL, S_IRUSR|S_IWUSR))) {
     goto CLEANUP;
   }
   if (-1 == ftruncate(fd, ld_pages*psize)) {
@@ -719,10 +874,12 @@ SB_mmap(size_t const __len)
   sb_info.head = alloc;
   SB_LET_LOCK(&(sb_info.lock));
 
-  /* track number of syspages currently loaded */
+  /* track number of syspages currently loaded, high water mark number of
+   * syspages loaded and syspages currently allocated */
   __INFO_TRACK__(sb_info.curpages, SB_TO_SYS(m_pages+ld_pages, psize));
-  /* track number of syspages currently allocated */
-  __INFO_TRACK__(sb_info.totpages, SB_TO_SYS(m_pages+ld_pages, psize));
+  __INFO_TRACK__(sb_info.maxpages,
+    sb_info.curpages>sb_info.maxpages?sb_info.curpages-sb_info.maxpages:0);
+  __INFO_TRACK__(sb_info.numpages, SB_TO_SYS(m_pages+ld_pages, psize));
 
   return (void *)alloc->base;
 
@@ -772,18 +929,17 @@ SB_munmap(void * const __addr, size_t const __len)
   n_pages  = alloc->n_pages;
   ld_pages = alloc->ld_pages;
 
-  /* track number of syspages currently loaded and number of syspages
-   * currently allocated */
+  /* track number of syspages currently loaded and allocated */
   __INFO_TRACK__(sb_info.curpages, -SB_TO_SYS(m_pages+ld_pages, psize));
-  __INFO_TRACK__(sb_info.totpages, -SB_TO_SYS(m_pages+n_pages, psize));
+  __INFO_TRACK__(sb_info.numpages, -SB_TO_SYS(m_pages+n_pages, psize));
+
+  ret = unlink(alloc->fname);
+  assert(-1 != ret);
 
   /* free resources */
   SB_FREE_LOCK(&(alloc->lock));
   SBMUNLOCK(alloc->base, (m_pages+n_pages)*psize);
   SBMUNMAP(alloc->base, (m_pages+n_pages)*psize);
-
-  ret = unlink(alloc->fname);
-  assert(-1 != ret);
 
   /* invoke discharge callback function after releasing memory */
   if (NULL != sb_info.acct_discharge_cb)
@@ -799,7 +955,7 @@ SB_munmap(void * const __addr, size_t const __len)
 extern ssize_t
 SB_mtouch(void * const __addr, size_t __len)
 {
-  size_t ip, beg, end, psize, ld_pages, numrd;
+  size_t ip, beg, end, psize, num, ld_pages, numrd;
   uintptr_t addr;
   char * flags;
   struct sb_alloc * alloc;
@@ -839,17 +995,21 @@ SB_mtouch(void * const __addr, size_t __len)
   /* scan the supplied range and swap in any necessary pages */
   for (numrd=0,ld_pages=0,ip=beg; ip<end; ++ip) {
     if (__if_flags__(flags[ip], 0, SBPAGE_SYNC|SBPAGE_DIRTY)) {
-      numrd += __swap_in__(alloc, ip, 1);
+      num    = __swap_in__(alloc, ip, 1);
+      assert(-1 != num);
+      numrd += num;
       ld_pages++;
     }
   }
 
   SB_LET_LOCK(&(alloc->lock));
 
-  /* track number of syspages currently loaded and number of syspages
-   * written to disk */
+  /* track number of syspages currently loaded, number of syspages written to
+   * disk, and high water mark for syspages loaded */
   __INFO_TRACK__(sb_info.curpages, SB_TO_SYS(ld_pages, psize));
   __INFO_TRACK__(sb_info.numrd, numrd);
+  __INFO_TRACK__(sb_info.maxpages,
+    sb_info.curpages>sb_info.maxpages?sb_info.curpages-sb_info.maxpages:0);
 
   return SB_TO_SYS(ld_pages, psize);
 }
@@ -962,6 +1122,8 @@ SB_mevict(void * const __addr)
 
   ld_pages = alloc->ld_pages;
   numwr    = __swap_out__(alloc, 0, alloc->n_pages);
+  assert(-1 != numwr);
+  assert(0 == alloc->ld_pages);
 
   SB_LET_LOCK(&(alloc->lock));
 
@@ -984,19 +1146,20 @@ SB_mevict(void * const __addr)
 extern ssize_t
 SB_mevictall(void)
 {
-  size_t psize, ld_pages=0, numwr=0;
+  size_t psize, num, ld_pages=0, numwr=0;
   struct sb_alloc * alloc;
 
   SB_INIT_CHECK
 
   SB_GET_LOCK(&(sb_info.lock));
-
   psize = sb_info.pagesize;
-
   for (alloc=sb_info.head; NULL!=alloc; alloc=alloc->next) {
     SB_GET_LOCK(&(alloc->lock));
     ld_pages += alloc->ld_pages;
-    numwr    += __swap_out__(alloc, 0, alloc->n_pages);
+    num       = __swap_out__(alloc, 0, alloc->n_pages);
+    numwr    += num;
+    assert(-1 != num);
+    assert(0 == alloc->ld_pages);
     SB_LET_LOCK(&(alloc->lock));
   }
   SB_LET_LOCK(&(sb_info.lock));
@@ -1032,10 +1195,8 @@ SB_mexist(void const * const __addr)
 extern int
 SB_mopt(int const param, int const value)
 {
-  if (param >= SBOPT_NUM) {
-    SBWARN(SBDBG_DIAG)("param too large");
+  if (param >= SBOPT_NUM)
     return -1;
-  }
 
   sb_opts[param] = value;
 
@@ -1081,15 +1242,17 @@ SB_minfo(void)
 {
   struct mallinfo mi;
 
-  mi.smblks  = sb_info.numrf; /* number of read faults */
-  mi.ordblks = sb_info.numwf; /* number of write faults */
+  SB_GET_LOCK(&(sb_info.lock));
+  mi.smblks  = sb_info.numrf; /* read faults */
+  mi.ordblks = sb_info.numwf; /* write faults */
 
-  mi.usmblks = sb_info.numrd; /* number of pages read from disk */
-  mi.fsmblks = sb_info.numwr; /* number of pages wrote to disk */
+  mi.usmblks = sb_info.numrd; /* syspages read from disk */
+  mi.fsmblks = sb_info.numwr; /* syspages wrote to disk */
 
-  mi.uordblks = sb_info.curpages; /* pages loaded at time of call */
-  mi.fordblks = sb_info.numpages; /* pages allocated at time of call */
-  mi.keepcost = sb_info.totpages; /* total number of allocated pages */
+  mi.uordblks = sb_info.curpages; /* syspages loaded */
+  mi.fordblks = sb_info.maxpages; /* high water mark for loaded syspages */
+  mi.keepcost = sb_info.numpages; /* syspages allocated */
+  SB_LET_LOCK(&(sb_info.lock));
 
   return mi;
 }
@@ -1111,5 +1274,52 @@ SB_init(void)
 extern void
 SB_finalize(void)
 {
+  struct sb_alloc * alloc;
+
   __info_destroy__();
+}
+
+
+/****************************************************************************/
+/*! Report swap usage. */
+/****************************************************************************/
+extern int
+SB_swap_usage(int const tag)
+{
+  int fd=-1;
+  size_t size, used;
+  ssize_t ret, retval=-1;
+  char * tok;
+  char buf[16384], file[FILENAME_MAX];
+
+  if (-1 == (fd=open("/proc/swaps", O_RDONLY)))
+    goto CLEANUP;
+
+  if (-1 == libc_read(fd, buf, sizeof(buf)))
+    goto CLEANUP;
+
+  /* skip header line */
+  tok = strtok(buf, "\n");
+
+  /* loop through swap lines */
+  tok = strtok(NULL, "\n");
+  while (NULL != tok) {
+    if (3 != (ret=sscanf(tok, "%s %*s %zu %zu", file, &size, &used)))
+      goto CLEANUP;
+    if (0 > printf("[%5d:%d] swap usage on %s: %zu / %zu\n", (int)getpid(),
+      tag, file, used, size))
+    {
+      goto CLEANUP;
+    }
+    tok = strtok(NULL, "\n");
+  }
+
+  retval = 0;
+
+CLEANUP:
+  if (-1 == retval)
+    printf("swap usage failed\n");
+  if (-1 != fd)
+    close(fd);
+  return retval;
 }

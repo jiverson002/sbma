@@ -37,24 +37,6 @@ enum sb_dbgs
 };
 
 
-/****************************************************************************/
-/*
- *  Page state code bits:
- *
- *    bit 0 ==    0:                     1: synchronized
- *    bit 1 ==    0: clean               1: dirty
- *    bit 2 ==    0:                     1: stored on disk
- */
-/****************************************************************************/
-enum sb_states
-{
-  SBPAGE_SYNC   = 1,
-  SBPAGE_DIRTY  = 2,
-  SBPAGE_DUMP   = 4,
-  SBPAGE_ONDISK = 8
-};
-
-
 #ifdef __cplusplus
 extern "C" {
 #endif
