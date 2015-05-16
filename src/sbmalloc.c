@@ -2,20 +2,11 @@
 # define _GNU_SOURCE
 #endif
 
-#ifndef _POSIX_C_SOURCE
-# define _POSIX_C_SOURCE 200112L
-#else
-# if _POSIX_C_SOURCE < 200112L
-#   undef _POSIX_C_SOURCE
-#   define _POSIX_C_SOURCE 200112L
-# endif
-#endif
-
-#ifdef _BDMPI
-# ifndef USE_PTHREAD
+//#ifdef _BDMPI
+//# ifndef USE_PTHREAD
 #   define USE_PTHREAD
-# endif
-#endif
+//# endif
+//#endif
 
 #ifdef NDEBUG
 # undef NDEBUG
@@ -380,8 +371,9 @@ __swap_in__(struct sb_alloc * const __alloc, size_t const __beg,
             size_t const __num)
 {
   int fd, ret;
-  size_t ip, psize, addr, end, numrd=0;
+  size_t ip, psize, end, numrd=0;
   ssize_t ipfirst;
+  uintptr_t addr;
   char * flags;
 
   /* error check input values */
@@ -403,11 +395,16 @@ __swap_in__(struct sb_alloc * const __alloc, size_t const __beg,
   flags = __alloc->flags;
   end   = __beg+__num;
 
+#ifdef USE_PTHREAD
   /* mmap temporary memory with write protection for loading from disk */
   SBMMAP(addr, __num*psize, PROT_WRITE);
   /* lock temporary memory to prevent swapping -- this lock will be maintained
    * after the call to mremap according to mremap man page */
   SBMLOCK(addr, __num*psize);
+#else
+  addr = __alloc->base+(__beg*psize);
+  SBMPROTECT(addr, __num*psize, PROT_WRITE);
+#endif
 
   /* open the file for reading */
   fd = libc_open(__alloc->fname, O_RDONLY);
@@ -446,7 +443,9 @@ __swap_in__(struct sb_alloc * const __alloc, size_t const __beg,
   /* update protection to read-only and remap the temporary memory into the
    * persistent memory */
   SBMPROTECT(addr, __num*psize, PROT_READ);
+#ifdef USE_PTHREAD
   SBMREMAP(addr, __num*psize, __alloc->base+(__beg*psize));
+#endif
 
   /* increment the number of loaded sbpages for the alloction */
   __alloc->ld_pages += __num;
@@ -465,8 +464,9 @@ __swap_out__(struct sb_alloc * const __alloc, size_t const __beg,
              size_t const __num)
 {
   int fd, ret;
-  size_t ip, psize, addr, end, numwr=0;
+  size_t ip, psize, end, numwr=0;
   ssize_t ipfirst;
+  uintptr_t addr;
   char * flags;
 
   /* error check input values */
@@ -578,10 +578,13 @@ __swap_clr__(struct sb_alloc * const __alloc, size_t const __beg,
   end   = __beg+__num;
 
   for (ip=__beg; ip<end; ++ip) {
-    if (__if_flags__(flags[ip], SBPAGE_DIRTY, 0)) {
-      /* - DIRTY/ONDISK flag */
-      flags[ip] &= ~(SBPAGE_DIRTY|SBPAGE_ONDISK);
-    }
+    if (__if_flags__(flags[ip], SBPAGE_DIRTY, 0))
+      /* - DIRTY/ONDISK */
+      /* + SYNC */
+      flags[ip] = SBPAGE_SYNC;
+    else
+      /* - ONDISK */
+      flags[ip] &= ~SBPAGE_ONDISK;
   }
 
   return 0;
@@ -635,7 +638,8 @@ __swap_cnt__(struct sb_alloc * const __alloc, size_t const __beg,
 static inline struct sb_alloc *
 __info_find__(uintptr_t const __addr)
 {
-  size_t len, addr;
+  size_t len;
+  uintptr_t addr;
   struct sb_alloc * alloc;
 
   SB_GET_LOCK(&(sb_info.lock));
@@ -801,7 +805,8 @@ extern void *
 SB_mmap(size_t const __len)
 {
   int fd=-1;
-  size_t ip, psize, m_len, m_pages, ld_pages, addr=MAP_FAILED;
+  size_t ip, psize, m_len, m_pages, ld_pages;
+  uintptr_t addr=(uintptr_t)MAP_FAILED;
   char * fname, * flags;
   struct sb_alloc * alloc;
 
@@ -1286,13 +1291,12 @@ SB_finalize(void)
 extern int
 SB_swap_usage(int const tag)
 {
-  int fd=-1;
+  int fd=-1, retval=-1;
   size_t size, used;
-  ssize_t ret, retval=-1;
   char * tok;
   char buf[16384], file[FILENAME_MAX];
 
-  if (-1 == (fd=open("/proc/swaps", O_RDONLY)))
+  if (-1 == (fd=libc_open("/proc/swaps", O_RDONLY)))
     goto CLEANUP;
 
   if (-1 == libc_read(fd, buf, sizeof(buf)))
@@ -1301,24 +1305,27 @@ SB_swap_usage(int const tag)
   /* skip header line */
   tok = strtok(buf, "\n");
 
-  /* loop through swap lines */
-  tok = strtok(NULL, "\n");
-  while (NULL != tok) {
-    if (3 != (ret=sscanf(tok, "%s %*s %zu %zu", file, &size, &used)))
-      goto CLEANUP;
-    if (0 > printf("[%5d:%d] swap usage on %s: %zu / %zu\n", (int)getpid(),
-      tag, file, used, size))
-    {
-      goto CLEANUP;
-    }
+  if (NULL != tok) {
+    /* loop through swap lines */
     tok = strtok(NULL, "\n");
+    while (NULL != tok) {
+      if (3 != sscanf(tok, "%s %*s %zu %zu %*s", file, &size, &used)) {
+        goto CLEANUP;
+      }
+      if (0 > printf("[%5d:%d] swap usage on %s: %zu / %zu\n", (int)getpid(),
+        tag, file, used, size))
+      {
+        goto CLEANUP;
+      }
+      tok = strtok(NULL, "\n");
+    }
   }
 
   retval = 0;
 
 CLEANUP:
-  if (-1 == retval)
-    printf("swap usage failed\n");
+  /*if (-1 == retval)
+    printf("swap_usage failed (%s)\n", strerror(errno));*/
   if (-1 != fd)
     close(fd);
   return retval;
