@@ -32,8 +32,8 @@ void libc_free(void*);
 #define MALLOC 0
 #define FREE   1
 
-size_t NUM_OPS = 1<<25;
-size_t MAX_OPS = 1<<25;
+size_t NUM_OPS = 1<<19;
+size_t MAX_OPS = 1<<19;
 
 /*
   awk '{if (3 == NF) {map[$2]=ctr++; print $1,$3} else if (2 == NF)

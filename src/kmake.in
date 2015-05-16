@@ -15,15 +15,15 @@ add_dependencies test/micro2 klmalloc.h
 target_link_libraries test/micro2 libklmalloc.a -ldl
 
 add_executable test/check1 test/check1.c
-add_dependencies test/check1 klmalloc.h
+add_dependencies test/check1 klmalloc.h sbconfig.h
 target_link_libraries test/check1 libklmalloc.a -ldl
 
 add_executable test/check2 test/check2.c
-add_dependencies test/check2 sbmalloc.h
+add_dependencies test/check2 sbmalloc.h sbconfig.h
 target_link_libraries test/check2 libklmalloc.a -ldl
 
 add_executable test/check3 test/check3.c
-add_dependencies test/check3 sbmalloc.h
+add_dependencies test/check3 sbmalloc.h sbconfig.h
 target_link_libraries test/check3 libklmalloc.a -ldl
 
 install_libraries libklmalloc.a

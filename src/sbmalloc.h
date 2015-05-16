@@ -2,8 +2,9 @@
 #define __SBMALLOC_H__ 1
 
 
-#include <malloc.h> /* struct mallinfo */
-#include <stddef.h> /* size_t */
+#include <malloc.h>    /* struct mallinfo */
+#include <stddef.h>    /* size_t */
+#include <sys/types.h> /* ssize_t */
 
 
 /****************************************************************************/
@@ -58,24 +59,21 @@ enum sb_states
 extern "C" {
 #endif
 
-int SB_mallopt(int const param, int const value);
-int SB_mallget(int const param);
-int SB_fstem(char const * const fstem);
-int SB_acct(int (*acct_charge_cb)(size_t), int (*acct_discharge_cb)(size_t));
+void * SB_mmap(size_t const __len);
+void   SB_munmap(void * const __addr, size_t const __len);
 
-struct mallinfo SB_mallinfo(void);
+ssize_t SB_mtouch(void * const __addr, size_t __len);
+ssize_t SB_mtouchall(void);
+ssize_t SB_mclear(void * const __addr, size_t __len);
+ssize_t SB_mclearall(void);
+ssize_t SB_mevict(void * const __addr);
+ssize_t SB_mevictall(void);
+int     SB_mexist(void const * const __addr);
 
-int SB_exists(void const * const addr);
-
-size_t SB_sync(void const * const addr, size_t len);
-size_t SB_syncall(void);
-size_t SB_load(void const * const addr, size_t len, int const state);
-size_t SB_loadall(int const state);
-size_t SB_dump(void const * const addr, size_t len);
-size_t SB_dumpall(void);
-
-void * SB_malloc(size_t const len);
-void   SB_free(void * const addr);
+int SB_mopt(int const param, int const value);
+int SB_mcal(int (*acct_charge_cb)(size_t), int (*acct_discharge_cb)(size_t));
+int SB_mfile(char const * const file);
+struct mallinfo SB_minfo(void);
 
 void SB_init(void);
 void SB_finalize(void);

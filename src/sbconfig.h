@@ -169,7 +169,8 @@ do {                                                                        \
 /*--------------------------------------------------------------------------*/
 
 
-#ifndef NDEBUG
+//#ifndef NDEBUG
+#if 1
 # define sb_assert(EXPR)                                                    \
 do {                                                                        \
   if (!(EXPR)) {                                                            \
