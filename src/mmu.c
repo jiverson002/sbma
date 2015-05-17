@@ -1,17 +1,10 @@
-#define MMU_MMAX (1lu<<40)
+#include "mmu.h"
+
+#define MMU_MAX_MEM  (1lu<<40)
+#define MMU_MIN_ADDR (1lu<<16)
 
 #define MMAP_PROT  PROT_READ|PROT_WRITE
 #define MMAP_FLAGS MAP_PRIVATE|MAP_ANONYMOUS|MAP_NORESERVE|MAP_LOCK
-
-struct {
-  size_t  page_size;      /*!< mmu page size */
-  size_t  min_alloc_size; /*!< mmu minimum allocation size */
-  char *  page_table;     /*!< mmu page table */
-  void ** alloc_table;    /*!< mmu allocation table */
-#ifdef USE_PTHREAD
-  pthread_mutex_t lock;   /*!< mutex guarding struct */
-#endif
-} mmu;
 
 extern int
 mmu_init(struct mmu * const __mmu, size_t const __page_size,
@@ -20,14 +13,18 @@ mmu_init(struct mmu * const __mmu, size_t const __page_size,
   int ret;
   size_t pt_len, at_len;
 
+  assert(0 == (__page_size&1));             /* must be a multiple of 2 */
+  assert(0 == (__min_alloc_size&1));        /* ... */
+  assert(__min_alloc_size >= __page_size);
+
   /* initialize variables */
   ret                = -1;
   __mmu->page_table  = MAP_FAILED;
   __mmu->alloc_table = MAP_FAILED;
 
   /* compute table lentghts */
-  pt_len = MMU_MMAX/__page_size;
-  at_len = MMU_MMAX/__min_alloc_size;;
+  pt_len = MMU_MAX_MEM/__page_size;
+  at_len = MMU_MAX_MEM/__min_alloc_size;;
 
   /* populate mmu variables */
   __mmu->page_size   = __page_size;
