@@ -2,11 +2,11 @@
 # define _GNU_SOURCE
 #endif
 
-//#ifdef _BDMPI
-//# ifndef USE_PTHREAD
+#ifdef _BDMPI
+# ifndef USE_PTHREAD
 #   define USE_PTHREAD
-//# endif
-//#endif
+# endif
+#endif
 
 #ifdef NDEBUG
 # undef NDEBUG
@@ -33,12 +33,12 @@
 
 
 #ifdef USE_PTHREAD
-# define SBDEADLOCK 0   /* 0: no deadlock diagnostics, */
-                        /* 1: deadlock diagnostics */
-
 # include <pthread.h>   /* pthread library */
 # include <syscall.h>   /* SYS_gettid, syscall */
 # include <time.h>      /* CLOCK_REALTIME, struct timespec, clock_gettime */
+
+# define SBDEADLOCK 0   /* 0: no deadlock diagnostics, */
+                        /* 1: deadlock diagnostics */
 
 # define _SB_GET_LOCK(LOCK)                                                 \
 do {                                                                        \
@@ -192,7 +192,6 @@ enum sb_states
 {
   SBPAGE_SYNC   = 1,
   SBPAGE_DIRTY  = 2,
-  SBPAGE_DUMP   = 4,
   SBPAGE_ONDISK = 8
 };
 
@@ -278,9 +277,8 @@ static struct sb_info
 /****************************************************************************/
 static int sb_opts[SBOPT_NUM]=
 {
-  [SBOPT_NUMPAGES]    = 1,
-  [SBOPT_LAZYREAD]    = 0,
-  [SBOPT_MULTITHREAD] = 1
+  [SBOPT_NUMPAGES] = 1,
+  [SBOPT_LAZYREAD] = 0
 };
 
 
@@ -554,51 +552,7 @@ static inline ssize_t
 __swap_clr__(struct sb_alloc * const __alloc, size_t const __beg,
              size_t const __num)
 {
-  size_t ip, end;
-  char * flags;
-
-  /* error check input values */
-  if (NULL == __alloc)
-    return -1;
-  if (__num > __alloc->n_pages)
-    return -1;
-  if (__beg > __alloc->n_pages-__num)
-    return -1;
-  if (__num > __alloc->ld_pages)
-    return -1;
-
-  /* shortcut by checking to see if no pages are currently loaded */
-  /* TODO: if we track the number of dirty pages, then this can do a better
-   * job of short-cutting */
-  if (0 == __alloc->ld_pages)
-    return 0;
-
-  /* setup local variables */
-  flags = __alloc->flags;
-  end   = __beg+__num;
-
-  for (ip=__beg; ip<end; ++ip) {
-    if (__if_flags__(flags[ip], SBPAGE_DIRTY, 0))
-      /* - DIRTY/ONDISK */
-      /* + SYNC */
-      flags[ip] = SBPAGE_SYNC;
-    else
-      /* - ONDISK */
-      flags[ip] &= ~SBPAGE_ONDISK;
-  }
-
-  return 0;
-}
-
-
-/****************************************************************************/
-/*! Counts the number of dirty syspages in the supplied range */
-/****************************************************************************/
-static inline ssize_t
-__swap_cnt__(struct sb_alloc * const __alloc, size_t const __beg,
-             size_t const __num)
-{
-  size_t ip, psize, end, numwr=0;
+  size_t ip, end, psize;
   char * flags;
 
   /* error check input values */
@@ -622,12 +576,21 @@ __swap_cnt__(struct sb_alloc * const __alloc, size_t const __beg,
   flags = __alloc->flags;
   end   = __beg+__num;
 
-  /* count sbpages in dirty state */
-  for (ip=__beg; ip<end; ++ip)
-    numwr += __if_flags__(flags[ip], SBPAGE_DIRTY, 0);
+  for (ip=__beg; ip<end; ++ip) {
+    if (__if_flags__(flags[ip], SBPAGE_DIRTY, 0)) {
+      /* - DIRTY/ONDISK */
+      /* + SYNC */
+      flags[ip] = SBPAGE_SYNC;
 
-  /* convert to system pages */
-  return SB_TO_SYS(numwr, psize);
+      SBMPROTECT(__alloc->base+(ip*psize), psize, PROT_READ);
+    }
+    else {
+      /* - ONDISK */
+      flags[ip] &= ~SBPAGE_ONDISK;
+    }
+  }
+
+  return 0;
 }
 
 
