@@ -8,10 +8,21 @@
 
 
 /****************************************************************************/
+/* Option constants */
+/****************************************************************************/
+enum vmm_opts
+{
+  VMM_LAZYREAD = 1 << 0 /* directive to enable lazy reading */
+};
+
+
+/****************************************************************************/
 /* Stores information associated with the virtual memory environment. */
 /****************************************************************************/
 struct vmm
 {
+  int opts;                 /*!< environment configuation */
+
   size_t page_size;         /*!< bytes per sbmalloc page */
 
   size_t numrf;             /*!< total number of read segfaults */
@@ -43,100 +54,37 @@ static struct vmm vmm;
 
 
 /****************************************************************************/
+/* Increments a particular field in the info struct. */
+/****************************************************************************/
+#define __vmm_track__(__VMM, __FIELD, __VAL)\
+do {\
+  if (0 == LOCK_GET(&((__VMM).lock))) {\
+    (__VMM).__FIELD += (__VAL);\
+    (void)LOCK_LET(&((__VMM).lock));\
+  }\
+} while (0)
+
+
+/****************************************************************************/
 /*! Swaps the supplied range of pages in, reading any necessary pages from
  *  disk. */
 /****************************************************************************/
 static inline ssize_t
 __vmm_admit__(struct vmm * const __vmm, void * const __addr,
-              size_t const __num)
+              size_t const __num, int const __prot, int const __admit)
 {
-  int fd, ret;
-  size_t i, beg, end, numrd, page_size;
-  ssize_t ii;
-  void * ghost;
-  struct ate * ate;
-  struct mmu * mmu;
-
-  numrd     = 0;
-  mmu       = &(__vmm->mmu);
-  page_size = mmu->page_size;
+  int ret;
 
   /* __addr must be multiples of page_size */
-  assert(0 == ((uintptr_t)__addr & (page_size-1)));
-
-  /* get allocation table entry */
-  ate = __mmu_get_ate__(mmu, __addr);
-
-  /* __addr and __num must be valid w.r.t. ate */
-  assert(NULL != ate);
-  assert(ate->base <= __addr);
-  assert(__num*page_size <= ate->len);
-  assert(__addr <= (void*)((uintptr_t)ate->base+ate->len-__num*page_size));
-
-  /* get range of pages */
-  beg = __mmu_get_idx__(mmu, __addr);
-  end = beg+__num;
-
-  /* allocate ghost pages */
-  ghost = (void*)mmap(NULL, __num*page_size, PROT_WRITE, MMAP_FLAGS, -1, 0);
-  if (MAP_FAILED == ghost)
+  if (0 != ((uintptr_t)__addr & (__vmm->page_size-1)))
     return -1;
 
-#if 0
-  /* open the file for reading */
-  fd = libc_open(ate->file, O_RDONLY);
-  if (-1 == fd)
-    return -1;
-#endif
-
-  /* loop through range, reading from disk in bulk whenever possible */
-  for (ii=-1,i=beg; i<=end; ++i) {
-    if (i != end) {
-      assert(__mmu_get_flag__(mmu, i, MMU_ALLOC));
-      assert(!__mmu_get_flag__(mmu, i, MMU_DIRTY));
-
-      __mmu_set_flag__(mmu, i, MMU_RSDNT);
-    }
-
-    if (i != end && !__mmu_get_flag__(mmu, i, MMU_ZFILL)) {
-      if (-1 == ii)
-        ii = i;
-    }
-    else if (-1 != ii) {
-#if 0
-      /* read from disk */
-      ret = __mmu_read__(fd, (void*)(ghost+((ii-beg)*page_size)),\
-        (i-ii)*page_size, ii*page_size);
-      if (-1 == ret)
-        return -1;
-#endif
-
-      numrd += (i-ii);
-
-      ii = -1;
-    }
-  }
-
-#if 0
-  /* close file */
-  ret = close(fd);
+  /* update protection of pages */
+  ret = __mmu_protect__(&(__vmm->mmu), __addr, __num, __prot, __admit);
   if (-1 == ret)
     return -1;
-#endif
 
-  /* give rd protection of ghost pages */
-  ret = mprotect(ghost, __num*page_size, PROT_READ);
-  if (-1 == ret)
-    return -1;
-  /* remap ghost pages into persistent memory */
-  ghost = mremap(ghost, __num*page_size, __num*page_size,\
-    MREMAP_MAYMOVE|MREMAP_FIXED, __addr);
-  if (MAP_FAILED == ghost)
-    return -1;
-
-  ate->l_pages += __num;
-
-  return numrd;
+  return 0;
 }
 
 
@@ -148,103 +96,22 @@ static inline ssize_t
 __vmm_evict__(struct vmm * const __vmm, void * const __addr,
               size_t const __num)
 {
-  int fd, ret;
-  size_t i, beg, end, numwr, page_size;
-  ssize_t ii;
-  struct ate * ate;
-  struct mmu * mmu;
-
-  numwr     = 0;
-  mmu       = &(__vmm->mmu);
-  page_size = mmu->page_size;
+  int ret;
 
   /* __addr must be multiples of page_size */
-  assert(0 == ((uintptr_t)__addr & (page_size-1)));
-
-  /* get allocation table entry */
-  ate = __mmu_get_ate__(mmu, __addr);
-
-  /* __addr and __num must be valid w.r.t. ate */
-  assert(NULL != ate);
-  assert(ate->base <= __addr);
-  assert(__num*page_size <= ate->len);
-  assert(__addr <= (void*)((uintptr_t)ate->base+ate->len-__num*page_size));
-
-  /* shortcut by checking to see if no pages are currently loaded */
-  /* TODO: if we track the number of dirty pages, then this can do a better
-   * job of short-cutting */
-  if (0 == ate->l_pages)
-    return 0;
-
-  /* get range of pages */
-  beg = __mmu_get_idx__(mmu, __addr);
-  end = beg+__num;
-
-#if 0
-  /* open the file for reading */
-  fd = libc_open(ate->file, O_WRONLY);
-  if (-1 == fd)
+  if (0 != ((uintptr_t)__addr & (__vmm->page_size-1)))
     return -1;
-#endif
 
-  /* loop through range, writing to disk in bulk whenever possible */
-  for (ii=-1,i=beg; i<=end; ++i) {
-    if (i != end && __mmu_get_flag__(mmu, i, MMU_RSDNT)) {
-      assert(__mmu_get_flag__(mmu, i, MMU_ALLOC));
-
-      assert(ate->l_pages > 0);
-      ate->l_pages--;
-
-      __mmu_unset_flag__(mmu, i, MMU_RSDNT);
-    }
-
-    if (i != end && __mmu_get_flag__(mmu, i, MMU_DIRTY)) {
-      assert(__mmu_get_flag__(mmu, i, MMU_ZFILL));
-
-      if (-1 == ii)
-        ii = i;
-
-      __mmu_unset_flag__(mmu, i, MMU_ZFILL);
-    }
-    else if (-1 != ii) {
-#if 0
-      /* write to disk */
-      ret = __mmu_write__(fd, (void*)(__addr+((ii-beg)*page_size)),\
-        (i-ii)*page_size, ii*page_size);
-      if (-1 == ret)
-        return -1;
-#endif
-
-      numwr += (i-ii);
-
-      ii = -1;
-    }
-  }
-
-#if 0
-  /* close file */
-  ret = close(fd);
-  if (-1 == ret)
-    return -1;
-#endif
-
-  /* unlock pages from RAM */
-  ret = munlock(__addr, __num*page_size);
-  if (-1 == ret)
-    return -1;
-  /* give no protection to page */
-  ret = mprotect(__addr, __num*page_size, PROT_NONE);
-  if (-1 == ret)
-    return -1;
-  /* advise kernel to release resources associated with pages */
-  ret = madvise(__addr, __num*page_size, MADV_DONTNEED);
+  /* update protection of pages */
+  ret = __mmu_protect__(&(__vmm->mmu), __addr, __num, PROT_NONE, MMU_FLUSH);
   if (-1 == ret)
     return -1;
 
-  return numwr;
+  return 0;
 }
 
 
+#if 0
 /****************************************************************************/
 /*! Clear the MMU_DIRTY and reset MMU_ZFILL flags for the supplied range of
  *  pages. */
@@ -304,6 +171,7 @@ __vmm_clear__(struct vmm * const __vmm, void * const __addr,
 
   return 0;
 }
+#endif
 
 
 /****************************************************************************/
@@ -312,7 +180,8 @@ __vmm_clear__(struct vmm * const __vmm, void * const __addr,
 static inline void
 __vmm_sigsegv__(int const sig, siginfo_t * const si, void * const ctx)
 {
-  size_t idx, page_size, l_pages;
+  int ret;
+  size_t idx, l_pages;
   ssize_t numrd;
   void * addr;
   struct ate * ate;
@@ -330,53 +199,46 @@ __vmm_sigsegv__(int const sig, siginfo_t * const si, void * const ctx)
     /* sanity check */
     assert(!__mmu_get_flag__(&mmu, idx, MMU_DIRTY));
 
-    /* update page flag */
-    __mmu_set_flag__(&mmu, idx, MMU_DIRTY|MMU_ZFILL);
+    /* update protection to read-write */
+    ret = __vmm_admit__(&vmm, addr, 1, PROT_READ|PROT_WRITE, MMU_NOADMIT);
+    assert(-1 != ret);
 
     /* release lock on alloction */
     __mmu_unlock_ate__(&mmu, ate);
 
-#if 0
     /* track number of write faults */
-    __INFO_TRACK__(sb_info.numwf, 1);
-#endif
+    __vmm_track__(vmm, numwf, 1);
   }
   else {
-#if 0
     /* invoke charge callback function before swapping in any memory -- this
      * is only done once for each allocation between successive swap outs */
     if (0 == ate->l_pages && NULL != vmm.acct_charge_cb)
-      (void)(*vmm.acct_charge_cb)(SB_TO_SYS(ate->n_pages, page_size));
-#endif
+      (void)(*vmm.acct_charge_cb)(__mmu_to_sys__(&mmu, ate->n_pages));
 
     /* swap in the required memory */
-#if 0
-    if (0 == sb_opts[SBOPT_LAZYREAD]) {
-#endif
-      l_pages = ate->n_pages-ate->l_pages;
-      numrd   = __vmm_admit__(&vmm, ate->base, ate->n_pages);
-      assert(-1 != numrd);
-#if 0
+    if (VMM_LAZYREAD == (vmm.opts & VMM_LAZYREAD)) {
+      assert(0 == ate->l_pages);
+      l_pages = ate->n_pages;
+      ret     = __vmm_admit__(&vmm, ate->base, ate->n_pages, PROT_READ,\
+        MMU_ADMIT);
+      assert(-1 != ret);
     }
     else {
       l_pages = 1;
-      numrd   = __vmm_admit__(&vmm, addr, 1);
+      ret     = __vmm_admit__(&vmm, addr, 1, PROT_READ, MMU_ADMIT);
       assert(-1 != numrd);
     }
-#endif
 
     /* release lock on alloction */
     __mmu_unlock_ate__(&mmu, ate);
 
-#if 0
     /* track number of read faults, syspages read from disk, syspages
      * currently loaded, and high water mark for syspages loaded */
-    __INFO_TRACK__(sb_info.numrf, 1);
-    __INFO_TRACK__(sb_info.numrd, numrd);
-    __INFO_TRACK__(sb_info.curpages, SB_TO_SYS(ld_pages, psize));
-    __INFO_TRACK__(sb_info.maxpages,
-      sb_info.curpages>sb_info.maxpages?sb_info.curpages-sb_info.maxpages:0);
-#endif
+    __vmm_track__(vmm, numrf, 1);
+    __vmm_track__(vmm, numrd, numrd);
+    __vmm_track__(vmm, curpages, __mmu_to_sys__(&mmu, l_pages));
+    __vmm_track__(vmm, maxpages,\
+      vmm.curpages>vmm.maxpages?vmm.curpages-vmm.maxpages:0);
   }
 
   if (NULL == ctx) {} /* suppress unused warning */
@@ -388,10 +250,11 @@ __vmm_sigsegv__(int const sig, siginfo_t * const si, void * const ctx)
 /****************************************************************************/
 static inline int
 __vmm_init__(struct vmm * const __vmm, size_t const __page_size,
-             size_t const __min_alloc_size)
+             size_t const __min_alloc_size, int const __opts)
 {
   int ret;
 
+  __vmm->opts      = __opts;
   __vmm->page_size = __page_size;
 
   /* setup the signal handler */
