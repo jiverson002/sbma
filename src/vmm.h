@@ -49,7 +49,6 @@ struct vmm
 };
 
 
-static struct mmu mmu;
 static struct vmm vmm;
 
 
@@ -70,7 +69,7 @@ do {\
  *  disk. */
 /****************************************************************************/
 static inline ssize_t
-__vmm_admit__(struct vmm * const __vmm, void * const __addr,
+__vmm_synch__(struct vmm * const __vmm, void * const __addr,
               size_t const __num, int const __prot, int const __admit)
 {
   int ret;
@@ -189,22 +188,22 @@ __vmm_sigsegv__(int const sig, siginfo_t * const si, void * const ctx)
   /* make sure we received a SIGSEGV */
   assert(SIGSEGV == sig);
 
-  addr = (void*)((uintptr_t)si->si_addr & (mmu.page_size-1));
-  idx  = __mmu_get_idx__(&mmu, addr);
+  addr = (void*)((uintptr_t)si->si_addr & (vmm.mmu.page_size-1));
+  idx  = __mmu_get_idx__(&(vmm.mmu), addr);
 
   /* acquire lock on alloction */
-  ate = __mmu_lock_ate__(&mmu, addr);
+  ate = __mmu_lock_ate__(&(vmm.mmu), addr);
 
-  if (__mmu_get_flag__(&mmu, idx, MMU_RSDNT)) {
+  if (__mmu_get_flag__(&(vmm.mmu), idx, MMU_RSDNT)) {
     /* sanity check */
-    assert(!__mmu_get_flag__(&mmu, idx, MMU_DIRTY));
+    assert(!__mmu_get_flag__(&(vmm.mmu), idx, MMU_DIRTY));
 
     /* update protection to read-write */
-    ret = __vmm_admit__(&vmm, addr, 1, PROT_READ|PROT_WRITE, MMU_NOADMIT);
+    ret = __vmm_synch__(&vmm, addr, 1, PROT_READ|PROT_WRITE, MMU_NOADMIT);
     assert(-1 != ret);
 
     /* release lock on alloction */
-    __mmu_unlock_ate__(&mmu, ate);
+    __mmu_unlock_ate__(&(vmm.mmu), ate);
 
     /* track number of write faults */
     __vmm_track__(vmm, numwf, 1);
@@ -213,30 +212,30 @@ __vmm_sigsegv__(int const sig, siginfo_t * const si, void * const ctx)
     /* invoke charge callback function before swapping in any memory -- this
      * is only done once for each allocation between successive swap outs */
     if (0 == ate->l_pages && NULL != vmm.acct_charge_cb)
-      (void)(*vmm.acct_charge_cb)(__mmu_to_sys__(&mmu, ate->n_pages));
+      (void)(*vmm.acct_charge_cb)(__mmu_to_sys__(&(vmm.mmu), ate->n_pages));
 
     /* swap in the required memory */
     if (VMM_LAZYREAD == (vmm.opts & VMM_LAZYREAD)) {
       assert(0 == ate->l_pages);
       l_pages = ate->n_pages;
-      ret     = __vmm_admit__(&vmm, ate->base, ate->n_pages, PROT_READ,\
+      ret     = __vmm_synch__(&vmm, ate->base, ate->n_pages, PROT_READ,\
         MMU_ADMIT);
       assert(-1 != ret);
     }
     else {
       l_pages = 1;
-      ret     = __vmm_admit__(&vmm, addr, 1, PROT_READ, MMU_ADMIT);
+      ret     = __vmm_synch__(&vmm, addr, 1, PROT_READ, MMU_ADMIT);
       assert(-1 != numrd);
     }
 
     /* release lock on alloction */
-    __mmu_unlock_ate__(&mmu, ate);
+    __mmu_unlock_ate__(&(vmm.mmu), ate);
 
     /* track number of read faults, syspages read from disk, syspages
      * currently loaded, and high water mark for syspages loaded */
     __vmm_track__(vmm, numrf, 1);
     __vmm_track__(vmm, numrd, numrd);
-    __vmm_track__(vmm, curpages, __mmu_to_sys__(&mmu, l_pages));
+    __vmm_track__(vmm, curpages, __mmu_to_sys__(&(vmm.mmu), l_pages));
     __vmm_track__(vmm, maxpages,\
       vmm.curpages>vmm.maxpages?vmm.curpages-vmm.maxpages:0);
   }
@@ -305,6 +304,105 @@ __vmm_destroy__(struct vmm * const __vmm)
 
   return 0;
 }
+
+
+#if 0
+/****************************************************************************/
+/*! Allocate memory via anonymous mmap. */
+/****************************************************************************/
+static void *
+__vmm_mmap__(struct vmm * const __vmm, size_t const __len)
+{
+  int fd=-1;
+  size_t ip, psize, m_len, m_pages, ld_pages;
+  uintptr_t addr=(uintptr_t)MAP_FAILED;
+  char * fname, * flags;
+  struct sb_alloc * alloc;
+
+  /* shortcut */
+  if (0 == __len)
+    return NULL;
+
+  /* compute allocation sizes */
+  psize    = vmm.page_size;
+  ld_pages = 1+((__len-1)/psize);
+  m_len    = (sizeof(struct sb_alloc))+ld_pages+(100+strlen(vmm.fstem));
+  m_pages  = 1+((m_len-1)/psize);
+
+  /* invoke charge callback function before allocating any memory */
+  if (NULL != vmm.acct_charge_cb)
+    (void)(*vmm.acct_charge_cb)(__mmu_to_sys__(m_pages+ld_pages, psize));
+
+  /* allocate memory with read-only protection -- this will avoid the double
+   * SIGSEGV for new allocations */
+  SBMMAP(addr, (m_pages+ld_pages)*psize, PROT_READ);
+
+  /* read/write protect meta information */
+  SBMPROTECT(addr+(ld_pages*psize), m_pages*psize, PROT_READ|PROT_WRITE);
+  SBMLOCK(addr+(ld_pages*psize), m_pages*psize);
+
+  /* set pointer for the allocation structure */
+  alloc = (struct sb_alloc*)(addr+(ld_pages*psize));
+  /* set pointer for the per-page flag vector */
+  flags = (char*)((uintptr_t)alloc+sizeof(struct sb_alloc));
+  /* set pointer for the filename for storage purposes */
+  fname = (char*)((uintptr_t)flags+ld_pages);
+
+  for (ip=0; ip<ld_pages; ++ip)
+    flags[ip] = SBPAGE_SYNC;
+
+  /* create and truncate the file to size */
+  if (0 > sprintf(fname, "%s%d-%p", sb_info.fstem, (int)getpid(),
+      (void*)alloc))
+  {
+    goto CLEANUP;
+  }
+  if (-1 == (fd=libc_open(fname, O_RDWR|O_CREAT|O_EXCL, S_IRUSR|S_IWUSR))) {
+    goto CLEANUP;
+  }
+  if (-1 == ftruncate(fd, ld_pages*psize)) {
+    goto CLEANUP;
+  }
+  if (-1 == close(fd)) {
+    goto CLEANUP;
+  }
+  /* fd = -1; */ /* Only need if a goto CLEANUP follows */
+
+  /* populate sb_alloc structure */
+  alloc->m_pages  = m_pages;  /* number of meta sbpages */
+  alloc->n_pages  = ld_pages; /* number application of sbpages */
+  alloc->ld_pages = ld_pages; /* number of loaded sbpages */
+  alloc->len      = __len;    /* number of application bytes */
+  alloc->fname    = fname;
+  alloc->base     = addr;
+  alloc->flags    = flags;
+
+  /* initialize sb_alloc lock */
+  SB_INIT_LOCK(&(alloc->lock));
+
+  /* add to linked-list */
+  SB_GET_LOCK(&(sb_info.lock));
+  alloc->next  = sb_info.head;
+  sb_info.head = alloc;
+  SB_LET_LOCK(&(sb_info.lock));
+
+  /* track number of syspages currently loaded, high water mark number of
+   * syspages loaded and syspages currently allocated */
+  __INFO_TRACK__(sb_info.curpages, SB_TO_SYS(m_pages+ld_pages, psize));
+  __INFO_TRACK__(sb_info.maxpages,
+    sb_info.curpages>sb_info.maxpages?sb_info.curpages-sb_info.maxpages:0);
+  __INFO_TRACK__(sb_info.numpages, SB_TO_SYS(m_pages+ld_pages, psize));
+
+  return (void *)alloc->base;
+
+CLEANUP:
+  if (MAP_FAILED != (void*)addr)
+    SBMUNMAP(addr, (m_pages*ld_pages)*psize);
+  if (-1 != fd)
+    (void)close(fd);
+  return NULL;
+}
+#endif
 
 
 #endif

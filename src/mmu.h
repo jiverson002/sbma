@@ -162,6 +162,12 @@ __mmu_new_ate__(struct mmu const * const __mmu, void const * const __addr,
   if (-1 == ret)
     return NULL;
 
+  ret = LOCK_GET(&(ate->lock));
+  if (-1 == ret) {
+    (void)LOCK_FREE(&(ate->lock));
+    return NULL;
+  }
+
   ate->base    = (void*)__addr;
   ate->len     = __len;
   ate->n_pages = 1+((__len-1)/__mmu->page_size);
@@ -179,6 +185,16 @@ __mmu_new_ate__(struct mmu const * const __mmu, void const * const __addr,
       assert(0 == (__mmu->page_table[i/2] & 0x0F));
       __mmu->page_table[i/2] = (__mmu->page_table[i/2] & 0xF0) | flag;
     }
+  }
+
+  ret = LOCK_LET(&(ate->lock));
+  if (-1 == ret) {
+    ate->base    = 0;
+    ate->len     = 0;
+    ate->n_pages = 0;
+    ate->l_pages = 0;
+    (void)LOCK_FREE(&(ate->lock));
+    return NULL;
   }
 
   return ate;
@@ -253,6 +269,49 @@ __mmu_get_ate__(struct mmu const * const __mmu, void const * const __addr)
       : NULL;
 }
 
+static inline struct ate *
+__mmu_lock_ate__(struct mmu const * const __mmu, void const * const __addr)
+{
+  int ret;
+  struct ate * ate;
+
+  assert(__addr >= MMU_MIN_ADDR);
+  assert(__addr <= MMU_MAX_ADDR);
+
+  ret = LOCK_GET(&(__mmu->lock));
+  if (-1 == ret)
+    return NULL;
+
+  ate = __mmu_get_ate__(__mmu, __addr);
+  assert(NULL != ate);
+
+  ret = LOCK_GET(&(ate->lock));
+  if (-1 == ret) {
+    (void)LOCK_LET(&(__mmu->lock));
+    return NULL;
+  }
+
+  ret = LOCK_LET(&(__mmu->lock));
+  if (-1 == ret)
+    return NULL;
+
+  return ate;
+}
+
+static inline int
+__mmu_unlock_ate__(struct mmu const * const __mmu, struct ate * const __ate)
+{
+  int ret;
+
+  ret = LOCK_LET(&(__ate->lock));
+  if (-1 == ret)
+    return -1;
+
+  return 0;
+
+  if (NULL == __mmu || NULL == __ate) {}
+}
+
 
 static inline int
 __mmu_get_flag__(struct mmu const * const __mmu, size_t const __idx,
@@ -300,51 +359,6 @@ __mmu_get_idx__(struct mmu const * const __mmu, void const * const __addr)
   assert(__addr <= MMU_MAX_ADDR);
 
   return (size_t)(((uintptr_t)__addr-(uintptr_t)MMU_MIN_ADDR)/__mmu->page_size);
-}
-
-
-static inline struct ate *
-__mmu_lock_ate__(struct mmu const * const __mmu, void const * const __addr)
-{
-  int ret;
-  struct ate * ate;
-
-  assert(__addr >= MMU_MIN_ADDR);
-  assert(__addr <= MMU_MAX_ADDR);
-
-  ret = LOCK_GET(&(__mmu->lock));
-  if (-1 == ret)
-    return NULL;
-
-  ate = __mmu_get_ate__(__mmu, __addr);
-  assert(NULL != ate);
-
-  ret = LOCK_GET(&(ate->lock));
-  if (-1 == ret) {
-    (void)LOCK_LET(&(__mmu->lock));
-    return NULL;
-  }
-
-  ret = LOCK_LET(&(__mmu->lock));
-  if (-1 == ret)
-    return NULL;
-
-  return ate;
-}
-
-
-static inline int
-__mmu_unlock_ate__(struct mmu const * const __mmu, struct ate * const __ate)
-{
-  int ret;
-
-  ret = LOCK_LET(&(__ate->lock));
-  if (-1 == ret)
-    return -1;
-
-  return 0;
-
-  if (NULL == __mmu || NULL == __ate) {}
 }
 
 
@@ -425,23 +439,24 @@ __mmu_write__(int const __fd, void const * const __buf, size_t __len,
 
 
 /****************************************************************************/
-/*! Admits the supplied range of pages into RAM, reading any necessary pages
- *  from disk. */
+/*! Internal: Admits the supplied range of pages into RAM, reading any
+ *  necessary pages from disk. */
 /****************************************************************************/
 static inline ssize_t
-__mmu_admit2__(struct mmu * const __mmu, struct ate * const __ate,
-               size_t const __beg, size_t const __end, int const __prot)
+__mmu_synch__(struct mmu * const __mmu, struct ate * const __ate,
+              size_t const __beg, size_t const __end, int const __prot)
 {
   int fd, ret;
-  size_t i, numrd, page_size;
-  ssize_t ii;
-  void * ghost;
+  size_t i, len, off, page_size;
+  ssize_t ii, numrd;
+  void * addr, * ghost;
 
   numrd     = 0;
   page_size = __mmu->page_size;
+  len       = (__end-__beg)*page_size;
 
   /* allocate ghost pages */
-  ghost = (void*)mmap(NULL, (__end-__beg)*page_size, PROT_WRITE, MMAP_FLAGS, -1, 0);
+  ghost = (void*)mmap(NULL, len, PROT_WRITE, MMAP_FLAGS, -1, 0);
   if (MAP_FAILED == ghost)
     goto CLEANUP;
 
@@ -468,10 +483,13 @@ __mmu_admit2__(struct mmu * const __mmu, struct ate * const __ate,
         ii = i;
     }
     else if (-1 != ii) {
+      /* convenience variables */
+      addr = (void*)((uintptr_t)ghost+((ii-__beg)*page_size));
+      len  = (i-ii)*page_size;
+      off  = (size_t)((uintptr_t)addr-(uintptr_t)__ate->base);
+
       /* read from disk */
-      ret = __mmu_read__(fd,\
-        (void*)((uintptr_t)ghost+((ii-__beg)*page_size)), (i-ii)*page_size,\
-        (ii*page_size)-(uintptr_t)__ate->base);
+      ret = __mmu_read__(fd, addr, len, off);
       if (-1 == ret)
         goto CLEANUP;
 
@@ -486,14 +504,17 @@ __mmu_admit2__(struct mmu * const __mmu, struct ate * const __ate,
   if (-1 == ret)
     goto CLEANUP;
 
+  /* convenience variables */
+  addr = (void*)((uintptr_t)MMU_MIN_ADDR+(__beg*page_size));
+  len  = (__end-__beg)*page_size;
+
   /* update protection of ghost pages */
-  ret = mprotect(ghost, (__end-__beg)*page_size, __prot);
+  ret = mprotect(ghost, len, __prot);
   if (-1 == ret)
     goto CLEANUP;
 
   /* remap ghost pages into persistent pages */
-  ghost = mremap(ghost, (__end-__beg)*page_size, (__end-__beg)*page_size,\
-    MREMAP_MAYMOVE|MREMAP_FIXED, (void*)(__beg*page_size));
+  ghost = mremap(ghost, len, len, MREMAP_MAYMOVE|MREMAP_FIXED, addr);
   if (MAP_FAILED == ghost)
     goto CLEANUP;
 
@@ -516,12 +537,14 @@ __mmu_admit__(struct mmu * const __mmu, struct ate * const __ate,
               int const __admit)
 {
   int ret, flag;
-  size_t i, page_size;
+  size_t i, len, page_size;
   ssize_t numrd;
+  void * addr;
 
   numrd     = 0;
   page_size = __mmu->page_size;
 
+  /* assemble appropriate flag based on desired protection */
   if (PROT_READ == __prot)
     flag = MMU_RSDNT;
   else if ((PROT_READ|PROT_WRITE) == __prot)
@@ -529,8 +552,9 @@ __mmu_admit__(struct mmu * const __mmu, struct ate * const __ate,
   else
     return -1;
 
+  /* synchronize pages if desired */
   if (MMU_ADMIT == __admit) {
-    numrd = __mmu_admit2__(__mmu, __ate, __beg, __end, __prot);
+    numrd = __mmu_synch__(__mmu, __ate, __beg, __end, __prot);
     if (-1 == numrd)
       return -1;
   }
@@ -546,8 +570,12 @@ __mmu_admit__(struct mmu * const __mmu, struct ate * const __ate,
   }
 
   if (MMU_ADMIT != __admit) {
+    /* convenience variables */
+    addr = (void*)((uintptr_t)MMU_MIN_ADDR+(__beg*page_size));
+    len  = (__end-__beg)*page_size;
+
     /* update protection of persistent pages */
-    ret = mprotect((void*)(__beg*page_size), (__end-__beg)*page_size, __prot);
+    ret = mprotect(addr, len, __prot);
     if (-1 == ret)
       return -1;
   }
@@ -565,8 +593,9 @@ __mmu_flush__(struct mmu * const __mmu, struct ate * const __ate,
               size_t const __beg, size_t const __end)
 {
   int fd, ret;
-  size_t i, numwr, page_size;
-  ssize_t ii;
+  size_t i, len, off, page_size;
+  ssize_t ii, numwr;
+  void * addr;
 
   numwr     = 0;
   page_size = __mmu->page_size;
@@ -590,9 +619,13 @@ __mmu_flush__(struct mmu * const __mmu, struct ate * const __ate,
         ii = i;
     }
     else if (-1 != ii) {
+      /* convenience variables */
+      addr = (void*)((uintptr_t)MMU_MIN_ADDR+(ii*page_size));
+      len  = (i-ii)*page_size;
+      off  = (size_t)((uintptr_t)addr-(uintptr_t)__ate->base);
+
       /* write to disk */
-      ret = __mmu_write__(fd, (void*)(ii*page_size), (i-ii)*page_size,\
-        (ii*page_size)-(uintptr_t)__ate->base);
+      ret = __mmu_write__(fd, addr, len, off);
       if (-1 == ret)
         goto CLEANUP;
 
@@ -625,8 +658,9 @@ __mmu_evict__(struct mmu * const __mmu, struct ate * const __ate,
               size_t const __beg, size_t const __end, int const __flush)
 {
   int ret;
-  size_t i, page_size;
+  size_t i, len, page_size;
   ssize_t numwr;
+  void * addr;
 
   numwr     = 0;
   page_size = __mmu->page_size;
@@ -637,6 +671,7 @@ __mmu_evict__(struct mmu * const __mmu, struct ate * const __ate,
   if (0 == __ate->l_pages)
     return 0;
 
+  /* flush the pages if desired */
   if (MMU_FLUSH == __flush) {
     numwr = __mmu_flush__(__mmu, __ate, __beg, __end);
     if (-1 == numwr)
@@ -655,20 +690,22 @@ __mmu_evict__(struct mmu * const __mmu, struct ate * const __ate,
     __mmu_unset_flag__(__mmu, i, MMU_RSDNT|MMU_DIRTY);
   }
 
+  /* convenience variables */
+  addr = (void*)((uintptr_t)MMU_MIN_ADDR+(__beg*page_size));
+  len  = (__end-__beg)*page_size;
+
   /* unlock pages from RAM */
-  ret = munlock((void*)(__beg*page_size), (__end-__beg)*page_size);
+  ret = munlock(addr, len);
   if (-1 == ret)
     return -1;
 
   /* update protection of pages to none */
-  ret = mprotect((void*)(__beg*page_size), (__end-__beg)*page_size,\
-    PROT_NONE);
+  ret = mprotect(addr, len, PROT_NONE);
   if (-1 == ret)
     return -1;
 
   /* advise kernel to release resources associated with pages */
-  ret = madvise((void*)(__beg*page_size), (__end-__beg)*page_size,\
-    MADV_DONTNEED);
+  ret = madvise(addr, len, MADV_DONTNEED);
   if (-1 == ret)
     return -1;
 
@@ -720,8 +757,10 @@ __mmu_protect__(struct mmu * const __mmu, void * const __addr,
     break;
   }
 
+  /* try and unlock allocation table entry regardless -- if it succeeds,
+   * return number of syspags I/O, else return -1 */
   if (0 == __mmu_unlock_ate__(__mmu, ate))
-    return retval;
+    return __mmu_to_sys__(__mmu, retval);
   else
     return -1;
 }
