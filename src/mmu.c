@@ -1,78 +1,41 @@
+#define _GNU_SOURCE
+#define _POSIX_C_SOURCE 199309L
+
+#include <assert.h>
+#include <stdio.h>
+#include <stdlib.h>
+
 #include "mmu.h"
+#include "vmm.h"
 
-#define MMU_MAX_MEM  (1lu<<40)
-#define MMU_MIN_ADDR (1lu<<16)
-
-#define MMAP_PROT  PROT_READ|PROT_WRITE
-#define MMAP_FLAGS MAP_PRIVATE|MAP_ANONYMOUS|MAP_NORESERVE|MAP_LOCK
-
-extern int
-mmu_init(struct mmu * const __mmu, size_t const __page_size,
-         size_t const __min_alloc_size)
+int main()
 {
-  int ret;
-  size_t pt_len, at_len;
+  struct mmu mmu;
 
-  assert(0 == (__page_size&1));             /* must be a multiple of 2 */
-  assert(0 == (__min_alloc_size&1));        /* ... */
-  assert(__min_alloc_size >= __page_size);
+  __mmu_init__(&mmu, 16384, 262144);
 
-  /* initialize variables */
-  ret                = -1;
-  __mmu->page_table  = MAP_FAILED;
-  __mmu->alloc_table = MAP_FAILED;
+  __mmu_new_ate__(&mmu, (void*)17463945, 1024, MMU_RSDNT|MMU_ZFILL);
+  //__mmu_set_flag__(&mmu, (void*)17463945, MMU_DIRTY);
 
-  /* compute table lentghts */
-  pt_len = MMU_MAX_MEM/__page_size;
-  at_len = MMU_MAX_MEM/__min_alloc_size;;
+  //assert(15 == __mmu_get_flag__(&mmu, (void*)17463945));
+  //assert( 1 == __mmu_get_field__(__mmu_get_flag__(&mmu, (void*)17463945), MMU_DIRTY));
+  //assert( 1 == __mmu_get_field__(__mmu_get_flag__(&mmu, (void*)17463945), MMU_ALLOC));
 
-  /* populate mmu variables */
-  __mmu->page_size   = __page_size;
-  __mmu->page_table  = (char*)mmap(NULL, pt_len, MMAP_PROT, MMAP_FLAGS, -1, 0);
-  __mmu->alloc_table = (void**)mmap(NULL, at_len, MMAP_PROT, MMAP_FLAGS, -1, 0);
-#ifdef USE_PTHREAD
-  ret = pthread_mutex_init(&(__mmu->lock), NULL);
-#endif
+  //__mmu_set_flags__(&mmu, (void*)17463945, 1024, MMU_RSDNT|MMU_ZFILL);
 
-  if (MAP_FAILED == __mmu->page_table)
-    goto cleanup;
-  if (MAP_FAILED == __mmu->alloc_table)
-    goto cleanup;
-#ifdef USE_PTHRAD
-  if (-1 == ret)
-    goto cleanup;
-#endif
+  //__mmu_unset_flag__(&mmu, (void*)17463945, MMU_ZFILL);
 
-  return 0;
+  //assert(13 == __mmu_get_flag__(&mmu, (void*)17463945));
+  //assert( 1 == __mmu_get_field__(__mmu_get_flag__(&mmu, (void*)17463945), MMU_DIRTY));
+  //assert( 1 == __mmu_get_field__(__mmu_get_flag__(&mmu, (void*)17463945), MMU_ALLOC));
 
-  cleanup:
-  if (MAP_FAILED != __mmu->page_table)
-    (void)munmap(__mmu->page_table, pt_len);
-  if (MAP_FAILED != __mmu->alloc_table)
-    (void)munmap(__mmu->alloc_table, at_len);
-#ifdef USE_PTHREAD
-  if (-1 != ret)
-    (void)pthread_mutex_destroy(&(__mmu->lock));
-#endif
+  __mmu_del_ate__(&mmu, (void*)17463945, 1024);
 
-  return -1;
-}
+  //assert( 0 == __mmu_get_flag__(&mmu, (void*)17463945));
+  //assert( 0 == __mmu_get_field__(__mmu_get_flag__(&mmu, (void*)17463945), MMU_DIRTY));
+  //assert( 0 == __mmu_get_field__(__mmu_get_flag__(&mmu, (void*)17463945), MMU_ALLOC));
 
-extern int
-mmu_destroy(struct mmu * const __mmu)
-{
-  int ret;
-  size_t pt_len, at_len;
+  __mmu_destroy__(&mmu);
 
-  /* compute table lentghts */
-  pt_len = MMU_MMAX/__page_size;
-  at_len = MMU_MMAX/__min_alloc_size;;
-
-  (void)munmap(__mmu->page_table, pt_len);
-  (void)munmap(__mmu->alloc_table, at_len);
-#ifdef USE_PTHREAD
-  (void)pthread_mutex_destroy(&(__mmu->lock));
-#endif
-
-  return 0;
+  return EXIT_SUCCESS;
 }
