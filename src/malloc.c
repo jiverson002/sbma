@@ -17,11 +17,6 @@
 #include "vmm.h"
 
 
-#define PAGE_SIZE (1<<14)
-#define FSTEM     "/tmp/"
-#define OPTS      0
-
-
 static int init=0;
 #ifdef USE_PTHREAD
 static pthread_mutex_t init_lock=PTHREAD_MUTEX_INITIALIZER;
@@ -29,23 +24,24 @@ static pthread_mutex_t init_lock=PTHREAD_MUTEX_INITIALIZER;
 
 
 /****************************************************************************/
-/* The single instance of vmm per process. */
+/*! The single instance of vmm per process. */
 /****************************************************************************/
 struct vmm vmm;
 
 
 /****************************************************************************/
-/* Initialize the ooc environment. */
+/*! Initialize the ooc environment. */
 /****************************************************************************/
 extern int
-__ooc_env_init__(void)
+__ooc_init__(char const * const __fstem, size_t const __page_size,
+             int const __opts)
 {
   /* acquire init lock */
   if (-1 == LOCK_GET(&init_lock))
     return -1;
 
   /* check if init and init if necessary */
-  if (0 == init && -1 == __vmm_init__(&vmm, PAGE_SIZE, FSTEM, OPTS)) {
+  if (0 == init && -1 == __vmm_init__(&vmm, __page_size, __fstem, __opts)) {
     (void)LOCK_LET(&init_lock);
     return -1;
   }
@@ -61,10 +57,10 @@ __ooc_env_init__(void)
 
 
 /****************************************************************************/
-/* Destroy the ooc environment. */
+/*! Destroy the ooc environment. */
 /****************************************************************************/
 extern int
-__ooc_env_destroy__(void)
+__ooc_destroy__(void)
 {
   /* acquire init lock */
   if (-1 == LOCK_GET(&init_lock))

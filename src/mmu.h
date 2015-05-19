@@ -8,7 +8,7 @@
 
 
 /****************************************************************************/
-/*
+/*!
  * Memory management unit page status code bits:
  *
  *   bit 0 ==    0: zero fill allowed    1: page must be filled from disk

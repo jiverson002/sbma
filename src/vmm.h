@@ -12,24 +12,13 @@
 #include <sys/mman.h> /* mmap, mremap, madvise, mprotect */
 #include <unistd.h>   /* sysconf */
 #include "config.h"
+#include "malloc2.h"
 #include "mmu.h"
 
 
-/****************************************************************************/
-/*
- * Virtual memory manager option bits:
- *
- *   bit 0 ==    0:                      1: lazy read
- */
-/****************************************************************************/
-enum vmm_opt_code
-{
-  VMM_LZYRD = 1 << 0
-};
-
 
 /****************************************************************************/
-/* Virtual memory manager. */
+/*! Virtual memory manager. */
 /****************************************************************************/
 struct vmm
 {
@@ -59,20 +48,20 @@ struct vmm
 
 
 /****************************************************************************/
-/* One instance of vmm per process. */
+/*! One instance of vmm per process. */
 /****************************************************************************/
 extern struct vmm vmm;
 
 
 /****************************************************************************/
-/* Converts pages to system pages. */
+/*! Converts pages to system pages. */
 /****************************************************************************/
 #define __vmm_to_sys__(__N_PAGES)\
   ((__N_PAGES)*vmm.page_size/sysconf(_SC_PAGESIZE))
 
 
 /****************************************************************************/
-/* Increments a particular field in the info struct. */
+/*! Increments a particular field in the info struct. */
 /****************************************************************************/
 #define __vmm_track__(__FIELD, __VAL)\
 do {\
@@ -415,7 +404,7 @@ __vmm_sigsegv__(int const sig, siginfo_t * const si, void * const ctx)
 {
   int ret;
   size_t ip, page_size, l_pages;
-  //ssize_t numrd;
+  ssize_t numrd;
   uintptr_t addr;
   uint8_t * flags;
   struct ate * ate;
@@ -441,13 +430,13 @@ __vmm_sigsegv__(int const sig, siginfo_t * const si, void * const ctx)
     /* swap in the required memory */
     if (VMM_LZYRD == (vmm.opts&VMM_LZYRD)) {
       l_pages = 1;
-      //numrd   = __vmm_swap_i__(ate, ip, 1);
-      //assert(-1 != numrd);
+      numrd   = __vmm_swap_i__(ate, ip, 1);
+      assert(-1 != numrd);
     }
     else {
       l_pages = ate->n_pages-ate->l_pages;
-      //numrd   = __vmm_swap_i__(ate, 0, ate->n_pages);
-      //assert(-1 != numrd);
+      numrd   = __vmm_swap_i__(ate, 0, ate->n_pages);
+      assert(-1 != numrd);
     }
 
     /* release lock on alloction table entry */
@@ -457,7 +446,7 @@ __vmm_sigsegv__(int const sig, siginfo_t * const si, void * const ctx)
     /* track number of read faults, syspages read from disk, syspages
      * currently loaded, and high water mark for syspages loaded */
     __vmm_track__(numrf, 1);
-    //__vmm_track__(numrd, numrd);
+    __vmm_track__(numrd, numrd);
     __vmm_track__(curpages, __vmm_to_sys__(l_pages));
     __vmm_track__(maxpages,
       vmm.curpages>vmm.maxpages?vmm.curpages-vmm.maxpages:0);

@@ -5,6 +5,9 @@
 #include <sys/types.h> /* ssize_t */
 
 
+/****************************************************************************/
+/*! Pthread configurations. */
+/****************************************************************************/
 #ifdef USE_PTHREAD
 # include <pthread.h> /* pthread library */
 # define LOCK_INIT(LOCK) pthread_mutex_init(LOCK, NULL)
@@ -20,14 +23,22 @@
 
 
 /****************************************************************************/
-/* Function prototypes for libc hooks. */
+/*! Function prototypes for libc hooks. */
 /****************************************************************************/
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 extern int     libc_open(char const *, int, ...);
 extern int     libc_close(int);
 extern ssize_t libc_read(int const, void * const, size_t const);
 extern ssize_t libc_write(int const, void const * const, size_t const);
 extern int     libc_mlock(void const * const, size_t const);
 extern int     libc_munlock(void const * const, size_t const);
+
+#ifdef __cplusplus
+}
+#endif
 
 
 #endif

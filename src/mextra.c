@@ -6,16 +6,8 @@
 #include <malloc.h> /* struct mallinfo */
 #include <string.h> /* memset */
 #include "config.h"
+#include "malloc2.h"
 #include "vmm.h"
-
-
-/****************************************************************************/
-/* Mallopt parameters. */
-/****************************************************************************/
-enum occ_params
-{
-  OOC_VMM_OPTS = 0  /*!< vmm option parameter for mallopt */
-};
 
 
 /****************************************************************************/
@@ -31,7 +23,7 @@ __ooc_mallopt__(int const param, int const value)
     return -1;
 
   switch (param) {
-    case OOC_VMM_OPTS:
+    case MALLOPT_VMMOPTS:
     vmm.opts = value;
     break;
 
@@ -48,7 +40,7 @@ __ooc_mallopt__(int const param, int const value)
 
 
 /****************************************************************************/
-/* Return some memory statistics */
+/*! Return some memory statistics */
 /****************************************************************************/
 extern struct mallinfo
 __ooc_mallinfo__(void)
