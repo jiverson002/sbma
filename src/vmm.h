@@ -17,7 +17,7 @@
 
 /****************************************************************************/
 /*
- * Virtual memory manager optino bits:
+ * Virtual memory manager option bits:
  *
  *   bit 0 ==    0:                      1: lazy read
  */

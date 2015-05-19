@@ -3,7 +3,7 @@
 #endif
 
 /****************************************************************************/
-/* Need optimizations off or GCC will optimize away the termporary setting of
+/* Need optimizations off or GCC will optimize away the temporary setting of
  * libc_calloc in the HOOK_INIT macro. */
 /****************************************************************************/
 #pragma GCC push_options
