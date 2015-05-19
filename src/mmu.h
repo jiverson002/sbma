@@ -2,8 +2,8 @@
 #define __MMU_H__ 1
 
 
-#include <stdint.h>       /* uint8_t, uintptr_t */
-#include <stddef.h>       /* NULL */
+#include <stdint.h> /* uint8_t, uintptr_t */
+#include <stddef.h> /* NULL */
 #include "config.h"
 
 
@@ -116,6 +116,8 @@ __mmu_insert_ate__(struct mmu * const __mmu, struct ate * const __ate)
   /* release lock */
   if (-1 == LOCK_LET(&(__mmu_>lock)))
     return -1;
+
+  return 0;
 }
 
 
@@ -138,6 +140,8 @@ __mmu_invalidate_ate__(struct mmu * const __mmu, struct ate * const __ate)
 
   if (-1 == LOCK_LET(&(__mmu->lock)))
     return -1;
+
+  return 0;
 }
 
 
@@ -162,6 +166,8 @@ __mmu_lookup_ate__(struct mmu * const __mmu, void const * const __addr)
     if (addr <= __addr && __addr < (void*)((uintptr_t)addr+len))
       break;
   }
+
+  /* TODO: should ate get locked here? */
 
   /* release lock */
   if (-1 == LOCK_LET(&(__mmu->lock)))

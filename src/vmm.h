@@ -2,22 +2,11 @@
 #define __VMM_H__ 1
 
 
-#include <assert.h>      /* assert */
-#include <errno.h>        /* errno */
-#include <fcntl.h>        /* O_RDWR, O_CREAT, O_EXCL, open, posix_fadvise */
-#include <malloc.h>       /* struct mallinfo */
-#include <signal.h>       /* struct sigaction, siginfo_t, sigemptyset, sigaction */
-#include <stdint.h>       /* uintptr_t */
-#include <stdio.h>        /* stderr, fprintf */
-#include <stdlib.h>       /* NULL */
-#include <string.h>       /* memset */
-#include <sys/mman.h>     /* mmap, munmap, madvise, mprotect */
-#include <sys/resource.h> /* rlimit */
-#include <sys/stat.h>     /* S_IRUSR, S_IWUSR, open */
-#include <sys/time.h>     /* rlimit */
-#include <sys/types.h>    /* open, ssize_t */
-#include <unistd.h>       /* close, read, write, sysconf */
-
+#include <assert.h>   /* assert */
+#include <signal.h>   /* struct sigaction, siginfo_t, sigemptyset, sigaction */
+#include <stddef.h>   /* NULL, size_t */
+#include <stdint.h>   /* uint8_t, uintptr_t */
+#include <sys/mman.h> /* mmap, munmap, madvise, mprotect */
 #include "config.h"
 #include "mmu.h"
 
@@ -27,6 +16,8 @@
 /****************************************************************************/
 struct vmm
 {
+  int opts;                 /*!< runtime options */
+
   size_t page_size;         /*!< bytes per page */
 
   size_t numrf;             /*!< total number of read segfaults */
@@ -50,13 +41,13 @@ struct vmm
 };
 
 
-#if 0
 /****************************************************************************/
 /*! The SIGSEGV handler. */
 /****************************************************************************/
 static inline void
-__info_segv__(int const sig, siginfo_t * const si, void * const ctx)
+__vmm_sigsegv__(int const sig, siginfo_t * const si, void * const ctx)
 {
+#if 0
   size_t ip, psize, ld_pages, numrd;
   uintptr_t addr;
   char * flags;
@@ -66,67 +57,67 @@ __info_segv__(int const sig, siginfo_t * const si, void * const ctx)
   assert(SIGSEGV == sig);
 
   /* setup local variables */
-  psize = sb_info.pagesize;
-  addr  = (uintptr_t)si->si_addr;
-  alloc = __info_find__(addr);
-  assert(NULL != alloc); /* probably shouldn't just abort here, since this
-                            will only succeed when a `bad' SIGSEGV has been
-                            raised */
+  page_size = sb_info.pagesize;
+  addr      = (uintptr_t)si->si_addr;
 
-  SB_GET_LOCK(&(alloc->lock));
-  ip    = (addr-alloc->base)/psize;
-  flags = alloc->flags;
+  /* locate allocation table entry */
+  ate = __mmu_locate__(addr);
+  assert(NULL != ate);
 
-  if (__if_flags__(flags[ip], 0, SBPAGE_SYNC)) {
-    /* invoke charge callback function before swapping in any memory -- this
-     * is only done once for each allocation between successive swap outs */
-    if (0 == alloc->ld_pages && NULL != sb_info.acct_charge_cb)
-      (void)(*sb_info.acct_charge_cb)(SB_TO_SYS(alloc->n_pages, psize));
+  ip    = (addr-ate->base)/page_size;
+  flags = ate->flags;
+
+  if (MMU_RSDNT == (flags[ip]&MMU_RSDNT)) {
+    /* TODO: check memory file to see if there is enough free memory to complete
+     * this allocation. */
 
     /* swap in the required memory */
-    if (0 == sb_opts[SBOPT_LAZYREAD]) {
-      ld_pages = alloc->n_pages-alloc->ld_pages;
-      numrd    = __swap_in__(alloc, 0, alloc->n_pages);
+    if (VMM_LZYRD == (vmm.opts&VMM_LZYRD)) {
+      l_pages = 1;
+      numrd   = __vmm_swap_o__(ate, ip, 1);
       assert(-1 != numrd);
     }
     else {
-      ld_pages = 1;
-      numrd    = __swap_in__(alloc, ip, 1);
+      l_pages = ate->n_pages-ate->l_pages;
+      numrd   = __vmm_swap_i__(ate, 0, ate->n_pages);
       assert(-1 != numrd);
     }
 
-    /* release lock on alloction */
-    SB_LET_LOCK(&(alloc->lock));
+    /* release lock on alloction table entry */
+    LOCK_LET(&(ate->lock));
 
     /* track number of read faults, syspages read from disk, syspages
      * currently loaded, and high water mark for syspages loaded */
-    __INFO_TRACK__(sb_info.numrf, 1);
-    __INFO_TRACK__(sb_info.numrd, numrd);
-    __INFO_TRACK__(sb_info.curpages, SB_TO_SYS(ld_pages, psize));
-    __INFO_TRACK__(sb_info.maxpages,
-      sb_info.curpages>sb_info.maxpages?sb_info.curpages-sb_info.maxpages:0);
+    __vmm_track__(numrf, 1);
+    __vmm_track__(numrd, numrd);
+    __vmm_track__(curpages, __vmm_to_sys__(l_pages));
+    __vmm_track__(maxpages,
+      vmm.curpages>vmm.maxpages?vmm.curpages-vmm.maxpages:0);
   }
   else {
     /* sanity check */
-    assert(__if_flags__(flags[ip], SBPAGE_SYNC, SBPAGE_DIRTY));
+    assert(MMU_RSDNT == (flags[ip]&MMU_RSDNT));
+    assert(MMU_DIRTY != (flags[ip]&MMU_DIRTY));
 
-    /* - all flags */
-    /* + DIRTY flag */
-    flags[ip] = SBPAGE_DIRTY;
+    /* give dirty and resident flags */
+    flags[ip] = MMU_DIRTY|MMU_RSDNT;
 
     /* update protection to read-write */
-    SBMPROTECT(alloc->base+(ip*psize), psize, PROT_READ|PROT_WRITE);
+    ret = mprotect((void*)(ate->base+(ip*page_size)), page_size,\
+      PROT_READ|PROT_WRITE);
+    assert(-1 != ret);
 
-    /* release lock on alloction */
-    SB_LET_LOCK(&(alloc->lock));
+    /* release lock on alloction table entry */
+    LOCK_LET(&(ate->lock));
 
     /* track number of write faults */
-    __INFO_TRACK__(sb_info.numwf, 1);
+    __vmm_track__(numwf, 1);
   }
 
   if (NULL == ctx) {} /* suppress unused warning */
-}
 #endif
+  if (0 == sig || NULL == si || NULL == ctx) {}
+}
 
 
 /****************************************************************************/
@@ -146,10 +137,13 @@ do {\
 /****************************************************************************/
 static inline int
 __vmm_init__(struct vmm * const __vmm, size_t const __page_size,
-             char const * const __fstem)
+             char const * const __fstem, int const __opts)
 {
   /* set page size */
   __vmm->page_size = __page_size;
+
+  /* set options */
+  __vmm->opts = __opts;
 
   /* initialize statistics */
   __vmm->numrf    = 0;
@@ -164,7 +158,6 @@ __vmm_init__(struct vmm * const __vmm, size_t const __page_size,
   strncpy(__vmm->fstem, __fstem, FILENAME_MAX-1);
   __vmm->fstem[FILENAME_MAX-1] = '\0';
 
-#if 0
   /* setup the signal handler */
   __vmm->act.sa_flags     = SA_SIGINFO;
   __vmm->act.sa_sigaction = __vmm_sigsegv__;
@@ -172,7 +165,6 @@ __vmm_init__(struct vmm * const __vmm, size_t const __page_size,
     return -1;
   if (-1 == sigaction(SIGSEGV, &(__vmm->act), &(__vmm->oldact)))
     return -1;
-#endif
 
   /* initialize mmu */
   if (-1 == __mmu_init__(&(__vmm->mmu), __page_size))
@@ -181,6 +173,8 @@ __vmm_init__(struct vmm * const __vmm, size_t const __page_size,
   /* initialize vmm lock */
   if (-1 == LOCK_INIT(&(__vmm->lock)))
     return -1;
+
+  return 0;
 }
 
 
@@ -197,6 +191,8 @@ __vmm_destroy__(struct vmm * const __vmm)
   /* destroy mmu lock */
   if (-1 == LOCK_FREE(&(__vmm->lock)))
     return -1;
+
+  return 0;
 }
 
 
