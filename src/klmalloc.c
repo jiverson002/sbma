@@ -1632,6 +1632,9 @@ KL_realloc(void * const ptr, size_t const size)
   if (NULL == (nptr=KL_malloc(size)))
     return ptr;
 
+  /* Copy old memory to new memory. */
+  memcpy(nptr, ptr, KL_G_SIZE(KL_G_ALLOC(ptr)));
+
   /* Release old memory region. */
   KL_free(ptr);
 
