@@ -493,10 +493,6 @@ static inline int
 __vmm_init__(struct vmm * const __vmm, size_t const __page_size,
              char const * const __fstem, int const __opts)
 {
-#ifdef USE_PTHREAD
-  pthread_mutexattr_t attr;
-#endif
-
   /* set page size */
   __vmm->page_size = __page_size;
 
@@ -529,17 +525,8 @@ __vmm_init__(struct vmm * const __vmm, size_t const __page_size,
     return -1;
 
   /* initialize vmm lock */
-#ifdef USE_PTHREAD
-  /* this lock must be recursive so that the mtouchall, mclearall, and
-   * mevictall functions can aquire lock, then call their single counterparts
-   * which also acquire lock. */
-  if (0 != pthread_mutexattr_init(&attr))
+  if (-1 == LOCK_INIT(&(__vmm->lock)))
     return -1;
-  if (0 != pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE))
-    return -1;
-  if (0 != pthread_mutex_init(&(__vmm->lock), &attr))
-    return -1;
-#endif
 
   return 0;
 }
