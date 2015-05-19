@@ -168,6 +168,10 @@ __mmu_lookup_ate__(struct mmu * const __mmu, void const * const __addr)
   }
 
   /* TODO: should ate get locked here? */
+  if (-1 == LOCK_GET(&(ate->lock))) {
+    (void)LOCK_LET(&(__mmu->lock));
+    return (struct ate*)-1;
+  }
 
   /* release lock */
   if (-1 == LOCK_LET(&(__mmu->lock)))

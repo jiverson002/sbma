@@ -2,27 +2,17 @@
 
 
 #include <fcntl.h>     /* O_RDWR, O_CREAT, O_EXCL */
-#include <malloc.h>    /* struct mallinfo */
 #include <stdint.h>    /* uint8_t, uintptr_t */
 #include <stddef.h>    /* NULL, size_t */
+#include <stdio.h>     /* FILENAME_MAX */
 #include <string.h>    /* memcpy */
-#include <sys/mman.h>  /* mmap, munmap, madvise, mprotect */
+#include <sys/mman.h>  /* mmap, mremap, munmap, madvise, mprotect */
 #include <sys/stat.h>  /* S_IRUSR, S_IWUSR */
-#include <sys/types.h> /* ssize_t, truncate */
-#include <unistd.h>    /* sysconf, truncate */
+#include <sys/types.h> /* truncate */
+#include <unistd.h>    /* truncate */
 #include "config.h"
 #include "mmu.h"
 #include "vmm.h"
-
-
-/****************************************************************************/
-/* Function prototypes for hooks. */
-/****************************************************************************/
-extern int     libc_open(char const *, int, ...);
-extern ssize_t libc_read(int const, void * const, size_t const);
-extern ssize_t libc_write(int const, void const * const, size_t const);
-extern int     libc_mlock(void const * const, size_t const);
-extern int     libc_munlock(void const * const, size_t const);
 
 
 #define PAGE_SIZE (1<<14)
@@ -31,17 +21,15 @@ extern int     libc_munlock(void const * const, size_t const);
 
 
 static int init=0;
-static struct vmm vmm;
 #ifdef USE_PTHREAD
 static pthread_mutex_t init_lock=PTHREAD_MUTEX_INITIALIZER;
 #endif
 
 
 /****************************************************************************/
-/* Converts pages to system pages. */
+/* The single instance of vmm per process. */
 /****************************************************************************/
-#define __ooc_to_sys__(__N_PAGES)\
-  ((__N_PAGES)*vmm.page_size/sysconf(_SC_PAGESIZE))
+struct vmm vmm;
 
 
 /****************************************************************************/
@@ -145,7 +133,7 @@ __ooc_malloc__(size_t const __size)
     return NULL;
   if (-1 == ftruncate(fd, n_pages*page_size))
     return NULL;
-  if (-1 == close(fd))
+  if (-1 == libc_close(fd))
     return NULL;
 
   /* set pointer for the allocation table entry */
@@ -169,8 +157,8 @@ __ooc_malloc__(size_t const __size)
 
   /* track number of syspages currently loaded, currently allocated, and high
    * water mark number of syspages */
-  __vmm_track__(curpages, __ooc_to_sys__(s_pages+n_pages+f_pages));
-  __vmm_track__(numpages, __ooc_to_sys__(s_pages+n_pages+f_pages));
+  __vmm_track__(curpages, __vmm_to_sys__(s_pages+n_pages+f_pages));
+  __vmm_track__(numpages, __vmm_to_sys__(s_pages+n_pages+f_pages));
   __vmm_track__(maxpages, vmm.curpages>vmm.maxpages?vmm.curpages-vmm.maxpages:0);
 
   return (void*)ate->base;
@@ -223,21 +211,22 @@ __ooc_free__(void * const __ptr)
   /* TODO: update memory file */
 
   /* track number of syspages currently loaded and allocated */
-  __vmm_track__(curpages, -__ooc_to_sys__(s_pages+l_pages+f_pages));
-  __vmm_track__(numpages, -__ooc_to_sys__(s_pages+n_pages+f_pages));
+  __vmm_track__(curpages, -__vmm_to_sys__(s_pages+l_pages+f_pages));
+  __vmm_track__(numpages, -__vmm_to_sys__(s_pages+n_pages+f_pages));
 
   return 0;
 }
 
 
 /****************************************************************************/
-/*! Allocate memory via anonymous mmap. */
+/*! Re-allocate memory via anonymous mmap. */
 /****************************************************************************/
 extern void *
 __ooc_realloc__(void * const __ptr, size_t const __size)
 {
   int ret;
-  size_t i, page_size, s_pages, on_pages, of_pages, nn_pages, nf_pages;
+  size_t i, page_size, s_pages, on_pages, of_pages, ol_pages;
+  size_t nn_pages, nf_pages;
   uintptr_t oaddr, naddr;
   uint8_t * oflags;
   struct ate * ate;
@@ -250,83 +239,99 @@ __ooc_realloc__(void * const __ptr, size_t const __size)
   oflags    = ate->flags;
   on_pages  = ate->n_pages;
   of_pages  = 1+((on_pages*sizeof(uint8_t)-1)/page_size);
+  ol_pages  = ate->l_pages;
   nn_pages  = 1+((__size-1)/page_size);
   nf_pages  = 1+((nn_pages*sizeof(uint8_t)-1)/page_size);
 
-  if (nn_pages <= on_pages) {
-    /* unlock the unused pages from RAM */
-    ret = libc_munlock((void*)(oaddr+((s_pages+nn_pages)*page_size)),\
-      (on_pages-nn_pages)*page_size);
-    if (-1 == ret)
-      return NULL;
-    /* advise kernel to release resources of the unused pages */
-    ret = madvise((void*)(oaddr+((s_pages+nn_pages)*page_size)),\
-      (on_pages-nn_pages)*page_size, MADV_DONTNEED);
-    if (-1 == ret)
-      return NULL;
-
-    /* TODO: should copy flags to then end of the smaller allocation, then
-     * unmap the unused pages from the end of the allocation. */
-
-    /* update page counts for the ate */
-    ate->n_pages = nn_pages;
-    for (i=nn_pages; i<on_pages; ++i) {
-      if (MMU_RSDNT == (oflags[i]&MMU_RSDNT))
-        ate->l_pages--;
-    }
-
-    /* TODO: what to do about vmm.numpages, since technically, the unused
-     * pages are still allocated. furthermore, they will never be unmapped,
-     * until the application exists, this is a problem. possible solution:
-     * keeps a field in the ate struct which is the allocation size, then
-     * munmap using this when the ate is freed. */
-
-    /* track number of syspages currently loaded and allocated */
-    __vmm_track__(curpages,\
-      -__ooc_to_sys__((on_pages+of_pages)-(nn_pages+nf_pages)));
-    //__vmm_track__(numpages, -__ooc_to_sys__(s_pages+n_pages+f_pages));
+  if (nn_pages == on_pages) {
   }
-  else {
-    /* TODO: check memory file to see if there is enough free memory to complete
-     * this allocation. */
-
-    /* allocate new memory */
-    naddr = (uintptr_t)mmap(NULL, (s_pages+nn_pages+nf_pages)*page_size,
-      PROT_READ|PROT_WRITE,\
-      MAP_PRIVATE|MAP_ANONYMOUS|MAP_NORESERVE|MAP_LOCKED, -1, 0);
+  else if (nn_pages < on_pages) {
+    /* resize allocation */
+    naddr = (uintptr_t)mremap((void*)oaddr,\
+      (s_pages+on_pages+of_pages)*page_size,\
+      (s_pages+nn_pages+nf_pages)*page_size, MREMAP_MAYMOVE);
     if ((uintptr_t)MAP_FAILED == naddr)
       return NULL;
 
-    /* give old memory read permission for copy opeation */
-    ret = mprotect((void*)(oaddr+(s_pages*page_size)), on_pages*page_size,\
-      PROT_READ);
-    if (-1 == ret)
-      return NULL;
-
-    /* copy old memory into new memory */
-    memcpy((void*)(naddr+(s_pages*page_size)),\
-      (void*)(oaddr+(s_pages*page_size)), on_pages*page_size);
-
-    /* read-only protect application pages -- this will avoid the double
-     * SIGSEGV for new allocations */
-    ret = mprotect((void*)(naddr+(s_pages*page_size)), nn_pages*page_size,\
-      PROT_READ);
-    if (-1 == ret)
-      return NULL;
-
-    /* move old file to new file and trucate to size */
-    if (0 > snprintf(ofname, FILENAME_MAX, "%s%d-%zx", vmm.fstem,\
-      (int)getpid(), oaddr))
-    {
-      return NULL;
+    /* adjust l_pages for the pages which will be unmapped */
+    ate->n_pages = nn_pages;
+    for (i=nn_pages; i<on_pages; ++i) {
+      if (MMU_RSDNT != (oflags[i]&MMU_RSDNT))
+        ate->l_pages--;
     }
+
+    /* update protection for new page flags area of allocation */
+    ret = mprotect((void*)(oaddr+((s_pages+nn_pages)*page_size)),\
+      nf_pages*page_size, PROT_READ|PROT_WRITE);
+    if (-1 == ret)
+      return NULL;
+
+    /* lock new page flags area of allocation into RAM */
+    ret = libc_mlock((void*)(oaddr+((s_pages+nn_pages)*page_size)),\
+      nf_pages*page_size);
+    if (-1 == ret)
+      return NULL;
+
+    /* copy page flags to new location */
+    memmove((void*)(oaddr+((s_pages+nn_pages)*page_size)),\
+      (void*)(oaddr+((s_pages+on_pages)*page_size)), nf_pages*page_size);
+
+    /* unmap unused section of memory */
+    ret = munmap((void*)(oaddr+((s_pages+nn_pages+nf_pages)*page_size)),\
+      ((on_pages-nn_pages)+(of_pages-nf_pages))*page_size);
+    if (-1 == ret)
+      return NULL;
+
+    /* TODO: update memory file */
+
+    /* track number of syspages currently loaded and allocated */
+    __vmm_track__(curpages,\
+      -__vmm_to_sys__((ol_pages-ate->l_pages)+(of_pages-nf_pages)));
+    __vmm_track__(numpages,\
+      -__vmm_to_sys__((on_pages-nn_pages)+(of_pages-nf_pages)));
+  }
+  else {
+    /* TODO: check memory file to see if there is enough free memory to
+     * complete this allocation. */
+
+    /* resize allocation */
+    naddr = (uintptr_t)mremap((void*)oaddr,\
+      (s_pages+on_pages+of_pages)*page_size,\
+      (s_pages+nn_pages+nf_pages)*page_size, MREMAP_MAYMOVE);
+    if ((uintptr_t)MAP_FAILED == naddr)
+      return NULL;
+
+    /* copy page flags to new location */
+    memmove((void*)(naddr+((s_pages+nn_pages)*page_size)),\
+      (void*)(naddr+((s_pages+on_pages)*page_size)), of_pages*page_size);
+
+    /* grant read-only permission to extended area of application memory */
+    ret = mprotect((void*)(naddr+((s_pages+on_pages)*page_size)),\
+      (nn_pages-on_pages)*page_size, PROT_READ);
+    if (-1 == ret)
+      return NULL;
+
+    /* lock new are of allocation into RAM */
+    ret = libc_mlock((void*)(naddr+(s_pages+on_pages)*page_size),\
+      ((nn_pages-on_pages)+nf_pages)*page_size);
+    if (-1 == ret)
+      return NULL;
+
     if (0 > snprintf(nfname, FILENAME_MAX, "%s%d-%zx", vmm.fstem,\
       (int)getpid(), naddr))
     {
       return NULL;
     }
-    if (-1 == rename(ofname, nfname))
-      return NULL;
+    if (oaddr != naddr) {
+      /* move old file to new file and trucate to size */
+      if (0 > snprintf(ofname, FILENAME_MAX, "%s%d-%zx", vmm.fstem,\
+        (int)getpid(), oaddr))
+      {
+        return NULL;
+      }
+      if (-1 == rename(ofname, nfname))
+        return NULL;
+    }
     if (-1 == truncate(nfname, nn_pages*page_size))
       return NULL;
 
@@ -335,30 +340,19 @@ __ooc_realloc__(void * const __ptr, size_t const __size)
 
     /* populate ate structure */
     ate->n_pages = nn_pages;
-    ate->l_pages = nn_pages;
+    ate->l_pages =\
+      ol_pages+((nn_pages-on_pages)+(nf_pages-of_pages))*page_size;
     ate->base    = naddr+(s_pages*page_size);
     ate->flags   = (uint8_t*)(naddr+((s_pages+nn_pages)*page_size));
 
-    for (i=0; i<on_pages; ++i) {
-      if (MMU_ZFILL == (ate->flags[i]&MMU_ZFILL))
-        ate->flags[i] |= MMU_ZFILL;
-    }
-
-    /* initialize ate lock */
-    ret = LOCK_INIT(&(ate->lock));
-    if (-1 == ret)
-      return NULL;
-
-    /* free old allocation */
-    ret = __ooc_free__((void*)(oaddr+(s_pages*page_size)));
-    if (-1 == ret)
-      return NULL;
-
     /* track number of syspages currently loaded, currently allocated, and
      * high water mark number of syspages */
-    __vmm_track__(curpages, __ooc_to_sys__(s_pages+nn_pages+nf_pages));
-    __vmm_track__(numpages, __ooc_to_sys__(s_pages+nn_pages+nf_pages));
-    __vmm_track__(maxpages, vmm.curpages>vmm.maxpages?vmm.curpages-vmm.maxpages:0);
+    __vmm_track__(curpages,\
+      __vmm_to_sys__((nn_pages-on_pages)+(nf_pages-of_pages)));
+    __vmm_track__(numpages,\
+      __vmm_to_sys__((nn_pages-on_pages)+(nf_pages-of_pages)));
+    __vmm_track__(maxpages,\
+      vmm.curpages>vmm.maxpages?vmm.curpages-vmm.maxpages:0);
   }
 
   return (void*)ate->base;
