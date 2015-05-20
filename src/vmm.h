@@ -12,7 +12,7 @@
 #include <sys/mman.h> /* mmap, mremap, madvise, mprotect */
 #include <unistd.h>   /* sysconf */
 #include "config.h"
-#include "malloc2.h"
+#include "sbma.h"
 #include "mmu.h"
 
 
