@@ -15,7 +15,6 @@
 #include <malloc.h>    /* struct mallinfo */
 #include <stdarg.h>    /* stdarg library */
 #include <stddef.h>    /* size_t */
-#include <stdint.h>    /* SIZE_MAX */
 #include <stdio.h>     /* FILE */
 #include <string.h>    /* memset */
 #include <sys/stat.h>  /* stat, open */
@@ -449,7 +448,9 @@ extern int
 stat(char const * path, struct stat * buf)
 {
   if (1 == sbma_mexist(path))
-    (void)sbma_mtouch((void*)path, SIZE_MAX);
+    (void)sbma_mtouch((void*)path, strlen(path));
+  if (1 == sbma_mexist(buf))
+    (void)sbma_mtouch((void*)buf, sizeof(struct stat));
 
   return libc_stat(path, buf);
 }
@@ -462,7 +463,9 @@ extern int
 __xstat(int ver, const char * path, struct stat * buf)
 {
   if (1 == sbma_mexist(path))
-    (void)sbma_mtouch((void*)path, SIZE_MAX);
+    (void)sbma_mtouch((void*)path, strlen(path));
+  if (1 == sbma_mexist(buf))
+    (void)sbma_mtouch((void*)buf, sizeof(struct stat));
 
   return libc___xstat(ver, path, buf);
 }
@@ -477,7 +480,7 @@ extern int
 __xstat64(int ver, const char * path, struct stat64 * buf)
 {
   if (1 == sbma_mexist(path))
-    (void)sbma_mtouch((void*)path, SIZE_MAX);
+    (void)sbma_mtouch((void*)path, strlen(path));
 
   return libc_xstat64(path, buf);
 }
@@ -495,7 +498,7 @@ open(char const * path, int flags, ...)
   mode_t mode=0;
 
   if (1 == sbma_mexist(path))
-    (void)sbma_mtouch((void*)path, SIZE_MAX);
+    (void)sbma_mtouch((void*)path, strlen(path));
 
   if (O_CREAT == (flags&O_CREAT)) {
     va_start(list, flags);
@@ -528,13 +531,18 @@ read(int const fd, void * const buf, size_t const count)
 }
 
 
+#include <stdint.h>
 /*************************************************************************/
 /*! Hook: write */
 /*************************************************************************/
 extern ssize_t
 write(int const fd, void const * const buf, size_t const count)
 {
-  (void)sbma_mtouch((void*)buf, count);
+  printf("[%5d]:%s:%d %zx -- %zx (%d)\n", (int)getpid(), __func__, __LINE__,
+      (uintptr_t)buf, (uintptr_t)buf+count, sbma_mexist(buf));
+
+  if (1 == sbma_mexist(buf))
+    (void)sbma_mtouch((void*)buf, count);
 
   return libc_write(fd, buf, count);
 }
@@ -566,7 +574,8 @@ extern size_t
 fwrite(void const * const buf, size_t const size, size_t const num,
        FILE * const stream)
 {
-  (void)sbma_mtouch((void*)buf, size);
+  if (1 == sbma_mexist(buf))
+    (void)sbma_mtouch((void*)buf, size);
 
   return libc_fwrite(buf, size, num, stream);
 }

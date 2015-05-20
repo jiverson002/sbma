@@ -19,7 +19,6 @@ __ooc_mtouch_probe__(struct ate * const __ate, void * const __addr,
                      size_t const __len)
 {
   size_t ip, beg, end, page_size, n_pages, l_pages;
-  uintptr_t addr;
   uint8_t * flags;
 
   page_size = vmm.page_size;
@@ -27,9 +26,8 @@ __ooc_mtouch_probe__(struct ate * const __ate, void * const __addr,
 
   /* need to make sure that all bytes are captured, thus beg is a floor
    * operation and end is a ceil operation. */
-  addr    = (uintptr_t)__addr&(~(page_size-1));
-  n_pages = 1+((__len+page_size-1)/page_size);
-  beg     = (addr-__ate->base)/page_size;
+  n_pages = 1+((__len-1)/page_size);
+  beg     = ((uintptr_t)__addr-__ate->base)/page_size;
   end     = beg+n_pages;
 
   for (l_pages=0,ip=beg; ip<end; ++ip) {
@@ -50,15 +48,13 @@ __ooc_mtouch_int__(struct ate * const __ate, void * const __addr,
 {
   size_t beg, end, page_size, n_pages;
   ssize_t numrd;
-  uintptr_t addr;
 
   page_size = vmm.page_size;
 
   /* need to make sure that all bytes are captured, thus beg is a floor
    * operation and end is a ceil operation. */
-  addr    = (uintptr_t)__addr&(~(page_size-1));
-  n_pages = 1+((__len+page_size-1)/page_size);
-  beg     = (addr-__ate->base)/page_size;
+  n_pages = 1+((__len-1)/page_size);
+  beg     = ((uintptr_t)__addr-__ate->base)/page_size;
   end     = beg+n_pages;
 
   numrd = __vmm_swap_i__(__ate, beg, end-beg);
@@ -179,6 +175,7 @@ __ooc_mtouchall__(void)
   /* track number of syspages currently loaded, number of syspages written to
    * disk, and high water mark for syspages loaded */
   __vmm_track__(curpages, l_pages);
+  __vmm_track__(curpages, l_pages);
   __vmm_track__(numrd, numrd);
   __vmm_track__(maxpages,\
     vmm.curpages>vmm.maxpages?vmm.curpages-vmm.maxpages:0);
@@ -195,7 +192,6 @@ __ooc_mclear__(void * const __addr, size_t const __len)
 {
   size_t beg, end, page_size, n_pages;
   ssize_t ret;
-  uintptr_t addr;
   struct ate * ate;
 
   ate = __mmu_lookup_ate__(&(vmm.mmu), __addr);
@@ -207,14 +203,15 @@ __ooc_mclear__(void * const __addr, size_t const __len)
   /* can only clear pages fully within range, thus beg is a ceil
    * operation and end is a floor operation, except for when addr+len
    * consumes all of the last page, then end just equals n_pages. */
-  addr    = 1+(((uintptr_t)__addr+page_size-1)/page_size);
-  n_pages = (__len&(~(page_size-1)))/page_size;
-  beg     = (addr-ate->base)/page_size;
+  n_pages = __len/page_size;
+  beg     = 1+(((uintptr_t)__addr-1)/page_size);
   end     = beg+n_pages;
 
-  ret = __vmm_swap_x__(ate, beg, end-beg);
-  if (-1 == ret)
-    return -1;
+  if (beg <= end) {
+    ret = __vmm_swap_x__(ate, beg, end-beg);
+    if (-1 == ret)
+      return -1;
+  }
 
   ret = LOCK_LET(&(ate->lock));
   if (-1 == ret)
@@ -261,7 +258,6 @@ __ooc_mevict_probe__(struct ate * const __ate, void * const __addr,
                      size_t const __len)
 {
   size_t ip, beg, end, page_size, n_pages, l_pages;
-  uintptr_t addr;
   uint8_t * flags;
 
   page_size = vmm.page_size;
@@ -269,13 +265,12 @@ __ooc_mevict_probe__(struct ate * const __ate, void * const __addr,
 
   /* need to make sure that all bytes are captured, thus beg is a floor
    * operation and end is a ceil operation. */
-  addr    = (uintptr_t)__addr&(~(page_size-1));
-  n_pages = 1+((__len+page_size-1)/page_size);
-  beg     = (addr-__ate->base)/page_size;
+  n_pages = 1+((__len+-1)/page_size);
+  beg     = ((uintptr_t)__addr-__ate->base)/page_size;
   end     = beg+n_pages;
 
   for (l_pages=0,ip=beg; ip<end; ++ip) {
-    if (MMU_RSDNT == (flags[ip]&MMU_RSDNT)) /* not resident */
+    if (MMU_RSDNT != (flags[ip]&MMU_RSDNT)) /* resident */
       l_pages++;
   }
 
@@ -292,15 +287,13 @@ __ooc_mevict_int__(struct ate * const __ate, void * const __addr,
 {
   size_t beg, end, page_size, n_pages;
   ssize_t numwr;
-  uintptr_t addr;
 
   page_size = vmm.page_size;
 
   /* need to make sure that all bytes are captured, thus beg is a floor
    * operation and end is a ceil operation. */
-  addr    = (uintptr_t)__addr&(~(page_size-1));
-  n_pages = 1+((__len+page_size-1)/page_size);
-  beg     = (addr-__ate->base)/page_size;
+  n_pages = 1+((__len-1)/page_size);
+  beg     = ((uintptr_t)__addr-__ate->base)/page_size;
   end     = beg+n_pages;
 
   numwr = __vmm_swap_o__(__ate, beg, end-beg);
@@ -340,6 +333,7 @@ __ooc_mevict__(void * const __addr, size_t const __len)
 
   /* track number of syspages currently loaded, number of syspages written to
    * disk, and high water mark for syspages loaded */
+  __vmm_track__(curpages, l_pages);
   __vmm_track__(curpages, -l_pages);
   __vmm_track__(numrd, numwr);
 
@@ -367,7 +361,7 @@ __ooc_mevictall__(void)
       (void)LOCK_LET(&(vmm.lock));
       return -1;
     }
-    ret = __ooc_mtouch_probe__(ate, (void*)ate->base,\
+    ret = __ooc_mevict_probe__(ate, (void*)ate->base,\
       ate->n_pages*vmm.page_size);
     if (-1 == ret) {
       (void)LOCK_LET(&(ate->lock));
@@ -375,7 +369,7 @@ __ooc_mevictall__(void)
       return -1;
     }
     l_pages += ret;
-    ret = __ooc_mtouch_int__(ate, (void*)ate->base,\
+    ret = __ooc_mevict_int__(ate, (void*)ate->base,\
       ate->n_pages*vmm.page_size);
     if (-1 == ret) {
       (void)LOCK_LET(&(ate->lock));

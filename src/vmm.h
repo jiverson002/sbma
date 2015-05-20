@@ -159,6 +159,10 @@ __vmm_swap_i__(struct ate * const __ate, size_t const __beg,
   assert(__beg < __ate->n_pages-__num);
   assert(__num < __ate->n_pages-__ate->l_pages);
 
+  /* shortcut */
+  if (0 == __num)
+    return 0;
+
   /* shortcut by checking to see if all pages are already loaded */
   if (__ate->l_pages == __ate->n_pages)
     return 0;
@@ -189,7 +193,7 @@ __vmm_swap_i__(struct ate * const __ate, size_t const __beg,
    * not since been dumped */
   for (ipfirst=-1,ip=__beg; ip<=end; ++ip) {
     if (ip != end &&\
-        (MMU_DIRTY == (flags[ip]&MMU_DIRTY)) &&  /* not dirty */\
+        (MMU_DIRTY != (flags[ip]&MMU_DIRTY)) &&  /* not dirty */\
         (MMU_RSDNT == (flags[ip]&MMU_RSDNT)) &&  /* not resident */\
         (MMU_ZFILL == (flags[ip]&MMU_ZFILL)))    /* cannot be zero filled */
     {
@@ -207,11 +211,19 @@ __vmm_swap_i__(struct ate * const __ate, size_t const __beg,
       ipfirst = -1;
     }
 
-    if (ip != end && MMU_RSDNT == (flags[ip]&MMU_RSDNT)) {
-      __ate->l_pages++;
+    if (ip != end) {
+      if (MMU_RSDNT == (flags[ip]&MMU_RSDNT)) {
+        assert(__ate->l_pages < __ate->n_pages-1);
+        __ate->l_pages++;
 
-      /* flag: *0* */
-      flags[ip] &= ~MMU_RSDNT;
+        /* flag: *0* */
+        flags[ip] &= ~MMU_RSDNT;
+      }
+      else {
+        /* copy data from already resident pages */
+        memcpy((void*)(addr+((ip-__beg)*page_size)),\
+          (void*)(__ate->base+(ip*page_size)), page_size);
+      }
     }
   }
 
@@ -225,10 +237,11 @@ __vmm_swap_i__(struct ate * const __ate, size_t const __beg,
   if (-1 == ret)
     return -1;
 
-  /* update protection of temporary mapping for any dirty pages */
+  /* update protection of temporary mapping and copy data for any dirty pages
+   * */
   for (ip=__beg; ip<end; ++ip) {
     if (MMU_DIRTY == (flags[ip]&MMU_DIRTY)) {
-      ret = mprotect((void*)(addr+((ip-__beg)*page_size)), __num*page_size,\
+      ret = mprotect((void*)(addr+((ip-__beg)*page_size)), page_size,\
         PROT_READ|PROT_WRITE);
       if (-1 == ret)
         return -1;
@@ -266,6 +279,10 @@ __vmm_swap_o__(struct ate * const __ate, size_t const __beg,
   assert(__num <= __ate->n_pages);
   assert(__beg <= __ate->n_pages-__num);
 
+  /* shortcut */
+  if (0 == __num)
+    return 0;
+
   /* shortcut by checking to see if no pages are currently loaded */
   /* TODO: if we track the number of dirty pages, then this can do a better
    * job of short-cutting */
@@ -293,14 +310,14 @@ __vmm_swap_o__(struct ate * const __ate, size_t const __beg,
    * writes in contigous chunks of changed pages. */
   for (ipfirst=-1,ip=__beg; ip<=end; ++ip) {
     if (ip != end && (MMU_DIRTY != (flags[ip]&MMU_DIRTY))) {
-      if (MMU_RSDNT != (flags[ip]&MMU_RSDNT)) {
+      if (MMU_RSDNT == (flags[ip]&MMU_RSDNT)) {
         assert(__ate->l_pages > 0);
         __ate->l_pages--;
       }
 
       /* flag: 01* */
+      flags[ip] &= MMU_ZFILL;
       flags[ip] |= MMU_RSDNT;
-      flags[ip] &= (MMU_RSDNT|MMU_ZFILL);
     }
 
     if (ip != end && (MMU_DIRTY == (flags[ip]&MMU_DIRTY))) {
@@ -371,6 +388,10 @@ __vmm_swap_x__(struct ate * const __ate, size_t const __beg,
   assert(__num <= __ate->n_pages);
   assert(__beg <= __ate->n_pages-__num);
 
+  /* shortcut */
+  if (0 == __num)
+    return 0;
+
   /* shortcut by checking to see if no pages are currently loaded */
   /* TODO: if we track the number of dirty pages, then this can do a better
    * job of short-cutting */
@@ -424,7 +445,7 @@ __vmm_sigsegv__(int const sig, siginfo_t * const si, void * const ctx)
   ip    = (addr-ate->base)/page_size;
   flags = ate->flags;
 
-  if (MMU_RSDNT != (flags[ip]&MMU_RSDNT)) {
+  if (MMU_RSDNT == (flags[ip]&MMU_RSDNT)) {
     /* TODO: check memory file to see if there is enough free memory to
      * complete this allocation. */
 
