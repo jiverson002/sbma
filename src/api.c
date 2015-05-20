@@ -25,6 +25,7 @@ ssize_t __ooc_mclear__(void * const __addr, size_t const __len);
 ssize_t __ooc_mclearall__(void);
 ssize_t __ooc_mevict__(void * const __addr, size_t const __len);
 ssize_t __ooc_mevictall__(void);
+int     __ooc_mexist__(void const * const __addr);
 
 /* mextra.c */
 int             __ooc_mallopt__(int const param, int const value);
@@ -39,7 +40,7 @@ struct mallinfo __ooc_mallinfo__(void);
 /*! API creator macro. */
 /****************************************************************************/
 #define API(__RETTYPE, __FUNC, __PPARAMS, __PARAMS)\
-  extern __RETTYPE sbma__ ## __FUNC __PPARAMS {\
+  extern __RETTYPE sbma_ ## __FUNC __PPARAMS {\
     return __ooc_ ## __FUNC ## __ __PARAMS;\
   }
 
@@ -63,6 +64,7 @@ API(ssize_t, mclear,    (void * const a, size_t const b), (a, b))
 API(ssize_t, mclearall, (void), ())
 API(ssize_t, mevict,    (void * const a, size_t const b), (a, b))
 API(ssize_t, mevictall, (void), ())
+API(int,     mexist,    (void const * const a), (a))
 
 /* mextra.c */
 API(int,             mallopt, (int const a, int const b), (a, b))

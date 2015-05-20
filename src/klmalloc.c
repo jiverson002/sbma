@@ -1689,14 +1689,8 @@ KL_mallopt(int const param, int const value)
           mem.enabled = M_ENABLED_OFF;
           LET_LOCK(&(mem.init_lock));
           kl_mem_destroy(&mem);
-#ifdef USE_SBMALLOC
-          SB_finalize();
-#endif
           break;
         case M_ENABLED_ON:
-#ifdef USE_SBMALLOC
-          SB_init();
-#endif
           kl_mem_init(&mem);
           GET_LOCK(&(mem.init_lock));
           mem.enabled = M_ENABLED_ON;

@@ -185,10 +185,10 @@ do {                                                                        \
 # define CALL_SYS_BZERO(P,S) memset(P, 0, S)
 #endif
 #ifdef USE_SBMALLOC
-# include "sbmalloc.h"
+# include "sbma.h"
 # define SYS_ALLOC_FAIL      NULL
-# define CALL_SYS_ALLOC(P,S) ((P)=SB_mmap(S))
-# define CALL_SYS_FREE(P,S)  SB_munmap(P,S)
+# define CALL_SYS_ALLOC(P,S) ((P)=sbma_malloc(S))
+# define CALL_SYS_FREE(P,S)  sbma_free(P)
 # define CALL_SYS_BZERO(P,S)
 #endif
 

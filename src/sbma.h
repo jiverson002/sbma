@@ -16,7 +16,7 @@ extern "C" {
 /****************************************************************************/
 enum sbma_mallopt_params
 {
-  MALLOPT_VMMOPTS = 0 /*!< vmm option parameter for mallopt */
+  M_VMMOPTS = 0 /*!< vmm option parameter for mallopt */
 };
 
 
@@ -31,6 +31,29 @@ enum sbma_vmm_opt_code
 {
   VMM_LZYRD = 1 << 0
 };
+
+
+/* malloc.c */
+int sbma_init(char const * const fstem, size_t const page_size,
+              int const opts);
+int sbma_destroy(void);
+
+void * sbma_malloc(size_t const size);
+int    sbma_free(void * const ptr);
+void * sbma_realloc(void * const ptr, size_t const size);
+
+/* mstate.c */
+ssize_t sbma_mtouch(void * const ptr, size_t const size);
+ssize_t sbma_mtouchall(void);
+ssize_t sbma_mclear(void * const ptr, size_t const size);
+ssize_t sbma_mclearall(void);
+ssize_t sbma_mevict(void * const ptr, size_t const size);
+ssize_t sbma_mevictall(void);
+int     sbma_mexist(void const * const ptr);
+
+/* mextra.c */
+int             sbma_mallopt(int const param, int const value);
+struct mallinfo sbma_mallinfo(void);
 
 #ifdef __cplusplus
 }

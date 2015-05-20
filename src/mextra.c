@@ -6,7 +6,7 @@
 #include <malloc.h> /* struct mallinfo */
 #include <string.h> /* memset */
 #include "config.h"
-#include "malloc2.h"
+#include "sbma.h"
 #include "vmm.h"
 
 
@@ -23,7 +23,7 @@ __ooc_mallopt__(int const param, int const value)
     return -1;
 
   switch (param) {
-    case MALLOPT_VMMOPTS:
+    case M_VMMOPTS:
     vmm.opts = value;
     break;
 

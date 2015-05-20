@@ -403,3 +403,24 @@ __ooc_mevictall__(void)
 
   return l_pages;
 }
+
+
+/****************************************************************************/
+/*! Check if __addr exists in an allocation table entry. */
+/****************************************************************************/
+extern int
+__ooc_mexist__(void const * const __addr)
+{
+  int ret;
+  struct ate * ate;
+
+  ate = __mmu_lookup_ate__(&(vmm.mmu), __addr);
+  if (NULL == ate)
+    return 0;
+
+  ret = LOCK_LET(&(ate->lock));
+  if (-1 == ret)
+    return -1;
+
+  return 1;
+}
