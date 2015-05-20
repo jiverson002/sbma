@@ -76,7 +76,7 @@ do {\
 
 
 #define IPC_LEN(__N_PROCS)\
-  ((__N_PROCS)*(sizeof(size_t)+sizeof(int))+sizeof(int))
+  (sizeof(size_t)+(__N_PROCS)*(sizeof(size_t)+sizeof(int))+sizeof(int))
 
 
 struct ipc
@@ -89,12 +89,13 @@ struct ipc
   sem_t * trn2;  /*!< ... */
   void * shm;    /*!< shared memory region */
 
+  size_t * smem; /*!< pointer into shm for smem scalar */
   size_t * pmem; /*!< pointer into shm for pmem array */
   int * pid;     /*!< pointer into shm for pid array */
 };
 
 
-extern int
+static int
 __ipc_init__(struct ipc * const __ipc, int const __n_procs)
 {
   int ret, shm_fd, id;
@@ -142,13 +143,12 @@ __ipc_init__(struct ipc * const __ipc, int const __n_procs)
     return -1;
 
   /* close the file descriptor */
-  //TODO: FIXTHIS ret = libc_close(shm_fd);
-  ret = close(shm_fd);
+  ret = libc_close(shm_fd);
   if (-1 == ret)
     return -1;
 
   /* id pointer is last sizeof(int) bytes of shm */
-  idp = (int*)((uintptr_t)shm+(__n_procs*(sizeof(size_t)+sizeof(int))));
+  idp = (int*)((uintptr_t)shm+IPC_LEN(__n_procs)-sizeof(int));
   id  = (*idp)++;
 
   /* setup ipc struct */
@@ -159,8 +159,9 @@ __ipc_init__(struct ipc * const __ipc, int const __n_procs)
   __ipc->cnt     = cnt;
   __ipc->trn1    = trn1;
   __ipc->trn2    = trn2;
-  __ipc->pmem    = (size_t*)shm;
-  __ipc->pid     = (int*)((uintptr_t)shm+(__n_procs*sizeof(size_t)));
+  __ipc->smem    = (size_t*)shm;
+  __ipc->pmem    = (size_t*)((uintptr_t)shm+sizeof(size_t));
+  __ipc->pid     = (int*)((uintptr_t)shm+((__n_procs+1)*sizeof(size_t)));
 
   IPC_BARRIER(__ipc);
 
@@ -168,7 +169,7 @@ __ipc_init__(struct ipc * const __ipc, int const __n_procs)
 }
 
 
-extern int
+static int
 __ipc_destroy__(struct ipc * const __ipc)
 {
   int ret;
@@ -210,6 +211,54 @@ __ipc_destroy__(struct ipc * const __ipc)
     return -1;
 
   return 0;
+}
+
+
+static int
+__ipc_update__(struct ipc * const __ipc, ssize_t const value)
+{
+  int ret;
+
+  ret = sem_wait(__ipc->mtx);
+  if (-1 == ret)
+    return -1;
+
+  __ipc->pmem[__ipc->id] += value;
+  *__ipc->smem += value;
+
+  ret = sem_post(__ipc->mtx);
+  if (-1 == ret)
+    return -1;
+
+  return 0;
+}
+
+
+static ssize_t
+__ipc_memcheck__(struct ipc * const __ipc)
+{
+  int ret;
+  size_t smem;
+
+  ret = sem_wait(__ipc->mtx);
+  if (-1 == ret)
+    return -1;
+
+  smem = *__ipc->smem;
+
+  // 1) check to see if there is enough free system memory
+  // 2) if not, then signal to the process with the most memory
+  //   2.1) __ipc_init__ should install a signal handler on the said signal
+  //        which will call __vmm_mevictall__
+  //   2.2) this will require bdmq_recv to check the return value of
+  //        mq_recieve for EINTR
+  // 3) repeat until enough free memory or no processes have any loaded memory
+
+  ret = sem_post(__ipc->mtx);
+  if (-1 == ret)
+    return -1;
+
+  return smem;
 }
 
 

@@ -18,7 +18,6 @@
 #include "vmm.h"
 
 
-#if 0
 static int init=0;
 #ifdef USE_PTHREAD
 static pthread_mutex_t init_lock=PTHREAD_MUTEX_INITIALIZER;
@@ -356,24 +355,4 @@ __ooc_realloc__(void * const __ptr, size_t const __size)
   }
 
   return (void*)ate->base;
-}
-#endif
-
-
-#include <mpi.h>
-int main(int argc, char * argv[])
-{
-  struct ipc ipc;
-
-  MPI_Init(&argc, &argv);
-
-  if (-1 == __ipc_init__(&ipc, 4))
-    return 1;
-
-  if (-1 == __ipc_destroy__(&ipc))
-    return 1;
-
-  MPI_Finalize();
-
-  return 0;
 }

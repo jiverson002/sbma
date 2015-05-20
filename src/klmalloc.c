@@ -124,7 +124,7 @@ the possibly moved allocated space.
  *  1. Allow coalescing of adjacent blocks.
  */
 
-#include "config.h"
+#include "klconfig.h"
 
 #include <assert.h>   /* assert */
 #include <limits.h>   /* CHAR_BIT */

@@ -13,6 +13,7 @@
 #include <unistd.h>   /* sysconf */
 #include "config.h"
 #include "sbma.h"
+#include "ipc.h"
 #include "mmu.h"
 
 
