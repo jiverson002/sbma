@@ -537,12 +537,25 @@ read(int const fd, void * const buf, size_t const count)
 extern ssize_t
 write(int const fd, void const * const buf, size_t const count)
 {
-  if (1 == sbma_mexist(buf))
+  //printf("[%5d]:%s:%d\n", (int)getpid(), __func__, __LINE__);
+  if (1 == sbma_mexist(buf)) {
+    //printf("[%5d]:%s:%d\n", (int)getpid(), __func__, __LINE__);
     (void)sbma_mtouch((void*)buf, count);
-  /*for (size_t i=0; i<count; ++i)
-    if (((char*)buf)[i] == 10)
-      printf(".");
-  printf("\n");*/
+  }
+  //printf("[%5d]:%s:%d %c\n", (int)getpid(), __func__, __LINE__,
+    //((char*)buf)[0]);
+  //for (size_t i=0; i<count; ++i) {
+    //printf("%zu", i);
+    //fflush(stdout);
+    //if (((char*)buf)[i] == 10) {
+      //printf("-");
+      //fflush(stdout);
+    //}
+    //printf(".");
+    //fflush(stdout);
+  //}
+  //printf("\n");
+  //printf("[%5d]:%s:%d\n", (int)getpid(), __func__, __LINE__);
 
   return libc_write(fd, buf, count);
 }

@@ -442,6 +442,8 @@ __vmm_sigsegv__(int const sig, siginfo_t * const si, void * const ctx)
   /* make sure we received a SIGSEGV */
   assert(SIGSEGV == sig);
 
+  //printf("[%5d]:%s:%d\n", (int)getpid(), __func__, __LINE__);
+
   /* setup local variables */
   page_size = vmm.page_size;
   addr      = (uintptr_t)si->si_addr;
@@ -456,6 +458,8 @@ __vmm_sigsegv__(int const sig, siginfo_t * const si, void * const ctx)
   if (MMU_RSDNT == (flags[ip]&MMU_RSDNT)) {
     /* TODO: check memory file to see if there is enough free memory to
      * complete this allocation. */
+
+    //printf("[%5d]:%s:%d %d\n", (int)getpid(), __func__, __LINE__, flags[ip]);
 
     /* swap in the required memory */
     if (VMM_LZYRD == (vmm.opts&VMM_LZYRD)) {
@@ -484,6 +488,8 @@ __vmm_sigsegv__(int const sig, siginfo_t * const si, void * const ctx)
   else {
     /* sanity check */
     assert(MMU_DIRTY != (flags[ip]&MMU_DIRTY)); /* not dirty */
+
+    //printf("[%5d]:%s:%d %d\n", (int)getpid(), __func__, __LINE__, flags[ip]);
 
     /* flag: 100 */
     flags[ip] = MMU_DIRTY;

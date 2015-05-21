@@ -2,6 +2,9 @@
 #define __SBMA_H__ 1
 
 
+#include <sys/types.h> /* ssize_t */
+
+
 #define SBMA_DEFAULT_PAGE_SIZE (1<<14)
 #define SBMA_DEFAULT_FSTEM     "/tmp/"
 #define SBMA_DEFAULT_OPTS      0

@@ -2,7 +2,8 @@
 #include <stdlib.h>
 #include <sys/mman.h>
 
-#include "sbmalloc.h"
+#include "sbma.h"
+#include "klmalloc.h"
 
 int main(void)
 {
@@ -10,10 +11,8 @@ int main(void)
   size_t n=100000;
   size_t * arr, * arr2;
 
-  if (0 != SB_fstem("/tmp/sb-"))
-    return EXIT_FAILURE;
-  if (0 != SB_mallopt(SBOPT_DEBUG, SBDBG_INFO))
-    return EXIT_FAILURE;
+  sbma_init(SBMA_DEFAULT_FSTEM, SBMA_DEFAULT_PAGE_SIZE, SBMA_DEFAULT_OPTS);
+  KL_mallopt(M_ENABLED, M_ENABLED_ON);
 
   arr = (size_t *)malloc(n*sizeof(size_t));
   if (NULL == arr)
@@ -25,7 +24,7 @@ int main(void)
   for (i=0; i<n; ++i)
     arr[i] = i;
 
-  msync(arr, n*sizeof(size_t), MS_SYNC);
+  sbma_mevictall();
 
   for (i=0; i<n; ++i) {
     if (i != arr[i])
@@ -43,6 +42,9 @@ int main(void)
     arr[i] = 0;
 
   free(arr);
+
+  KL_mallopt(M_ENABLED, M_ENABLED_OFF);
+  sbma_destroy();
 
   return EXIT_SUCCESS;
 }

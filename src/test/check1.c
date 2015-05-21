@@ -5,6 +5,7 @@
 #include <sys/time.h>
 #include <time.h>
 
+#include "sbma.h"
 #include "klmalloc.h"
 
 /*#define SEED 1426830585*/
@@ -58,6 +59,7 @@ int main(int argc, char * argv[])
       file = argv[1];
   }
 
+  sbma_init(SBMA_DEFAULT_FSTEM, SBMA_DEFAULT_PAGE_SIZE, SBMA_DEFAULT_OPTS);
   KL_mallopt(M_ENABLED, M_ENABLED_ON);
 
   op = (char *) PFX(malloc)(MAX_OPS*sizeof(char));
@@ -183,6 +185,9 @@ int main(int argc, char * argv[])
   PFX(free)(oprnd);
   PFX(free)(size);
   PFX(free)(alloc);
+
+  KL_mallopt(M_ENABLED, M_ENABLED_OFF);
+  sbma_destroy();
 
   fprintf(stderr, "%zu %zu\n", na, nf);
   fprintf(stderr, "Time per malloc = %.2f us\n", t_alloc*1.0/na);
