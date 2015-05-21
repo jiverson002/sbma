@@ -539,6 +539,10 @@ write(int const fd, void const * const buf, size_t const count)
 {
   if (1 == sbma_mexist(buf))
     (void)sbma_mtouch((void*)buf, count);
+  /*for (size_t i=0; i<count; ++i)
+    if (((char*)buf)[i] == 10)
+      printf(".");
+  printf("\n");*/
 
   return libc_write(fd, buf, count);
 }

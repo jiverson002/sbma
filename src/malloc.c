@@ -243,6 +243,7 @@ __ooc_realloc__(void * const __ptr, size_t const __size)
   nf_pages  = 1+((nn_pages*sizeof(uint8_t)-1)/page_size);
 
   if (nn_pages == on_pages) {
+    /* do nothing */
   }
   else if (nn_pages < on_pages) {
     /* resize allocation */
@@ -310,7 +311,7 @@ __ooc_realloc__(void * const __ptr, size_t const __size)
     if (-1 == ret)
       return NULL;
 
-    /* lock new are of allocation into RAM */
+    /* lock new area of allocation into RAM */
     ret = libc_mlock((void*)(naddr+(s_pages+on_pages)*page_size),\
       ((nn_pages-on_pages)+nf_pages)*page_size);
     if (-1 == ret)

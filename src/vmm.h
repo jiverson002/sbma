@@ -2,6 +2,11 @@
 #define __VMM_H__ 1
 
 
+#ifdef NDEBUG
+# undef NDEBUG
+#endif
+
+
 #include <assert.h>   /* assert */
 #include <fcntl.h>    /* O_RDWR, O_CREAT, O_EXCL */
 #include <signal.h>   /* struct sigaction, siginfo_t, sigemptyset, sigaction */
@@ -212,13 +217,17 @@ __vmm_swap_i__(struct ate * const __ate, size_t const __beg,
 
     if (ip != end) {
       if (MMU_RSDNT == (flags[ip]&MMU_RSDNT)) {
-        assert(__ate->l_pages < __ate->n_pages-1);
+        assert(__ate->l_pages < __ate->n_pages);
         __ate->l_pages++;
 
         /* flag: *0* */
         flags[ip] &= ~MMU_RSDNT;
       }
       else {
+        /* TODO: an alternative to memcpy'ing the data would be to remap the
+         * pages into which we are reading data, then not doing a bulk
+         * mprotect/mremap once all the reading has completed. */
+
         /* copy data from already resident pages */
         memcpy((void*)(addr+((ip-__beg)*page_size)),\
           (void*)(__ate->base+(ip*page_size)), page_size);
