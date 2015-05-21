@@ -155,9 +155,8 @@ __vmm_swap_i__(struct ate * const __ate, size_t const __beg,
 
   /* error check input values */
   assert(NULL != __ate);
-  assert(__num < __ate->n_pages);
-  assert(__beg < __ate->n_pages-__num);
-  assert(__num < __ate->n_pages-__ate->l_pages);
+  assert(__num <= __ate->n_pages);
+  assert(__beg <= __ate->n_pages-__num);
 
   /* shortcut */
   if (0 == __num)
@@ -310,7 +309,7 @@ __vmm_swap_o__(struct ate * const __ate, size_t const __beg,
    * writes in contigous chunks of changed pages. */
   for (ipfirst=-1,ip=__beg; ip<=end; ++ip) {
     if (ip != end && (MMU_DIRTY != (flags[ip]&MMU_DIRTY))) {
-      if (MMU_RSDNT == (flags[ip]&MMU_RSDNT)) {
+      if (MMU_RSDNT != (flags[ip]&MMU_RSDNT)) {
         assert(__ate->l_pages > 0);
         __ate->l_pages--;
       }

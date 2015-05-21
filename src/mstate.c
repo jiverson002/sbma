@@ -18,7 +18,7 @@ static ssize_t
 __ooc_mtouch_probe__(struct ate * const __ate, void * const __addr,
                      size_t const __len)
 {
-  size_t ip, beg, end, page_size, n_pages, l_pages;
+  size_t ip, beg, end, page_size, l_pages;
   uint8_t * flags;
 
   page_size = vmm.page_size;
@@ -26,9 +26,8 @@ __ooc_mtouch_probe__(struct ate * const __ate, void * const __addr,
 
   /* need to make sure that all bytes are captured, thus beg is a floor
    * operation and end is a ceil operation. */
-  n_pages = 1+((__len-1)/page_size);
-  beg     = ((uintptr_t)__addr-__ate->base)/page_size;
-  end     = beg+n_pages;
+  beg = ((uintptr_t)__addr-__ate->base)/page_size;
+  end = 1+(((uintptr_t)__addr+__len-__ate->base-1)/page_size);
 
   for (l_pages=0,ip=beg; ip<end; ++ip) {
     if (MMU_RSDNT == (flags[ip]&MMU_RSDNT)) /* not resident */
@@ -46,16 +45,15 @@ static ssize_t
 __ooc_mtouch_int__(struct ate * const __ate, void * const __addr,
                    size_t const __len)
 {
-  size_t beg, end, page_size, n_pages;
+  size_t beg, end, page_size;
   ssize_t numrd;
 
   page_size = vmm.page_size;
 
   /* need to make sure that all bytes are captured, thus beg is a floor
    * operation and end is a ceil operation. */
-  n_pages = 1+((__len-1)/page_size);
-  beg     = ((uintptr_t)__addr-__ate->base)/page_size;
-  end     = beg+n_pages;
+  beg = ((uintptr_t)__addr-__ate->base)/page_size;
+  end = 1+(((uintptr_t)__addr+__len-__ate->base-1)/page_size);
 
   numrd = __vmm_swap_i__(__ate, beg, end-beg);
   if (-1 == numrd)
@@ -190,7 +188,7 @@ __ooc_mtouchall__(void)
 extern ssize_t
 __ooc_mclear__(void * const __addr, size_t const __len)
 {
-  size_t beg, end, page_size, n_pages;
+  size_t beg, end, page_size;
   ssize_t ret;
   struct ate * ate;
 
@@ -203,9 +201,8 @@ __ooc_mclear__(void * const __addr, size_t const __len)
   /* can only clear pages fully within range, thus beg is a ceil
    * operation and end is a floor operation, except for when addr+len
    * consumes all of the last page, then end just equals n_pages. */
-  n_pages = __len/page_size;
-  beg     = 1+(((uintptr_t)__addr-1)/page_size);
-  end     = beg+n_pages;
+  beg = 1+(((uintptr_t)__addr-ate->base-1)/page_size);
+  end = ((uintptr_t)__addr+__len-ate->base)/page_size;
 
   if (beg <= end) {
     ret = __vmm_swap_x__(ate, beg, end-beg);
@@ -257,7 +254,7 @@ static ssize_t
 __ooc_mevict_probe__(struct ate * const __ate, void * const __addr,
                      size_t const __len)
 {
-  size_t ip, beg, end, page_size, n_pages, l_pages;
+  size_t ip, beg, end, page_size, l_pages;
   uint8_t * flags;
 
   page_size = vmm.page_size;
@@ -265,9 +262,8 @@ __ooc_mevict_probe__(struct ate * const __ate, void * const __addr,
 
   /* need to make sure that all bytes are captured, thus beg is a floor
    * operation and end is a ceil operation. */
-  n_pages = 1+((__len+-1)/page_size);
-  beg     = ((uintptr_t)__addr-__ate->base)/page_size;
-  end     = beg+n_pages;
+  beg = ((uintptr_t)__addr-__ate->base)/page_size;
+  end = 1+(((uintptr_t)__addr+__len-__ate->base-1)/page_size);
 
   for (l_pages=0,ip=beg; ip<end; ++ip) {
     if (MMU_RSDNT != (flags[ip]&MMU_RSDNT)) /* resident */
@@ -285,16 +281,15 @@ static ssize_t
 __ooc_mevict_int__(struct ate * const __ate, void * const __addr,
                    size_t const __len)
 {
-  size_t beg, end, page_size, n_pages;
+  size_t beg, end, page_size;
   ssize_t numwr;
 
   page_size = vmm.page_size;
 
   /* need to make sure that all bytes are captured, thus beg is a floor
    * operation and end is a ceil operation. */
-  n_pages = 1+((__len-1)/page_size);
-  beg     = ((uintptr_t)__addr-__ate->base)/page_size;
-  end     = beg+n_pages;
+  beg = ((uintptr_t)__addr-__ate->base)/page_size;
+  end = 1+(((uintptr_t)__addr+__len-__ate->base-1)/page_size);
 
   numwr = __vmm_swap_o__(__ate, beg, end-beg);
   if (-1 == numwr)

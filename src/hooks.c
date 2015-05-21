@@ -531,16 +531,12 @@ read(int const fd, void * const buf, size_t const count)
 }
 
 
-#include <stdint.h>
 /*************************************************************************/
 /*! Hook: write */
 /*************************************************************************/
 extern ssize_t
 write(int const fd, void const * const buf, size_t const count)
 {
-  printf("[%5d]:%s:%d %zx -- %zx (%d)\n", (int)getpid(), __func__, __LINE__,
-      (uintptr_t)buf, (uintptr_t)buf+count, sbma_mexist(buf));
-
   if (1 == sbma_mexist(buf))
     (void)sbma_mtouch((void*)buf, count);
 
