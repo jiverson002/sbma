@@ -2,6 +2,11 @@
 #define __MMU_H__ 1
 
 
+#ifdef NDEBUG
+# undef NDEBUG
+#endif
+
+
 #include <stdint.h> /* uint8_t, uintptr_t */
 #include <stddef.h> /* NULL */
 #include "config.h"

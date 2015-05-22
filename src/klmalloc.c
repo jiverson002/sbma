@@ -131,7 +131,6 @@ the possibly moved allocated space.
 #include <malloc.h>   /* struct mallinfo */
 #include <stdint.h>   /* uintptr_t */
 #include <string.h>   /* memset */
-#include <sys/mman.h>
 
 #include "klmalloc.h" /* klmalloc library */
 

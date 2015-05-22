@@ -186,9 +186,10 @@ do {                                                                        \
 #endif
 #ifdef USE_SBMALLOC
 # include "sbma.h"
-# define SYS_ALLOC_FAIL      NULL
-# define CALL_SYS_ALLOC(P,S) ((P)=sbma_malloc(S))
-# define CALL_SYS_FREE(P,S)  sbma_free(P)
+# define SYS_ALLOC_FAIL        NULL
+# define CALL_SYS_ALLOC(P,S)     ((P)=sbma_malloc(S))
+# define CALL_SYS_REALLOC(O,S,P) ((P)=sbma_realloc(O,S))
+# define CALL_SYS_FREE(P,S)      sbma_free(P)
 # define CALL_SYS_BZERO(P,S)
 #endif
 

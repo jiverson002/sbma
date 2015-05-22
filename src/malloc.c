@@ -3,6 +3,11 @@
 #endif
 
 
+#ifdef NDEBUG
+# undef NDEBUG
+#endif
+
+
 #include <fcntl.h>     /* O_RDWR, O_CREAT, O_EXCL */
 #include <stdint.h>    /* uint8_t, uintptr_t */
 #include <stddef.h>    /* NULL, size_t */
@@ -247,11 +252,11 @@ __ooc_realloc__(void * const __ptr, size_t const __size)
   }
   else if (nn_pages < on_pages) {
     /* resize allocation */
-    naddr = (uintptr_t)mremap((void*)oaddr,\
+    /*naddr = (uintptr_t)mremap((void*)oaddr,\
       (s_pages+on_pages+of_pages)*page_size,\
       (s_pages+nn_pages+nf_pages)*page_size, MREMAP_MAYMOVE);
     if ((uintptr_t)MAP_FAILED == naddr)
-      return NULL;
+      return NULL;*/
 
     /* adjust l_pages for the pages which will be unmapped */
     ate->n_pages = nn_pages;

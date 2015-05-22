@@ -3,6 +3,11 @@
 #endif
 
 
+#ifdef NDEBUG
+# undef NDEBUG
+#endif
+
+
 #include <stdint.h>    /* uint8_t, uintptr_t */
 #include <stddef.h>    /* NULL, size_t */
 #include <sys/types.h> /* ssize_t */
@@ -330,7 +335,7 @@ __ooc_mevict__(void * const __addr, size_t const __len)
    * disk, and high water mark for syspages loaded */
   __vmm_track__(curpages, l_pages);
   __vmm_track__(curpages, -l_pages);
-  __vmm_track__(numrd, numwr);
+  __vmm_track__(numwr, numwr);
 
   return l_pages;
 }
@@ -388,7 +393,7 @@ __ooc_mevictall__(void)
   /* track number of syspages currently loaded, number of syspages written to
    * disk, and high water mark for syspages loaded */
   __vmm_track__(curpages, -l_pages);
-  __vmm_track__(numrd, numwr);
+  __vmm_track__(numwr, numwr);
 
   return l_pages;
 }

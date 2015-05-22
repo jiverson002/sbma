@@ -22,6 +22,13 @@
 #include "mmu.h"
 
 
+/****************************************************************************/
+/*! This should only be disabled for single threaded applications. When
+ *  disabled, the number of kernel calls will be reduced significantly during
+ *  __vmm_swap_i__() */
+/****************************************************************************/
+#define USE_GHOST 1
+
 
 /****************************************************************************/
 /*! Virtual memory manager. */
@@ -154,7 +161,7 @@ __vmm_swap_i__(struct ate * const __ate, size_t const __beg,
   int ret, fd;
   size_t ip, page_size, end, numrd=0;
   ssize_t ipfirst;
-  uintptr_t addr;
+  uintptr_t addr, raddr;
   uint8_t * flags;
   char fname[FILENAME_MAX];
 
@@ -167,6 +174,7 @@ __vmm_swap_i__(struct ate * const __ate, size_t const __beg,
   if (0 == __num)
     return 0;
 
+  int GO = 0;
   /* shortcut by checking to see if all pages are already loaded */
   if (__ate->l_pages == __ate->n_pages)
     return 0;
@@ -176,11 +184,18 @@ __vmm_swap_i__(struct ate * const __ate, size_t const __beg,
   flags     = __ate->flags;
   end       = __beg+__num;
 
+#if defined(USE_GHOST) && USE_GHOST > 0
   /* mmap temporary memory with write protection for loading from disk */
   addr = (uintptr_t)mmap(NULL, __num*page_size, PROT_WRITE,\
     MAP_PRIVATE|MAP_ANONYMOUS|MAP_NORESERVE|MAP_LOCKED, -1, 0);
   if ((uintptr_t)MAP_FAILED == addr)
     return -1;
+#else
+  addr = __ate->base+(__beg*page_size);
+  ret  = mprotect((void*)addr, __num*page_size, PROT_WRITE);
+  if (-1 == ret)
+    return -1;
+#endif
 
   /* compute file name */
   if (0 > snprintf(fname, FILENAME_MAX, "%s%d-%zx", vmm.fstem, (int)getpid(),\
@@ -197,9 +212,9 @@ __vmm_swap_i__(struct ate * const __ate, size_t const __beg,
    * not since been dumped */
   for (ipfirst=-1,ip=__beg; ip<=end; ++ip) {
     if (ip != end &&\
-        (MMU_DIRTY != (flags[ip]&MMU_DIRTY)) &&  /* not dirty */\
         (MMU_RSDNT == (flags[ip]&MMU_RSDNT)) &&  /* not resident */\
-        (MMU_ZFILL == (flags[ip]&MMU_ZFILL)))    /* cannot be zero filled */
+        (MMU_ZFILL == (flags[ip]&MMU_ZFILL)) &&  /* cannot be zero filled */\
+        (MMU_DIRTY != (flags[ip]&MMU_DIRTY)))    /* not dirty */
     {
       if (-1 == ipfirst)
         ipfirst = ip;
@@ -209,6 +224,21 @@ __vmm_swap_i__(struct ate * const __ate, size_t const __beg,
         (ip-ipfirst)*page_size, ipfirst*page_size);
       if (-1 == ret)
         return -1;
+
+#if defined(USE_GHOST) && USE_GHOST > 0
+      /* give read permission to temporary pages */
+      ret = mprotect((void*)(addr+((ipfirst-__beg)*page_size)),\
+        (ip-ipfirst)*page_size, PROT_READ);
+      if (-1 == ret)
+        return -1;
+      /* remap temporary pages into persistent memory */
+      raddr = (uintptr_t)mremap((void*)(addr+((ipfirst-__beg)*page_size)),\
+        (ip-ipfirst)*page_size, (ip-ipfirst)*page_size,\
+        MREMAP_MAYMOVE|MREMAP_FIXED,
+        (void*)(__ate->base+(ipfirst*page_size)));
+      if (-1 == raddr)
+        return -1;
+#endif
 
       numrd += (ip-ipfirst);
 
@@ -223,15 +253,6 @@ __vmm_swap_i__(struct ate * const __ate, size_t const __beg,
         /* flag: *0* */
         flags[ip] &= ~MMU_RSDNT;
       }
-      else {
-        /* TODO: an alternative to memcpy'ing the data would be to remap the
-         * pages into which we are reading data, then not doing a bulk
-         * mprotect/mremap once all the reading has completed. */
-
-        /* copy data from already resident pages */
-        memcpy((void*)(addr+((ip-__beg)*page_size)),\
-          (void*)(__ate->base+(ip*page_size)), page_size);
-      }
     }
   }
 
@@ -240,6 +261,12 @@ __vmm_swap_i__(struct ate * const __ate, size_t const __beg,
   if (-1 == ret)
     return -1;
 
+#if defined(USE_GHOST) && USE_GHOST > 0
+  /* unmap any remaining temporary pages */
+  ret = munmap((void*)addr, __num*page_size);
+  if (-1 == ret)
+    return -1;
+#else
   /* update protection of temporary mapping to read-only */
   ret = mprotect((void*)addr, __num*page_size, PROT_READ);
   if (-1 == ret)
@@ -255,12 +282,7 @@ __vmm_swap_i__(struct ate * const __ate, size_t const __beg,
         return -1;
     }
   }
-
-  /* remap temporary memory into the persistent memory */
-  addr = (uintptr_t)mremap((void*)addr, __num*page_size, __num*page_size,\
-    MREMAP_MAYMOVE|MREMAP_FIXED, __ate->base+(__beg*page_size));
-  if ((uintptr_t)MAP_FAILED == addr)
-    return -1;
+#endif
 
   /* return the number of pages read from disk */
   return numrd;
@@ -442,14 +464,14 @@ __vmm_sigsegv__(int const sig, siginfo_t * const si, void * const ctx)
   /* make sure we received a SIGSEGV */
   assert(SIGSEGV == sig);
 
-  //printf("[%5d]:%s:%d\n", (int)getpid(), __func__, __LINE__);
-
   /* setup local variables */
   page_size = vmm.page_size;
   addr      = (uintptr_t)si->si_addr;
 
   /* lookup allocation table entry */
   ate = __mmu_lookup_ate__(&(vmm.mmu), (void*)addr);
+  if (NULL == ate)
+    printf("[%5d]:%s:%d %zu\n", (int)getpid(), __func__, __LINE__, addr);
   assert(NULL != ate);
 
   ip    = (addr-ate->base)/page_size;
@@ -458,8 +480,6 @@ __vmm_sigsegv__(int const sig, siginfo_t * const si, void * const ctx)
   if (MMU_RSDNT == (flags[ip]&MMU_RSDNT)) {
     /* TODO: check memory file to see if there is enough free memory to
      * complete this allocation. */
-
-    //printf("[%5d]:%s:%d %d\n", (int)getpid(), __func__, __LINE__, flags[ip]);
 
     /* swap in the required memory */
     if (VMM_LZYRD == (vmm.opts&VMM_LZYRD)) {
@@ -488,8 +508,6 @@ __vmm_sigsegv__(int const sig, siginfo_t * const si, void * const ctx)
   else {
     /* sanity check */
     assert(MMU_DIRTY != (flags[ip]&MMU_DIRTY)); /* not dirty */
-
-    //printf("[%5d]:%s:%d %d\n", (int)getpid(), __func__, __LINE__, flags[ip]);
 
     /* flag: 100 */
     flags[ip] = MMU_DIRTY;

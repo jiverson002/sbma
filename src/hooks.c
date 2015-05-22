@@ -2,6 +2,12 @@
 # define _GNU_SOURCE
 #endif
 
+
+#ifdef NDEBUG
+# undef NDEBUG
+#endif
+
+
 /****************************************************************************/
 /* Need optimizations off or GCC will optimize away the temporary setting of
  * libc_calloc in the HOOK_INIT macro. */
@@ -10,6 +16,7 @@
 #pragma GCC optimize("O0")
 
 
+#include <assert.h>    /* assert */
 #include <dlfcn.h>     /* dlsym */
 #include <fcntl.h>     /* open */
 #include <malloc.h>    /* struct mallinfo */
@@ -33,9 +40,12 @@ do {                                                                        \
   if (NULL == _libc_calloc) {                                               \
     _libc_calloc = internal_calloc;                                         \
     *((void **) &_libc_calloc) = dlsym(RTLD_NEXT, "calloc");                \
+    assert(NULL != _libc_calloc);                                           \
   }                                                                         \
-  if (NULL == _libc_##func)                                                 \
+  if (NULL == _libc_##func) {                                               \
     *((void **) &_libc_##func) = dlsym(RTLD_NEXT, #func);                   \
+    assert(NULL != _libc_##func);                                           \
+  }                                                                         \
 } while (0)
 
 
@@ -121,6 +131,7 @@ libc_free(void * const ptr)
 }
 
 
+#include <stdint.h>
 /*************************************************************************/
 /*! Hook: libc stat */
 /*************************************************************************/
@@ -150,9 +161,8 @@ libc___xstat(int ver, char const * path, struct stat * buf)
 
 
 #if 0
-#ifndef __xstat64
 /*************************************************************************/
-/*! Hook: libc xstat64 */
+/*! Hook: libc __xstat64 */
 /*************************************************************************/
 extern int
 #ifdef __USE_LARGEFILE64
@@ -171,7 +181,6 @@ libc_xstat64(int ver, char const * path, struct stat * buf)
 
   return _libc_xstat64(ver, path, buf);
 }
-#endif
 #endif
 
 
@@ -462,10 +471,17 @@ stat(char const * path, struct stat * buf)
 extern int
 __xstat(int ver, const char * path, struct stat * buf)
 {
-  if (1 == sbma_mexist(path))
+  //printf("[%5d]:%s:%d\n", (int)getpid(), __func__, __LINE__);
+  if (1 == sbma_mexist(path)) {
+    //printf("[%5d]:%s:%d\n", (int)getpid(), __func__, __LINE__);
     (void)sbma_mtouch((void*)path, strlen(path));
-  if (1 == sbma_mexist(buf))
+  }
+  //printf("[%5d]:%s:%d\n", (int)getpid(), __func__, __LINE__);
+  if (1 == sbma_mexist(buf)) {
+    //printf("[%5d]:%s:%d\n", (int)getpid(), __func__, __LINE__);
     (void)sbma_mtouch((void*)buf, sizeof(struct stat));
+  }
+  //printf("[%5d]:%s:%d\n", (int)getpid(), __func__, __LINE__);
 
   return libc___xstat(ver, path, buf);
 }
@@ -482,7 +498,7 @@ __xstat64(int ver, const char * path, struct stat64 * buf)
   if (1 == sbma_mexist(path))
     (void)sbma_mtouch((void*)path, strlen(path));
 
-  return libc_xstat64(path, buf);
+  return libc_xstat64(ver, path, buf);
 }
 #endif
 #endif

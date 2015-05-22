@@ -3,6 +3,11 @@
 #endif
 
 
+#ifdef NDEBUG
+# undef NDEBUG
+#endif
+
+
 #include <malloc.h> /* struct mallinfo */
 #include <string.h> /* memset */
 #include "config.h"
