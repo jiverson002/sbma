@@ -3,9 +3,10 @@
 
 
 #include <assert.h>    /* assert library */
-#include <errno.h>     /* errno library */
+#include <errno.h>     /* errno */
 #include <fcntl.h>     /* O_RDWR, O_CREAT, O_EXCL */
 #include <semaphore.h> /* semaphore library */
+#include <signal.h>    /* struct sigaction, siginfo_t, sigemptyset, sigaction */
 #include <stdint.h>    /* uint8_t, uintptr_t */
 #include <stddef.h>    /* NULL, size_t */
 #include <stdio.h>     /* FILENAME_MAX */
@@ -76,9 +77,26 @@ do {\
 
 
 #define IPC_LEN(__N_PROCS)\
-  (sizeof(size_t)+(__N_PROCS)*(sizeof(size_t)+sizeof(int))+sizeof(int))
+  (sizeof(size_t)+(__N_PROCS)*(sizeof(size_t)+sizeof(int)+sizeof(uint8_t))+\
+    sizeof(int))
 
 
+/****************************************************************************/
+/*!
+ * Interprocess communicator status code bits:
+ *
+ *   bit 0 ==    0: ineligible for eviction 1: eligible for eviction
+ */
+/****************************************************************************/
+enum ipc_status_code
+{
+  IPC_ELIGIBLE = 1 << 0,
+};
+
+
+/****************************************************************************/
+/*! Interprocess environment. */
+/****************************************************************************/
 struct ipc
 {
   int id;        /*!< ipc id of process amoung the n_procs */
@@ -92,9 +110,13 @@ struct ipc
   size_t * smem; /*!< pointer into shm for smem scalar */
   size_t * pmem; /*!< pointer into shm for pmem array */
   int * pid;     /*!< pointer into shm for pid array */
+  uint8_t * flags; /*!< pointer into shm for flags array */
 };
 
 
+/****************************************************************************/
+/*! Initialize the interprocess environment. */
+/****************************************************************************/
 static int
 __ipc_init__(struct ipc * const __ipc, int const __n_procs)
 {
@@ -151,6 +173,9 @@ __ipc_init__(struct ipc * const __ipc, int const __n_procs)
   idp = (int*)((uintptr_t)shm+IPC_LEN(__n_procs)-sizeof(int));
   id  = (*idp)++;
 
+  if (id >= __n_procs)
+    return -1;
+
   /* setup ipc struct */
   __ipc->id      = id;
   __ipc->n_procs = __n_procs;
@@ -162,13 +187,18 @@ __ipc_init__(struct ipc * const __ipc, int const __n_procs)
   __ipc->smem    = (size_t*)shm;
   __ipc->pmem    = (size_t*)((uintptr_t)shm+sizeof(size_t));
   __ipc->pid     = (int*)((uintptr_t)shm+((__n_procs+1)*sizeof(size_t)));
+  __ipc->flags   =\
+    (uint8_t*)((uintptr_t)shm+((__n_procs+1)*(sizeof(size_t)+sizeof(int))));
 
-  IPC_BARRIER(__ipc);
+  //IPC_BARRIER(__ipc);
 
   return 0;
 }
 
 
+/****************************************************************************/
+/*! Destroy the interprocess environment. */
+/****************************************************************************/
 static int
 __ipc_destroy__(struct ipc * const __ipc)
 {
@@ -214,8 +244,11 @@ __ipc_destroy__(struct ipc * const __ipc)
 }
 
 
+/****************************************************************************/
+/*! Change elibibility for eviction for the process. */
+/****************************************************************************/
 static int
-__ipc_update__(struct ipc * const __ipc, ssize_t const value)
+__ipc_eligible__(struct ipc * const __ipc, int const __eligible)
 {
   int ret;
 
@@ -223,8 +256,10 @@ __ipc_update__(struct ipc * const __ipc, ssize_t const value)
   if (-1 == ret)
     return -1;
 
-  __ipc->pmem[__ipc->id] += value;
-  *__ipc->smem += value;
+  if (IPC_ELIGIBLE == (__eligible&IPC_ELIGIBLE))
+    __ipc->flags[__ipc->id] |= IPC_ELIGIBLE;
+  else
+    __ipc->flags[__ipc->id] &= ~IPC_ELIGIBLE;
 
   ret = sem_post(__ipc->mtx);
   if (-1 == ret)
@@ -234,31 +269,97 @@ __ipc_update__(struct ipc * const __ipc, ssize_t const value)
 }
 
 
+/****************************************************************************/
+/*! Account for resident memory before admission. Check to see if the system
+ *  can support the addition of __value bytes of memory. */
+/****************************************************************************/
 static ssize_t
-__ipc_memcheck__(struct ipc * const __ipc)
+__ipc_madmit__(struct ipc * const __ipc, size_t const __value)
 {
-  int ret;
-  size_t smem;
+  int ret, i, ii;
+  size_t smem, mxmem;
+  uint8_t * flags;
+  size_t * pmem;
 
   ret = sem_wait(__ipc->mtx);
   if (-1 == ret)
     return -1;
 
-  smem = *__ipc->smem;
-
   // 1) check to see if there is enough free system memory
   // 2) if not, then signal to the process with the most memory
-  //   2.1) __ipc_init__ should install a signal handler on the said signal
+  //   X.X) __ipc_init__ should install a signal handler on the said signal
   //        which will call __vmm_mevictall__
   //   2.2) this will require bdmq_recv to check the return value of
   //        mq_recieve for EINTR
   // 3) repeat until enough free memory or no processes have any loaded memory
+
+  /* update system and process memory counts */
+  *__ipc->smem           += __value;
+  __ipc->pmem[__ipc->id] += __value;
+
+  smem  = *__ipc->smem;
+  pmem  = __ipc->pmem;
+  flags = __ipc->flags;
+
+  /*while (smem+__value > ???) {
+    mxmem = 0;
+    ii    = -1;
+    for (i=0; i<__ipc->n_procs; ++i) {
+      if (i == __ipc->id)
+        continue;
+
+      if (pmem[i] > mxmem) {
+        ii = i;
+        mxmem = pmem[i];
+      }
+    }
+
+    if (-1 != ii && IPC_ELIGIBLE == (flags[i]&IPC_ELIGIBLE)) {
+      ret = kill(pid[ii], SIGUSR1);
+      if (-1 == ret) {
+        (void)sem_post(__ipc->mtx);
+        return -1;
+      }
+
+      ret = sem_wait(__ipc->trn1);
+      if (-1 == ret) {
+        (void)sem_post(__ipc->mtx);
+        return -1;
+      }
+    }
+  }*/
 
   ret = sem_post(__ipc->mtx);
   if (-1 == ret)
     return -1;
 
   return smem;
+}
+
+
+/****************************************************************************/
+/*! Account for loaded memory after eviction. */
+/****************************************************************************/
+static int
+__ipc_mevict__(struct ipc * const __ipc, ssize_t const __value)
+{
+  int ret;
+
+  if (__value > 0)
+    return -1;
+
+  ret = sem_wait(__ipc->mtx);
+  if (-1 == ret)
+    return -1;
+
+  __ipc->pmem[__ipc->id] += __value;
+  *__ipc->smem += __value;
+
+  ret = sem_post(__ipc->mtx);
+  if (-1 == ret)
+    return -1;
+
+  return 0;
 }
 
 

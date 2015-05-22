@@ -12,7 +12,7 @@ extern "C" {
 
 /* malloc.c */
 int    __ooc_init__(char const * const __fstem, size_t const __page_size,
-                    int const __opts);
+                    int const __n_procs, int const __opts);
 int    __ooc_destroy__(void);
 void * __ooc_malloc__(size_t const __size);
 int    __ooc_free__(void * const __ptr);
@@ -49,8 +49,8 @@ struct mallinfo __ooc_mallinfo__(void);
 /*! API */
 /****************************************************************************/
 /* malloc.c */
-API(int, init,       (char const * const a, size_t const b, int const c),\
-  (a, b, c))
+API(int, init,       (char const * const a, size_t const b, int const c,\
+  int const d), (a, b, c, d))
 API(int, destroy,    (void), ())
 
 API(void *, malloc,  (size_t const a), (a))

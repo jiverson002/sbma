@@ -40,14 +40,16 @@ struct vmm vmm;
 /****************************************************************************/
 extern int
 __ooc_init__(char const * const __fstem, size_t const __page_size,
-             int const __opts)
+             int const __n_procs, int const __opts)
 {
   /* acquire init lock */
   if (-1 == LOCK_GET(&init_lock))
     return -1;
 
   /* check if init and init if necessary */
-  if (0 == init && -1 == __vmm_init__(&vmm, __page_size, __fstem, __opts)) {
+  if (0 == init && -1 == __vmm_init__(&vmm, __page_size, __fstem, __n_procs,
+    __opts))
+  {
     (void)LOCK_LET(&init_lock);
     return -1;
   }
@@ -110,8 +112,13 @@ __ooc_malloc__(size_t const __size)
   n_pages   = 1+((__size-1)/page_size);
   f_pages   = 1+((n_pages*sizeof(uint8_t)-1)/page_size);
 
-  /* TODO: check memory file to see if there is enough free memory to complete
-   * this allocation. */
+  /* check memory file to see if there is enough free memory to complete this
+   * allocation. */
+  if (VMM_LZYWR == (vmm.opts&VMM_LZYWR)) {
+    ret = __ipc_madmit__(&(vmm.ipc), __vmm_to_sys__(s_pages+n_pages+f_pages));
+    if (-1 == ret)
+      return NULL;
+  }
 
   /* allocate memory */
   addr = (uintptr_t)mmap(NULL, (s_pages+n_pages+f_pages)*page_size,
@@ -212,7 +219,13 @@ __ooc_free__(void * const __ptr)
   if (-1 == ret)
     return -1;
 
-  /* TODO: update memory file */
+  /* update memory file */
+  if (VMM_LZYWR == (vmm.opts&VMM_LZYWR)) {
+    ret = __ipc_mevict__(&(vmm.ipc),\
+      -__vmm_to_sys__(s_pages+l_pages+f_pages));
+    if (-1 == ret)
+      return -1;
+  }
 
   /* track number of syspages currently loaded and allocated */
   __vmm_track__(curpages, -__vmm_to_sys__(s_pages+l_pages+f_pages));
@@ -287,7 +300,13 @@ __ooc_realloc__(void * const __ptr, size_t const __size)
     if (-1 == ret)
       return NULL;
 
-    /* TODO: update memory file */
+    /* update memory file */
+    if (VMM_LZYWR == (vmm.opts&VMM_LZYWR)) {
+      ret = __ipc_mevict__(&(vmm.ipc),\
+        -__vmm_to_sys__((on_pages-nn_pages)+(of_pages-nf_pages)));
+      if (-1 == ret)
+        return NULL;
+    }
 
     /* track number of syspages currently loaded and allocated */
     __vmm_track__(curpages,\
@@ -296,8 +315,14 @@ __ooc_realloc__(void * const __ptr, size_t const __size)
       -__vmm_to_sys__((on_pages-nn_pages)+(of_pages-nf_pages)));
   }
   else {
-    /* TODO: check memory file to see if there is enough free memory to
-     * complete this allocation. */
+    /* check memory file to see if there is enough free memory to complete
+     * this allocation. */
+    if (VMM_LZYWR == (vmm.opts&VMM_LZYWR)) {
+      ret = __ipc_madmit__(&(vmm.ipc),\
+        __vmm_to_sys__((nn_pages-on_pages)+(nf_pages+of_pages)));
+      if (-1 == ret)
+        return NULL;
+    }
 
     /* resize allocation */
     naddr = (uintptr_t)mremap((void*)oaddr,\

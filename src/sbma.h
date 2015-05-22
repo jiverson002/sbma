@@ -27,18 +27,20 @@ enum sbma_mallopt_params
 /*!
  * Virtual memory manager option bits:
  *
- *   bit 0 ==    0:                      1: lazy read
+ *   bit 0 ==    0:                      1: lazy write
+ *   bit 1 ==    0:                      1: lazy read
  */
 /****************************************************************************/
 enum sbma_vmm_opt_code
 {
-  VMM_LZYRD = 1 << 0
+  VMM_LZYWR = 1 << 0,
+  VMM_LZYRD = 1 << 1
 };
 
 
 /* malloc.c */
 int sbma_init(char const * const fstem, size_t const page_size,
-              int const opts);
+              int const n_procs, int const opts);
 int sbma_destroy(void);
 
 void * sbma_malloc(size_t const size);

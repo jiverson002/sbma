@@ -31,6 +31,12 @@
 
 
 /****************************************************************************/
+/*! Required function prototypes. */
+/****************************************************************************/
+extern int __ooc_mevictall_int__(size_t * const, size_t * const);
+
+
+/****************************************************************************/
 /*! Virtual memory manager. */
 /****************************************************************************/
 struct vmm
@@ -49,10 +55,13 @@ struct vmm
 
   char fstem[FILENAME_MAX]; /*!< the file stem where the data is stored */
 
-  struct sigaction act;     /*!< for the SIGSEGV signal handler */
-  struct sigaction oldact;  /*!< ... */
+  struct sigaction act_segv;     /*!< for the SIGSEGV signal handler */
+  struct sigaction oldact_segv;  /*!< ... */
+  struct sigaction act_usr1;     /*!< for the SIGUSR1 signal handler */
+  struct sigaction oldact_usr1;  /*!< ... */
 
   struct mmu mmu;           /*!< memory management unit */
+  struct ipc ipc;           /*!< interprocess communicator */
 
 #ifdef USE_PTHREAD
   pthread_mutex_t lock;     /*!< mutex guarding struct */
@@ -470,25 +479,30 @@ __vmm_sigsegv__(int const sig, siginfo_t * const si, void * const ctx)
 
   /* lookup allocation table entry */
   ate = __mmu_lookup_ate__(&(vmm.mmu), (void*)addr);
-  if (NULL == ate)
-    printf("[%5d]:%s:%d %zu\n", (int)getpid(), __func__, __LINE__, addr);
   assert(NULL != ate);
 
   ip    = (addr-ate->base)/page_size;
   flags = ate->flags;
 
   if (MMU_RSDNT == (flags[ip]&MMU_RSDNT)) {
-    /* TODO: check memory file to see if there is enough free memory to
-     * complete this allocation. */
+    if (VMM_LZYRD == (vmm.opts&VMM_LZYRD))
+      l_pages = 1;
+    else
+      l_pages = ate->n_pages-ate->l_pages;
+
+    /* check memory file to see if there is enough free memory to complete
+     * this allocation. */
+    if (VMM_LZYWR == (vmm.opts&VMM_LZYWR)) {
+      ret = __ipc_madmit__(&(vmm.ipc), __vmm_to_sys__(l_pages));
+      assert(-1 != ret);
+    }
 
     /* swap in the required memory */
     if (VMM_LZYRD == (vmm.opts&VMM_LZYRD)) {
-      l_pages = 1;
       numrd   = __vmm_swap_i__(ate, ip, 1);
       assert(-1 != numrd);
     }
     else {
-      l_pages = ate->n_pages-ate->l_pages;
       numrd   = __vmm_swap_i__(ate, 0, ate->n_pages);
       assert(-1 != numrd);
     }
@@ -530,11 +544,42 @@ __vmm_sigsegv__(int const sig, siginfo_t * const si, void * const ctx)
 
 
 /****************************************************************************/
+/*! The SIGUSR1 handler. */
+/****************************************************************************/
+static inline void
+__vmm_sigusr1__(int const sig, siginfo_t * const si, void * const ctx)
+{
+  int ret;
+  size_t l_pages, numwr;
+
+  /* make sure we received a SIGUSR1 */
+  assert(SIGUSR1 == sig);
+
+  /* evict all memory */
+  ret = __ooc_mevictall_int__(&l_pages, &numwr);
+  assert(-1 != ret);
+
+  /* update ipc memory statistics */
+  *(vmm.ipc.smem)          -= l_pages;
+  vmm.ipc.pmem[vmm.ipc.id] -= l_pages;
+
+  ret = sem_post(vmm.ipc.trn1);
+  assert(-1 != ret);
+
+  /* track number of syspages currently loaded, number of syspages written to
+   * disk, and high water mark for syspages loaded */
+  __vmm_track__(curpages, -l_pages);
+  __vmm_track__(numwr, numwr);
+}
+
+
+/****************************************************************************/
 /*! Initializes the sbmalloc subsystem. */
 /****************************************************************************/
 static inline int
 __vmm_init__(struct vmm * const __vmm, size_t const __page_size,
-             char const * const __fstem, int const __opts)
+             char const * const __fstem, int const __n_procs,
+             int const __opts)
 {
   /* set page size */
   __vmm->page_size = __page_size;
@@ -555,16 +600,28 @@ __vmm_init__(struct vmm * const __vmm, size_t const __page_size,
   strncpy(__vmm->fstem, __fstem, FILENAME_MAX-1);
   __vmm->fstem[FILENAME_MAX-1] = '\0';
 
-  /* setup the signal handler */
-  __vmm->act.sa_flags     = SA_SIGINFO;
-  __vmm->act.sa_sigaction = __vmm_sigsegv__;
-  if (-1 == sigemptyset(&(__vmm->act.sa_mask)))
+  /* setup the signal handler for SIGSEGV */
+  __vmm->act_segv.sa_flags     = SA_SIGINFO;
+  __vmm->act_segv.sa_sigaction = __vmm_sigsegv__;
+  if (-1 == sigemptyset(&(__vmm->act_segv.sa_mask)))
     return -1;
-  if (-1 == sigaction(SIGSEGV, &(__vmm->act), &(__vmm->oldact)))
+  if (-1 == sigaction(SIGSEGV, &(__vmm->act_segv), &(__vmm->oldact_segv)))
+    return -1;
+
+  /* setup the signal handler for SIGUSR1 */
+  __vmm->act_usr1.sa_flags     = SA_SIGINFO;
+  __vmm->act_usr1.sa_sigaction = __vmm_sigsegv__;
+  if (-1 == sigemptyset(&(__vmm->act_usr1.sa_mask)))
+    return -1;
+  if (-1 == sigaction(SIGUSR1, &(__vmm->act_usr1), &(__vmm->oldact_usr1)))
     return -1;
 
   /* initialize mmu */
   if (-1 == __mmu_init__(&(__vmm->mmu), __page_size))
+    return -1;
+
+  /* initialize mmu */
+  if (-1 == __ipc_init__(&(__vmm->ipc), __n_procs))
     return -1;
 
   /* initialize vmm lock */
@@ -581,8 +638,20 @@ __vmm_init__(struct vmm * const __vmm, size_t const __page_size,
 static inline int
 __vmm_destroy__(struct vmm * const __vmm)
 {
-  /* reset signal handler */
-  if (-1 == sigaction(SIGSEGV, &(__vmm->oldact), NULL))
+  /* reset signal handler for SIGSEGV */
+  if (-1 == sigaction(SIGSEGV, &(__vmm->oldact_segv), NULL))
+    return -1;
+
+  /* reset signal handler for SIGUSR1 */
+  if (-1 == sigaction(SIGUSR1, &(__vmm->oldact_usr1), NULL))
+    return -1;
+
+  /* destroy mmu */
+  if (-1 == __mmu_destroy__(&(__vmm->mmu)))
+    return -1;
+
+  /* destroy ipc */
+  if (-1 == __ipc_destroy__(&(__vmm->ipc)))
     return -1;
 
   /* destroy mmu lock */

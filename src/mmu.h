@@ -172,7 +172,7 @@ __mmu_lookup_ate__(struct mmu * const __mmu, void const * const __addr)
       break;
   }
 
-  /* TODO: should ate get locked here? */
+  /* lock ate */
   if (-1 == LOCK_GET(&(ate->lock))) {
     (void)LOCK_LET(&(__mmu->lock));
     return (struct ate*)-1;

@@ -88,8 +88,13 @@ __ooc_mtouch__(void * const __addr, size_t const __len)
     return -1;
   }
 
-  /* TODO: check memory file to see if there is enough free memory to complete
-   * this allocation. */
+  /* check memory file to see if there is enough free memory to complete this
+   * allocation. */
+  if (VMM_LZYWR == (vmm.opts&VMM_LZYWR)) {
+    ret = __ipc_madmit__(&(vmm.ipc), l_pages);
+    if (-1 == ret)
+      return -1;
+  }
 
   numrd = __ooc_mtouch_int__(ate, __addr, __len);
   if (-1 == numrd) {
@@ -147,8 +152,13 @@ __ooc_mtouchall__(void)
     l_pages += ret;
   }
 
-  /* TODO: check memory file to see if there is enough free memory to complete
-   * this allocation. */
+  /* check memory file to see if there is enough free memory to complete this
+   * allocation. */
+  if (VMM_LZYWR == (vmm.opts&VMM_LZYWR)) {
+    ret = __ipc_madmit__(&(vmm.ipc), l_pages);
+    if (-1 == ret)
+      return -1;
+  }
 
   for (ate=vmm.mmu.a_tbl; NULL!=ate; ate=ate->next) {
     ret = LOCK_GET(&(ate->lock));
@@ -310,6 +320,7 @@ __ooc_mevict_int__(struct ate * const __ate, void * const __addr,
 extern ssize_t
 __ooc_mevict__(void * const __addr, size_t const __len)
 {
+  int ret;
   ssize_t l_pages, numwr;
   struct ate * ate;
 
@@ -329,7 +340,12 @@ __ooc_mevict__(void * const __addr, size_t const __len)
     return -1;
   }
 
-  /* TODO: update memory file */
+  /* update memory file */
+  if (VMM_LZYWR == (vmm.opts&VMM_LZYWR)) {
+    ret = __ipc_mevict__(&(vmm.ipc), -l_pages);
+    if (-1 == ret)
+      return -1;
+  }
 
   /* track number of syspages currently loaded, number of syspages written to
    * disk, and high water mark for syspages loaded */
@@ -342,10 +358,10 @@ __ooc_mevict__(void * const __addr, size_t const __len)
 
 
 /****************************************************************************/
-/*! Evict all allocations. */
+/*! Internal: Evict all allocations. */
 /****************************************************************************/
-extern ssize_t
-__ooc_mevictall__(void)
+extern int
+__ooc_mevictall_int__(size_t * const __l_pages, size_t * const __numwr)
 {
   size_t l_pages=0, numwr=0;
   ssize_t ret;
@@ -388,7 +404,32 @@ __ooc_mevictall__(void)
   if (-1 == ret)
     return -1;
 
-  /* TODO: update memory file */
+  *__l_pages = l_pages;
+  *__numwr   = numwr;
+
+  return 0;
+}
+
+
+/****************************************************************************/
+/*! Evict all allocations. */
+/****************************************************************************/
+extern ssize_t
+__ooc_mevictall__(void)
+{
+  int ret;
+  size_t l_pages, numwr;
+
+  ret = __ooc_mevictall_int__(&l_pages, &numwr);
+  if (-1 == ret)
+    return -1;
+
+  /* update memory file */
+  if (VMM_LZYWR == (vmm.opts&VMM_LZYWR)) {
+    ret = __ipc_mevict__(&(vmm.ipc), -l_pages);
+    if (-1 == ret)
+      return -1;
+  }
 
   /* track number of syspages currently loaded, number of syspages written to
    * disk, and high water mark for syspages loaded */
