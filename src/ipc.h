@@ -16,6 +16,7 @@
 #include <sys/types.h> /* ftruncate */
 #include <unistd.h>    /* ftruncate */
 #include "config.h"
+#include "sbma.h"
 
 
 #define IPC_SHM  "/shm-bdmpi-sbma-ipc"
@@ -82,34 +83,23 @@ do {\
 
 
 /****************************************************************************/
-/*!
- * Interprocess communicator status code bits:
- *
- *   bit 0 ==    0: ineligible for eviction 1: eligible for eviction
- */
-/****************************************************************************/
-enum ipc_status_code
-{
-  IPC_ELIGIBLE = 1 << 0,
-};
-
-
-/****************************************************************************/
 /*! Interprocess environment. */
 /****************************************************************************/
 struct ipc
 {
   int id;        /*!< ipc id of process amoung the n_procs */
   int n_procs;   /*!< number of processes in coordination */
+
   sem_t * mtx;   /*!< critical section semaphores */
   sem_t * cnt;   /*!< ... */
   sem_t * trn1;  /*!< ... */
   sem_t * trn2;  /*!< ... */
-  void * shm;    /*!< shared memory region */
 
-  size_t * smem; /*!< pointer into shm for smem scalar */
-  size_t * pmem; /*!< pointer into shm for pmem array */
-  int * pid;     /*!< pointer into shm for pid array */
+  void * shm;     /*!< shared memory region */
+  ssize_t * smem; /*!< pointer into shm for smem scalar */
+  size_t * pmem;  /*!< pointer into shm for pmem array */
+  int * pid;      /*!< pointer into shm for pid array */
+
   uint8_t * flags; /*!< pointer into shm for flags array */
 };
 
@@ -118,7 +108,8 @@ struct ipc
 /*! Initialize the interprocess environment. */
 /****************************************************************************/
 static int
-__ipc_init__(struct ipc * const __ipc, int const __n_procs)
+__ipc_init__(struct ipc * const __ipc, int const __n_procs,
+             size_t const __max_mem)
 {
   int ret, shm_fd, id;
   void * shm;
@@ -156,6 +147,11 @@ __ipc_init__(struct ipc * const __ipc, int const __n_procs)
     ret = ftruncate(shm_fd, IPC_LEN(__n_procs));
     if (-1 == ret)
       return -1;
+
+    /* initialize system memory counter */
+    ret = write(shm_fd, &__max_mem, sizeof(size_t));
+    if (-1 == ret)
+      return -1;
   }
 
   /* map the shared memory region into my address space */
@@ -184,11 +180,10 @@ __ipc_init__(struct ipc * const __ipc, int const __n_procs)
   __ipc->cnt     = cnt;
   __ipc->trn1    = trn1;
   __ipc->trn2    = trn2;
-  __ipc->smem    = (size_t*)shm;
-  __ipc->pmem    = (size_t*)((uintptr_t)shm+sizeof(size_t));
-  __ipc->pid     = (int*)((uintptr_t)shm+((__n_procs+1)*sizeof(size_t)));
-  __ipc->flags   =\
-    (uint8_t*)((uintptr_t)shm+((__n_procs+1)*(sizeof(size_t)+sizeof(int))));
+  __ipc->smem    = (ssize_t*)shm;
+  __ipc->pmem    = (size_t*)((uintptr_t)__ipc->smem+sizeof(ssize_t));
+  __ipc->pid     = (int*)((uintptr_t)__ipc->pmem+(__n_procs*sizeof(size_t)));
+  __ipc->flags   = (uint8_t*)((uintptr_t)__ipc->pid+(__n_procs*sizeof(int)));
 
   //IPC_BARRIER(__ipc);
 
@@ -277,8 +272,9 @@ static ssize_t
 __ipc_madmit__(struct ipc * const __ipc, size_t const __value)
 {
   int ret, i, ii;
-  size_t smem, mxmem;
+  ssize_t smem, mxmem;
   uint8_t * flags;
+  int * pid;
   size_t * pmem;
 
   ret = sem_wait(__ipc->mtx);
@@ -287,47 +283,57 @@ __ipc_madmit__(struct ipc * const __ipc, size_t const __value)
 
   // 1) check to see if there is enough free system memory
   // 2) if not, then signal to the process with the most memory
-  //   X.X) __ipc_init__ should install a signal handler on the said signal
+  //   2.1) __ipc_init__ should install a signal handler on the said signal
   //        which will call __vmm_mevictall__
-  //   2.2) this will require bdmq_recv to check the return value of
-  //        mq_recieve for EINTR
+  //   2.2) this will require BDMPL_SLEEP to check the return value of
+  //        bdmp_recv for EINTR
   // 3) repeat until enough free memory or no processes have any loaded memory
 
   /* update system and process memory counts */
-  *__ipc->smem           += __value;
+  *__ipc->smem -= __value;
   __ipc->pmem[__ipc->id] += __value;
 
   smem  = *__ipc->smem;
   pmem  = __ipc->pmem;
+  pid   = __ipc->pid;
   flags = __ipc->flags;
 
-  /*while (smem+__value > ???) {
+#if 1
+  while (smem < 0) {
+    /* find a process which has memory and is eligible */
     mxmem = 0;
     ii    = -1;
     for (i=0; i<__ipc->n_procs; ++i) {
       if (i == __ipc->id)
         continue;
 
-      if (pmem[i] > mxmem) {
+      if (pmem[i] > mxmem && IPC_ELIGIBLE == (flags[i]&IPC_ELIGIBLE)) {
         ii = i;
         mxmem = pmem[i];
       }
     }
 
-    if (-1 != ii && IPC_ELIGIBLE == (flags[i]&IPC_ELIGIBLE)) {
-      ret = kill(pid[ii], SIGUSR1);
-      if (-1 == ret) {
-        (void)sem_post(__ipc->mtx);
-        return -1;
-      }
+    /* no such process is exists, break loop */
+    if (-1 == ii)
+      break;
 
-      ret = sem_wait(__ipc->trn1);
-      if (-1 == ret) {
-        (void)sem_post(__ipc->mtx);
-        return -1;
-      }
+    /* such a process is available, tell it to free memory */
+    ret = kill(pid[ii], SIGUSR1);
+    if (-1 == ret) {
+      (void)sem_post(__ipc->mtx);
+      return -1;
     }
-  }*/
+
+    /* wait for it to signal it has finished */
+    ret = sem_wait(__ipc->trn1);
+    if (-1 == ret) {
+      (void)sem_post(__ipc->mtx);
+      return -1;
+    }
+
+    smem  = *__ipc->smem;
+  }
+#endif
 
   ret = sem_post(__ipc->mtx);
   if (-1 == ret)
@@ -352,8 +358,9 @@ __ipc_mevict__(struct ipc * const __ipc, ssize_t const __value)
   if (-1 == ret)
     return -1;
 
+  *__ipc->smem -= __value;
+  assert(__ipc->pmem[__ipc->id] >= -__value);
   __ipc->pmem[__ipc->id] += __value;
-  *__ipc->smem += __value;
 
   ret = sem_post(__ipc->mtx);
   if (-1 == ret)

@@ -560,9 +560,10 @@ __vmm_sigusr1__(int const sig, siginfo_t * const si, void * const ctx)
   assert(-1 != ret);
 
   /* update ipc memory statistics */
-  *(vmm.ipc.smem)          -= l_pages;
+  *(vmm.ipc.smem)          += l_pages;
   vmm.ipc.pmem[vmm.ipc.id] -= l_pages;
 
+  /* signal to the waiting process that the memory has been released */
   ret = sem_post(vmm.ipc.trn1);
   assert(-1 != ret);
 
@@ -579,7 +580,7 @@ __vmm_sigusr1__(int const sig, siginfo_t * const si, void * const ctx)
 static inline int
 __vmm_init__(struct vmm * const __vmm, size_t const __page_size,
              char const * const __fstem, int const __n_procs,
-             int const __opts)
+             size_t const __max_mem, int const __opts)
 {
   /* set page size */
   __vmm->page_size = __page_size;
@@ -610,7 +611,7 @@ __vmm_init__(struct vmm * const __vmm, size_t const __page_size,
 
   /* setup the signal handler for SIGUSR1 */
   __vmm->act_usr1.sa_flags     = SA_SIGINFO;
-  __vmm->act_usr1.sa_sigaction = __vmm_sigsegv__;
+  __vmm->act_usr1.sa_sigaction = __vmm_sigusr1__;
   if (-1 == sigemptyset(&(__vmm->act_usr1.sa_mask)))
     return -1;
   if (-1 == sigaction(SIGUSR1, &(__vmm->act_usr1), &(__vmm->oldact_usr1)))
@@ -620,8 +621,8 @@ __vmm_init__(struct vmm * const __vmm, size_t const __page_size,
   if (-1 == __mmu_init__(&(__vmm->mmu), __page_size))
     return -1;
 
-  /* initialize mmu */
-  if (-1 == __ipc_init__(&(__vmm->ipc), __n_procs))
+  /* initialize ipc */
+  if (-1 == __ipc_init__(&(__vmm->ipc), __n_procs, __max_mem))
     return -1;
 
   /* initialize vmm lock */

@@ -40,7 +40,7 @@ struct vmm vmm;
 /****************************************************************************/
 extern int
 __ooc_init__(char const * const __fstem, size_t const __page_size,
-             int const __n_procs, int const __opts)
+             int const __n_procs, size_t const __max_mem, int const __opts)
 {
   /* acquire init lock */
   if (-1 == LOCK_GET(&init_lock))
@@ -48,7 +48,7 @@ __ooc_init__(char const * const __fstem, size_t const __page_size,
 
   /* check if init and init if necessary */
   if (0 == init && -1 == __vmm_init__(&vmm, __page_size, __fstem, __n_procs,
-    __opts))
+    __max_mem, __opts))
   {
     (void)LOCK_LET(&init_lock);
     return -1;
@@ -142,8 +142,8 @@ __ooc_malloc__(size_t const __size)
   }
   if (-1 == (fd=libc_open(fname, O_WRONLY|O_CREAT|O_EXCL, S_IRUSR|S_IWUSR)))
     return NULL;
-  if (-1 == ftruncate(fd, n_pages*page_size))
-    return NULL;
+  /*if (-1 == ftruncate(fd, n_pages*page_size))
+    return NULL;*/
   if (-1 == libc_close(fd))
     return NULL;
 

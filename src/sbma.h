@@ -38,9 +38,22 @@ enum sbma_vmm_opt_code
 };
 
 
+/****************************************************************************/
+/*!
+ * Virtual memory manager process eligibility bits:
+ *
+ *   bit 0 ==    0: ineligible           1: eligible for ipc memory eviction
+ */
+/****************************************************************************/
+enum sbma_ipc_code
+{
+  IPC_ELIGIBLE = 1 << 0
+};
+
+
 /* malloc.c */
 int sbma_init(char const * const fstem, size_t const page_size,
-              int const n_procs, int const opts);
+              int const n_procs, size_t const max_mem, int const opts);
 int sbma_destroy(void);
 
 void * sbma_malloc(size_t const size);
@@ -59,6 +72,7 @@ int     sbma_mexist(void const * const ptr);
 /* mextra.c */
 int             sbma_mallopt(int const param, int const value);
 struct mallinfo sbma_mallinfo(void);
+int             sbma_eligible(int const eligible);
 
 #ifdef __cplusplus
 }

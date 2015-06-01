@@ -12,6 +12,7 @@
 #include <string.h> /* memset */
 #include "config.h"
 #include "sbma.h"
+#include "ipc.h"
 #include "vmm.h"
 
 
@@ -19,7 +20,7 @@
 /*! Set parameters for the sbmalloc subsystem. */
 /****************************************************************************/
 extern int
-__ooc_mallopt__(int const param, int const value)
+__ooc_mallopt__(int const __param, int const __value)
 {
   int ret;
 
@@ -27,9 +28,9 @@ __ooc_mallopt__(int const param, int const value)
   if (-1 == ret)
     return -1;
 
-  switch (param) {
+  switch (__param) {
     case M_VMMOPTS:
-    vmm.opts = value;
+    vmm.opts = __value;
     break;
 
     default:
@@ -74,4 +75,14 @@ __ooc_mallinfo__(void)
     return mi;
 
   return mi;
+}
+
+
+/****************************************************************************/
+/*! Modify the eligiblity of a process for ipc memory tracking */
+/****************************************************************************/
+extern int
+__ooc_eligible__(int const __eligible)
+{
+  return __ipc_eligible__(&(vmm.ipc), __eligible);
 }

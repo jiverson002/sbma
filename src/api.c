@@ -12,7 +12,8 @@ extern "C" {
 
 /* malloc.c */
 int    __ooc_init__(char const * const __fstem, size_t const __page_size,
-                    int const __n_procs, int const __opts);
+                    int const __n_procs, size_t const __max_mem,
+                    int const __opts);
 int    __ooc_destroy__(void);
 void * __ooc_malloc__(size_t const __size);
 int    __ooc_free__(void * const __ptr);
@@ -28,8 +29,9 @@ ssize_t __ooc_mevictall__(void);
 int     __ooc_mexist__(void const * const __addr);
 
 /* mextra.c */
-int             __ooc_mallopt__(int const param, int const value);
+int             __ooc_mallopt__(int const __param, int const __value);
 struct mallinfo __ooc_mallinfo__(void);
+int             __ooc_eligible__(int const __eligible);
 
 #ifdef __cplusplus
 }
@@ -50,7 +52,7 @@ struct mallinfo __ooc_mallinfo__(void);
 /****************************************************************************/
 /* malloc.c */
 API(int, init,       (char const * const a, size_t const b, int const c,\
-  int const d), (a, b, c, d))
+                      size_t const d, int const e), (a, b, c, d, e))
 API(int, destroy,    (void), ())
 
 API(void *, malloc,  (size_t const a), (a))
@@ -69,3 +71,4 @@ API(int,     mexist,    (void const * const a), (a))
 /* mextra.c */
 API(int,             mallopt, (int const a, int const b), (a, b))
 API(struct mallinfo, mallinfo, (void), ())
+API(int,             eligible, (int const a), (a))
