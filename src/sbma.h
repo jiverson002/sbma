@@ -5,6 +5,12 @@
 #include <sys/types.h> /* ssize_t */
 
 
+#define SBMA_MAJOR 0
+#define SBMA_MINOR 0
+#define SBMA_PATCH 1
+#define SBMA_RCAND 0
+
+
 #define SBMA_DEFAULT_PAGE_SIZE (1<<14)
 #define SBMA_DEFAULT_FSTEM     "/tmp/"
 #define SBMA_DEFAULT_OPTS      0
@@ -72,6 +78,8 @@ int     sbma_mexist(void const * const ptr);
 /* mextra.c */
 int             sbma_mallopt(int const param, int const value);
 struct mallinfo sbma_mallinfo(void);
+void            sbma_memcpy(void * const dst, void const * const src,
+                            size_t const num);
 int             sbma_eligible(int const eligible);
 
 #ifdef __cplusplus

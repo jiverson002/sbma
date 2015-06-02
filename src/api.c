@@ -31,6 +31,8 @@ int     __ooc_mexist__(void const * const __addr);
 /* mextra.c */
 int             __ooc_mallopt__(int const __param, int const __value);
 struct mallinfo __ooc_mallinfo__(void);
+int             __ooc_memcpy__(void * __dst, void const * __src,
+                               size_t __num);
 int             __ooc_eligible__(int const __eligible);
 
 #ifdef __cplusplus
@@ -71,4 +73,6 @@ API(int,     mexist,    (void const * const a), (a))
 /* mextra.c */
 API(int,             mallopt, (int const a, int const b), (a, b))
 API(struct mallinfo, mallinfo, (void), ())
+API(int,             memcpy, (void * const a, void const * const b,\
+                              size_t const c), (a,b,c))
 API(int,             eligible, (int const a), (a))

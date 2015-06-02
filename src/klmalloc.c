@@ -1627,15 +1627,24 @@ KL_realloc(void * const ptr, size_t const size)
   if (size <= KL_G_SIZE(KL_G_ALLOC(ptr)))
     return ptr;
 
-  /* Allocate new, larger region of memory. */
-  if (NULL == (nptr=KL_malloc(size)))
-    return ptr;
+//#ifdef CALL_SYS_REALLOC
+//  if (KL_G_SIZE(KL_G_ALLOC(ptr)) > KL_chunk_max_size()) {
+//    nptr = CALL_SYS_REALLOC(nptr, ptr, size);
+//  }
+//  else {
+//#endif
+    /* Allocate new, larger region of memory. */
+    if (NULL == (nptr=KL_malloc(size)))
+      return ptr;
 
-  /* Copy old memory to new memory. */
-  memcpy(nptr, ptr, KL_G_SIZE(KL_G_ALLOC(ptr)));
+    /* Copy old memory to new memory. */
+    CALL_SYS_MEMCPY(nptr, ptr, KL_G_SIZE(KL_G_ALLOC(ptr)));
 
-  /* Release old memory region. */
-  KL_free(ptr);
+    /* Release old memory region. */
+    KL_free(ptr);
+//#ifdef CALL_SYS_REALLOC
+//  }
+//#endif
 
   return nptr;
 }

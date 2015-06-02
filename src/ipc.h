@@ -25,6 +25,8 @@
 #define IPC_TRN1 "/sem-bdmpi-sbma-ipc-trn1"
 #define IPC_TRN2 "/sem-bdmpi-sbma-ipc-trn2"
 
+#define SIGIPC   (SIGRTMIN+0)
+
 
 #define IPC_BARRIER(__IPC)\
 do {\
@@ -78,7 +80,7 @@ do {\
 
 
 #define IPC_LEN(__N_PROCS)\
-  (sizeof(size_t)+(__N_PROCS)*(sizeof(size_t)+sizeof(int)+sizeof(uint8_t))+\
+  (sizeof(ssize_t)+(__N_PROCS)*(sizeof(size_t)+sizeof(int)+sizeof(uint8_t))+\
     sizeof(int))
 
 
@@ -184,6 +186,9 @@ __ipc_init__(struct ipc * const __ipc, int const __n_procs,
   __ipc->pmem    = (size_t*)((uintptr_t)__ipc->smem+sizeof(ssize_t));
   __ipc->pid     = (int*)((uintptr_t)__ipc->pmem+(__n_procs*sizeof(size_t)));
   __ipc->flags   = (uint8_t*)((uintptr_t)__ipc->pid+(__n_procs*sizeof(int)));
+
+  /* set my process id */
+  __ipc->pid[id] = (int)getpid();
 
   //IPC_BARRIER(__ipc);
 
@@ -318,7 +323,7 @@ __ipc_madmit__(struct ipc * const __ipc, size_t const __value)
       break;
 
     /* such a process is available, tell it to free memory */
-    ret = kill(pid[ii], SIGUSR1);
+    ret = kill(pid[ii], SIGIPC);
     if (-1 == ret) {
       (void)sem_post(__ipc->mtx);
       return -1;

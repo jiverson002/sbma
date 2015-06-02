@@ -41,30 +41,30 @@ extern int __ooc_mevictall_int__(size_t * const, size_t * const);
 /****************************************************************************/
 struct vmm
 {
-  int opts;                 /*!< runtime options */
+  int opts;                     /*!< runtime options */
 
-  size_t page_size;         /*!< bytes per page */
+  size_t page_size;             /*!< bytes per page */
 
-  size_t numrf;             /*!< total number of read segfaults */
-  size_t numwf;             /*!< total number of write segfaults */
-  size_t numrd;             /*!< total number of pages read */
-  size_t numwr;             /*!< total number of pages written */
-  size_t curpages;          /*!< current pages loaded */
-  size_t maxpages;          /*!< maximum number of pages allocated */
-  size_t numpages;          /*!< current pages allocated */
+  size_t numrf;                 /*!< total number of read segfaults */
+  size_t numwf;                 /*!< total number of write segfaults */
+  size_t numrd;                 /*!< total number of pages read */
+  size_t numwr;                 /*!< total number of pages written */
+  size_t curpages;              /*!< current pages loaded */
+  size_t maxpages;              /*!< maximum number of pages allocated */
+  size_t numpages;              /*!< current pages allocated */
 
-  char fstem[FILENAME_MAX]; /*!< the file stem where the data is stored */
+  char fstem[FILENAME_MAX];     /*!< the file stem where the data is stored */
 
-  struct sigaction act_segv;     /*!< for the SIGSEGV signal handler */
-  struct sigaction oldact_segv;  /*!< ... */
-  struct sigaction act_usr1;     /*!< for the SIGUSR1 signal handler */
-  struct sigaction oldact_usr1;  /*!< ... */
+  struct sigaction act_segv;    /*!< for the SIGSEGV signal handler */
+  struct sigaction oldact_segv; /*!< ... */
+  struct sigaction act_ipc;     /*!< for the SIGIPC signal handler */
+  struct sigaction oldact_ipc;  /*!< ... */
 
-  struct mmu mmu;           /*!< memory management unit */
-  struct ipc ipc;           /*!< interprocess communicator */
+  struct mmu mmu;               /*!< memory management unit */
+  struct ipc ipc;               /*!< interprocess communicator */
 
 #ifdef USE_PTHREAD
-  pthread_mutex_t lock;     /*!< mutex guarding struct */
+  pthread_mutex_t lock;         /*!< mutex guarding struct */
 #endif
 };
 
@@ -544,16 +544,17 @@ __vmm_sigsegv__(int const sig, siginfo_t * const si, void * const ctx)
 
 
 /****************************************************************************/
-/*! The SIGUSR1 handler. */
+/*! The SIGIPC handler. */
 /****************************************************************************/
 static inline void
-__vmm_sigusr1__(int const sig, siginfo_t * const si, void * const ctx)
+__vmm_sigipc__(int const sig, siginfo_t * const si, void * const ctx)
 {
   int ret;
   size_t l_pages, numwr;
 
-  /* make sure we received a SIGUSR1 */
-  assert(SIGUSR1 == sig);
+  /* make sure we received a SIGIPC */
+  assert(SIGIPC <= SIGRTMAX);
+  assert(SIGIPC == sig);
 
   /* evict all memory */
   ret = __ooc_mevictall_int__(&l_pages, &numwr);
@@ -609,12 +610,12 @@ __vmm_init__(struct vmm * const __vmm, size_t const __page_size,
   if (-1 == sigaction(SIGSEGV, &(__vmm->act_segv), &(__vmm->oldact_segv)))
     return -1;
 
-  /* setup the signal handler for SIGUSR1 */
-  __vmm->act_usr1.sa_flags     = SA_SIGINFO;
-  __vmm->act_usr1.sa_sigaction = __vmm_sigusr1__;
-  if (-1 == sigemptyset(&(__vmm->act_usr1.sa_mask)))
+  /* setup the signal handler for SIGIPC */
+  __vmm->act_ipc.sa_flags     = SA_SIGINFO;
+  __vmm->act_ipc.sa_sigaction = __vmm_sigipc__;
+  if (-1 == sigemptyset(&(__vmm->act_ipc.sa_mask)))
     return -1;
-  if (-1 == sigaction(SIGUSR1, &(__vmm->act_usr1), &(__vmm->oldact_usr1)))
+  if (-1 == sigaction(SIGIPC, &(__vmm->act_ipc), &(__vmm->oldact_ipc)))
     return -1;
 
   /* initialize mmu */
@@ -643,8 +644,8 @@ __vmm_destroy__(struct vmm * const __vmm)
   if (-1 == sigaction(SIGSEGV, &(__vmm->oldact_segv), NULL))
     return -1;
 
-  /* reset signal handler for SIGUSR1 */
-  if (-1 == sigaction(SIGUSR1, &(__vmm->oldact_usr1), NULL))
+  /* reset signal handler for SIGIPC */
+  if (-1 == sigaction(SIGIPC, &(__vmm->oldact_ipc), NULL))
     return -1;
 
   /* destroy mmu */

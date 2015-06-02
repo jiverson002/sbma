@@ -163,11 +163,13 @@ do {                                                                        \
 # endif
 # include <sys/mman.h> /* mmap, munmap */
 # undef _BSD_SOURCE
-# define SYS_ALLOC_FAIL      MAP_FAILED
+# define SYS_ALLOC_FAIL MAP_FAILED
 # define CALL_SYS_ALLOC(P,S) \
   ((P)=mmap(NULL, S, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0))
-# define CALL_SYS_FREE(P,S)  munmap(P,S)
+/*# define CALL_SYS_REALLOC(P,O,S) ((P)=mremap(O,S))*/
+# define CALL_SYS_FREE(P,S)      munmap(P,S)
 # define CALL_SYS_BZERO(P,S)
+# define CALL_SYS_MEMCPY(D,S,N)  memcpy(D,S,N)
 #endif
 #ifdef USE_MEMALIGN
 # ifndef _POSIX_C_SOURCE
@@ -178,19 +180,22 @@ do {                                                                        \
 # endif
 # include <stdlib.h>  /* posix_memalign */
 # undef _POSIX_C_SOURCE
-# define SYS_ALLOC_FAIL      NULL
+# define SYS_ALLOC_FAIL NULL
 # define CALL_SYS_ALLOC(P,S) \
   (0 == posix_memalign(&(P),MEMORY_ALLOCATION_ALIGNMENT,S) ? (P) : NULL)
-# define CALL_SYS_FREE(P,S)  libc_free(P)
-# define CALL_SYS_BZERO(P,S) memset(P, 0, S)
+# define CALL_SYS_REALLOC(P,O,S) ((P)=libc_realloc(O,S))
+# define CALL_SYS_FREE(P,S)      libc_free(P)
+# define CALL_SYS_BZERO(P,S)     memset(P, 0, S)
+# define CALL_SYS_MEMCPY(D,S,N)  memcpy(D,S,N)
 #endif
 #ifdef USE_SBMALLOC
 # include "sbma.h"
-# define SYS_ALLOC_FAIL        NULL
+# define SYS_ALLOC_FAIL NULL
 # define CALL_SYS_ALLOC(P,S)     ((P)=sbma_malloc(S))
-# define CALL_SYS_REALLOC(O,S,P) ((P)=sbma_realloc(O,S))
+# define CALL_SYS_REALLOC(P,O,S) ((P)=sbma_realloc(O,S))
 # define CALL_SYS_FREE(P,S)      sbma_free(P)
 # define CALL_SYS_BZERO(P,S)
+# define CALL_SYS_MEMCPY(D,S,N)  sbma_memcpy(D,S,N)
 #endif
 
 
