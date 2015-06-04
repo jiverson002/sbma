@@ -2,20 +2,26 @@
 # define _GNU_SOURCE
 #endif
 
+
+#ifdef NDEBUG
+# undef NDEBUG
+#endif
+
+
 /****************************************************************************/
-/* Need optimizations off or GCC will optimize away the termporary setting of
+/* Need optimizations off or GCC will optimize away the temporary setting of
  * libc_calloc in the HOOK_INIT macro. */
 /****************************************************************************/
 #pragma GCC push_options
 #pragma GCC optimize("O0")
 
 
+#include <assert.h>    /* assert */
 #include <dlfcn.h>     /* dlsym */
 #include <fcntl.h>     /* open */
 #include <malloc.h>    /* struct mallinfo */
 #include <stdarg.h>    /* stdarg library */
 #include <stddef.h>    /* size_t */
-#include <stdint.h>    /* SIZE_MAX */
 #include <stdio.h>     /* FILE */
 #include <string.h>    /* memset */
 #include <sys/stat.h>  /* stat, open */
@@ -23,7 +29,7 @@
 #include <unistd.h>    /* ssize_t, stat */
 
 #include "klmalloc.h"
-#include "sbmalloc.h"
+#include "sbma.h"
 
 
 /****************************************************************************/
@@ -34,9 +40,12 @@ do {                                                                        \
   if (NULL == _libc_calloc) {                                               \
     _libc_calloc = internal_calloc;                                         \
     *((void **) &_libc_calloc) = dlsym(RTLD_NEXT, "calloc");                \
+    assert(NULL != _libc_calloc);                                           \
   }                                                                         \
-  if (NULL == _libc_##func)                                                 \
+  if (NULL == _libc_##func) {                                               \
     *((void **) &_libc_##func) = dlsym(RTLD_NEXT, #func);                   \
+    assert(NULL != _libc_##func);                                           \
+  }                                                                         \
 } while (0)
 
 
@@ -122,6 +131,7 @@ libc_free(void * const ptr)
 }
 
 
+#include <stdint.h>
 /*************************************************************************/
 /*! Hook: libc stat */
 /*************************************************************************/
@@ -151,9 +161,8 @@ libc___xstat(int ver, char const * path, struct stat * buf)
 
 
 #if 0
-#ifndef __xstat64
 /*************************************************************************/
-/*! Hook: libc xstat64 */
+/*! Hook: libc __xstat64 */
 /*************************************************************************/
 extern int
 #ifdef __USE_LARGEFILE64
@@ -172,7 +181,6 @@ libc_xstat64(int ver, char const * path, struct stat * buf)
 
   return _libc_xstat64(ver, path, buf);
 }
-#endif
 #endif
 
 
@@ -194,6 +202,20 @@ libc_open(char const * path, int flags, ...)
   }
 
   return _libc_open(path, flags, mode);
+}
+
+
+/*************************************************************************/
+/*! Hook: libc close */
+/*************************************************************************/
+extern int
+libc_close(int fd)
+{
+  static ssize_t (*_libc_close)(int)=NULL;
+
+  HOOK_INIT(close);
+
+  return _libc_close(fd);
 }
 
 
@@ -434,8 +456,10 @@ mallinfo(void)
 extern int
 stat(char const * path, struct stat * buf)
 {
-  if (1 == SB_mexist(path))
-    (void)SB_mtouch((void*)path, SIZE_MAX);
+  if (1 == sbma_mexist(path))
+    (void)sbma_mtouch((void*)path, strlen(path));
+  if (1 == sbma_mexist(buf))
+    (void)sbma_mtouch((void*)buf, sizeof(struct stat));
 
   return libc_stat(path, buf);
 }
@@ -447,8 +471,17 @@ stat(char const * path, struct stat * buf)
 extern int
 __xstat(int ver, const char * path, struct stat * buf)
 {
-  if (1 == SB_mexist(path))
-    (void)SB_mtouch((void*)path, SIZE_MAX);
+  //printf("[%5d]:%s:%d\n", (int)getpid(), __func__, __LINE__);
+  if (1 == sbma_mexist(path)) {
+    //printf("[%5d]:%s:%d\n", (int)getpid(), __func__, __LINE__);
+    (void)sbma_mtouch((void*)path, strlen(path));
+  }
+  //printf("[%5d]:%s:%d\n", (int)getpid(), __func__, __LINE__);
+  if (1 == sbma_mexist(buf)) {
+    //printf("[%5d]:%s:%d\n", (int)getpid(), __func__, __LINE__);
+    (void)sbma_mtouch((void*)buf, sizeof(struct stat));
+  }
+  //printf("[%5d]:%s:%d\n", (int)getpid(), __func__, __LINE__);
 
   return libc___xstat(ver, path, buf);
 }
@@ -462,10 +495,10 @@ __xstat(int ver, const char * path, struct stat * buf)
 extern int
 __xstat64(int ver, const char * path, struct stat64 * buf)
 {
-  if (1 == SB_mexist(path))
-    (void)SB_mtouch((void*)path, SIZE_MAX);
+  if (1 == sbma_mexist(path))
+    (void)sbma_mtouch((void*)path, strlen(path));
 
-  return libc_xstat64(path, buf);
+  return libc_xstat64(ver, path, buf);
 }
 #endif
 #endif
@@ -480,8 +513,8 @@ open(char const * path, int flags, ...)
   va_list list;
   mode_t mode=0;
 
-  if (1 == SB_mexist(path))
-    (void)SB_mtouch((void*)path, SIZE_MAX);
+  if (1 == sbma_mexist(path))
+    (void)sbma_mtouch((void*)path, strlen(path));
 
   if (O_CREAT == (flags&O_CREAT)) {
     va_start(list, flags);
@@ -498,15 +531,15 @@ open(char const * path, int flags, ...)
 extern ssize_t
 read(int const fd, void * const buf, size_t const count)
 {
-  if (1 == SB_mexist(buf)) {
-    /* NOTE: memset() must be used instead of SB_mtouch() for the following
+  if (1 == sbma_mexist(buf)) {
+    /* NOTE: memset() must be used instead of sbma_mtouch() for the following
      * reason. If the relevant memory page has been written to disk and thus,
-     * given no R/W permissions, the using SB_mtouch() with SBPAGE_DIRTY will
-     * give the relevant page appropriate permissions, however, it will cause
-     * the page not be read from disk.  This is incorrect if the page is a
-     * shared page, since then any data that was in the shared page, but not
+     * given no R/W permissions, the using sbma_mtouch() with SBPAGE_DIRTY
+     * will give the relevant page appropriate permissions, however, it will
+     * cause the page not be read from disk.  This is incorrect if the page is
+     * a shared page, since then any data that was in the shared page, but not
      * part of the relevant memory, will be lost. */
-    //(void)SB_mtouch(buf, count);
+    //(void)sbma_mtouch(buf, count);
     memset(buf, 0, count);
   }
 
@@ -520,8 +553,25 @@ read(int const fd, void * const buf, size_t const count)
 extern ssize_t
 write(int const fd, void const * const buf, size_t const count)
 {
-  //printf("%s\n", __func__);
-  (void)SB_mtouch((void*)buf, count);
+  //printf("[%5d]:%s:%d\n", (int)getpid(), __func__, __LINE__);
+  if (1 == sbma_mexist(buf)) {
+    //printf("[%5d]:%s:%d\n", (int)getpid(), __func__, __LINE__);
+    (void)sbma_mtouch((void*)buf, count);
+  }
+  //printf("[%5d]:%s:%d %c\n", (int)getpid(), __func__, __LINE__,
+    //((char*)buf)[0]);
+  //for (size_t i=0; i<count; ++i) {
+    //printf("%zu", i);
+    //fflush(stdout);
+    //if (((char*)buf)[i] == 10) {
+      //printf("-");
+      //fflush(stdout);
+    //}
+    //printf(".");
+    //fflush(stdout);
+  //}
+  //printf("\n");
+  //printf("[%5d]:%s:%d\n", (int)getpid(), __func__, __LINE__);
 
   return libc_write(fd, buf, count);
 }
@@ -534,10 +584,10 @@ extern size_t
 fread(void * const buf, size_t const size, size_t const num,
       FILE * const stream)
 {
-  if (1 == SB_mexist(buf)) {
+  if (1 == sbma_mexist(buf)) {
     /* NOTE: For an explaination of why memset() must be used instead of
-     * SB_mtouch(), see discussion in read(). */
-    //(void)SB_mtouch(buf, size*num);
+     * sbma_mtouch(), see discussion in read(). */
+    //(void)sbma_mtouch(buf, size*num);
     memset(buf, 0, size*num);
   }
 
@@ -553,8 +603,8 @@ extern size_t
 fwrite(void const * const buf, size_t const size, size_t const num,
        FILE * const stream)
 {
-  //printf("%s\n", __func__);
-  (void)SB_mtouch((void*)buf, size);
+  if (1 == sbma_mexist(buf))
+    (void)sbma_mtouch((void*)buf, size);
 
   return libc_fwrite(buf, size, num, stream);
 }
@@ -566,8 +616,7 @@ fwrite(void const * const buf, size_t const size, size_t const num,
 extern int
 mlock(void const * const addr, size_t const len)
 {
-  //printf("%s\n", __func__);
-  (void)SB_mtouch((void*)addr, len);
+  (void)sbma_mtouch((void*)addr, len);
 
   return libc_mlock(addr, len);
 }
@@ -589,7 +638,7 @@ munlock(void const * const addr, size_t const len)
 extern int
 mlockall(int flags)
 {
-  (void)SB_mtouchall();
+  (void)sbma_mtouchall();
 
   return libc_mlockall(flags);
 }
@@ -611,10 +660,10 @@ munlockall(void)
 extern int
 msync(void * const addr, size_t const len, int const flags)
 {
-  /*if (0 == SB_mexist(addr))
+  /*if (0 == sbma_mexist(addr))
     return libc_msync(addr, len, flags);
   else
-    return SB_sync(addr, len);*/
+    return sbma_sync(addr, len);*/
   if (NULL == addr || 0 == len || 0 == flags) {}
   return 0;
 }

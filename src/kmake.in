@@ -6,24 +6,24 @@ add_with_param memalign no no= yes='-DUSE_MEMALIGN'
 add_with_param sbmalloc no no= yes='-DUSE_SBMALLOC'
 add_with_param libc no no= yes='-DUSE_LIBC'
 
-add_library libklmalloc.a klmalloc.o sbmalloc.o hooks.o
+add_library libklmalloc.a klmalloc.o malloc.o mstate.o mextra.o api.o hooks.o
 
 add_executable test/micro1 test/micro1.c
 
 add_executable test/micro2 test/micro2.c
-add_dependencies test/micro2 klmalloc.h
-target_link_libraries test/micro2 libklmalloc.a -ldl
+add_dependencies test/micro2 klmalloc.h klconfig.h
+target_link_libraries test/micro2 libklmalloc.a -ldl -lrt -pthread
 
 add_executable test/check1 test/check1.c
-add_dependencies test/check1 klmalloc.h sbconfig.h
-target_link_libraries test/check1 libklmalloc.a -ldl
+add_dependencies test/check1 klmalloc.h klconfig.h config.h
+target_link_libraries test/check1 libklmalloc.a -ldl -lrt -pthread
 
 add_executable test/check2 test/check2.c
-add_dependencies test/check2 sbmalloc.h sbconfig.h
-target_link_libraries test/check2 libklmalloc.a -ldl
+add_dependencies test/check2 sbma.h config.h
+target_link_libraries test/check2 libklmalloc.a -ldl -lrt -pthread
 
 add_executable test/check3 test/check3.c
-add_dependencies test/check3 sbmalloc.h sbconfig.h
-target_link_libraries test/check3 libklmalloc.a -ldl
+add_dependencies test/check3 sbma.h config.h
+target_link_libraries test/check3 libklmalloc.a -ldl -lrt -pthread
 
 install_libraries libklmalloc.a

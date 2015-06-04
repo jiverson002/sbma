@@ -2,7 +2,8 @@
 #include <stdlib.h>
 #include <sys/mman.h>
 
-#include "sbmalloc.h"
+#include "sbma.h"
+#include "klmalloc.h"
 
 #define MIN(A, B) (((A) < (B)) ? (A) : (B))
 
@@ -33,10 +34,8 @@ main()
   size_t i, m=2000, n=2000;
   size_t * a, * b, * c;
 
-  if (0 != SB_mallopt(SBOPT_DEBUG, SBDBG_INFO))
-    return EXIT_FAILURE;
-  if (0 != SB_mallopt(SBOPT_LAZYREAD, 1))
-    return EXIT_FAILURE;
+  sbma_init(SBMA_DEFAULT_FSTEM, SBMA_DEFAULT_PAGE_SIZE, SBMA_DEFAULT_OPTS);
+  KL_mallopt(M_ENABLED, M_ENABLED_ON);
 
   a = (size_t *)malloc(m*n*sizeof(size_t));
   b = (size_t *)malloc(n*m*sizeof(size_t));
@@ -54,11 +53,11 @@ main()
     b[i] = 1;
   }
 
-  msync(a, m*n*sizeof(size_t), MS_SYNC);
+  sbma_mevictall();
 
   mm(m, n, 25, a, b, c);
 
-  msync(c, m*m*sizeof(size_t), MS_SYNC);
+  sbma_mevictall();
 
   for (i=0; i<m*n; ++i) {
     if (2000 != c[i])
@@ -68,6 +67,9 @@ main()
   free(a);
   free(b);
   free(c);
+
+  KL_mallopt(M_ENABLED, M_ENABLED_OFF);
+  sbma_destroy();
 
   return EXIT_SUCCESS;
 }

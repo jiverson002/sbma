@@ -124,14 +124,13 @@ the possibly moved allocated space.
  *  1. Allow coalescing of adjacent blocks.
  */
 
-#include "config.h"
+#include "klconfig.h"
 
 #include <assert.h>   /* assert */
 #include <limits.h>   /* CHAR_BIT */
 #include <malloc.h>   /* struct mallinfo */
 #include <stdint.h>   /* uintptr_t */
 #include <string.h>   /* memset */
-#include <sys/mman.h>
 
 #include "klmalloc.h" /* klmalloc library */
 
@@ -1628,15 +1627,24 @@ KL_realloc(void * const ptr, size_t const size)
   if (size <= KL_G_SIZE(KL_G_ALLOC(ptr)))
     return ptr;
 
-  /* Allocate new, larger region of memory. */
-  if (NULL == (nptr=KL_malloc(size)))
-    return ptr;
+//#ifdef CALL_SYS_REALLOC
+//  if (KL_G_SIZE(KL_G_ALLOC(ptr)) > KL_chunk_max_size()) {
+//    nptr = CALL_SYS_REALLOC(nptr, ptr, size);
+//  }
+//  else {
+//#endif
+    /* Allocate new, larger region of memory. */
+    if (NULL == (nptr=KL_malloc(size)))
+      return ptr;
 
-  /* Copy old memory to new memory. */
-  memcpy(nptr, ptr, KL_G_SIZE(KL_G_ALLOC(ptr)));
+    /* Copy old memory to new memory. */
+    CALL_SYS_MEMCPY(nptr, ptr, KL_G_SIZE(KL_G_ALLOC(ptr)));
 
-  /* Release old memory region. */
-  KL_free(ptr);
+    /* Release old memory region. */
+    KL_free(ptr);
+//#ifdef CALL_SYS_REALLOC
+//  }
+//#endif
 
   return nptr;
 }
@@ -1689,14 +1697,8 @@ KL_mallopt(int const param, int const value)
           mem.enabled = M_ENABLED_OFF;
           LET_LOCK(&(mem.init_lock));
           kl_mem_destroy(&mem);
-#ifdef USE_SBMALLOC
-          SB_finalize();
-#endif
           break;
         case M_ENABLED_ON:
-#ifdef USE_SBMALLOC
-          SB_init();
-#endif
           kl_mem_init(&mem);
           GET_LOCK(&(mem.init_lock));
           mem.enabled = M_ENABLED_ON;

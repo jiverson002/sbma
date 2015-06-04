@@ -1,0 +1,63 @@
+http://www.oracle.com/technetwork/java/javase/signals-139944.html
+
+6.1.3 Signal Chaining
+
+If an application with native code requires its own signal handlers, then it
+might need to be used with the signal chaining facility. The signal chaining
+facility offers the following features:
+
+    Support for pre-installed signal handlers when the HotSpot VM is created.
+
+    When the VM is first created, existing signal handlers, that is, handlers
+for signals that are used by the VM, are saved. During execution, when any of
+these signals are raised and found not to be targeted at the Java HotSpot VM,
+the pre-installed handlers are invoked. In other words, pre-installed handlers
+are chained behind the VM handlers for these signals.
+
+    Support for signal handler installation after the HotSpot VM is created,
+either inside JNI code or from another native thread.
+
+    An application can link and load the libjsig.so shared library before
+libc/libthread/libpthread. This library ensures that calls such as signal(),
+sigset(), and sigaction() are intercepted so that they do not actually replace
+the Java HotSpot VM's signal handlers if the handlers conflict with those
+already installed by the Java HotSpot VM. Instead, these calls save the new
+signal handlers, or chain them behind the VM-installed handlers. During
+execution, when any of these signals are raised and found not to be targeted
+at the Java HotSpot VM, the pre-installed handlers are invoked.
+
+    If support for signal handler installation after the creation of the VM is
+not required, then the libjsig.so shared library is not needed.
+
+    Perform one of these two procedures to use the libjsig.so shared library.
+
+        Link it with the application that creates/embeds a HotSpot VM, for
+example:
+
+        cc -L libjvm.so-directory -ljsig -ljvm java_application.c
+
+        Use the LD_PRELOAD environment variable, for example:
+
+        export LD_PRELOAD= libjvm.so-directory /libjsig.so;
+java_application(ksh)
+
+        setenv LD_PRELOAD libjvm.so-directory/libjsig.so;
+java_application(csh)
+
+    The interposed signal(), sigset(), and sigaction() return the saved signal
+handlers, not the signal handlers installed by the Java HotSpot VM and which
+are seen by the operating system.
+
+Note that SIGUSR1 cannot be chained. If an application attempts to chain this
+signal on Solaris OS, then the HotSpot VM terminates with the following fatal
+error:
+
+Signal chaining detected for VM interrupt signal, try -XX:+UseAltSigs
+
+In addition, the SIGQUIT, SIGTERM, SIGINT, and SIGHUP signals cannot be
+chained. If the application needs to handle these signals, consider using the
+-Xrs option.
+
+On Solaris OS, the SIGUSR2 signal can be chained, but only for non-Java and
+non-VM threads; that is, it can only be used for native threads created by the
+application that do not attach to the VM.
