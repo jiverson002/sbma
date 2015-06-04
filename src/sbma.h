@@ -6,8 +6,8 @@
 
 
 #define SBMA_MAJOR 0
-#define SBMA_MINOR 0
-#define SBMA_PATCH 2
+#define SBMA_MINOR 1
+#define SBMA_PATCH 0
 #define SBMA_RCAND 0
 
 
