@@ -303,7 +303,6 @@ __ipc_madmit__(struct ipc * const __ipc, size_t const __value)
   pid   = __ipc->pid;
   flags = __ipc->flags;
 
-#if 1
   while (smem < 0) {
     /* find a process which has memory and is eligible */
     mxmem = 0;
@@ -322,6 +321,8 @@ __ipc_madmit__(struct ipc * const __ipc, size_t const __value)
     if (-1 == ii)
       break;
 
+    /*printf("%5d ==SIGIPC==> %5d (%zu)\n", (int)getpid(), pid[ii], pmem[ii]);*/
+
     /* such a process is available, tell it to free memory */
     ret = kill(pid[ii], SIGIPC);
     if (-1 == ret) {
@@ -338,7 +339,6 @@ __ipc_madmit__(struct ipc * const __ipc, size_t const __value)
 
     smem  = *__ipc->smem;
   }
-#endif
 
   ret = sem_post(__ipc->mtx);
   if (-1 == ret)

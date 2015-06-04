@@ -7,7 +7,7 @@
 
 #define SBMA_MAJOR 0
 #define SBMA_MINOR 0
-#define SBMA_PATCH 1
+#define SBMA_PATCH 2
 #define SBMA_RCAND 0
 
 
@@ -33,14 +33,14 @@ enum sbma_mallopt_params
 /*!
  * Virtual memory manager option bits:
  *
- *   bit 0 ==    0:                      1: lazy write
- *   bit 1 ==    0:                      1: lazy read
+ *   bit 0 ==    0: aggressive read  1: lazy read
+ *   bit 1 ==    0: aggressive write 1: lazy write
  */
 /****************************************************************************/
 enum sbma_vmm_opt_code
 {
-  VMM_LZYWR = 1 << 0,
-  VMM_LZYRD = 1 << 1
+  VMM_LZYRD = 1 << 0,
+  VMM_LZYWR = 1 << 1
 };
 
 

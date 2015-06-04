@@ -24,7 +24,7 @@
 
 /****************************************************************************/
 /*! This should only be disabled for single threaded applications. When
- *  disabled, the number of kernel calls will be reduced significantly during
+ *  disabled, the number of kernel calls will be reduced during
  *  __vmm_swap_i__() */
 /****************************************************************************/
 #define USE_GHOST 1
@@ -490,6 +490,14 @@ __vmm_sigsegv__(int const sig, siginfo_t * const si, void * const ctx)
     else
       l_pages = ate->n_pages-ate->l_pages;
 
+    /* TODO: in current code, each read fault requires a check with the ipc
+     * memory tracking to ensure there is enough free space. However, in
+     * previous versions of the SIGSEGV handler, this check was only done once
+     * per allocation when lazy reading is enabled. On one hand, the current
+     * implementation is better because it will result in a smaller number of
+     * times that a process is asked to evict all of its memory. On the other
+     * hand, it requires the acquisition of a mutex for every read fault. */
+
     /* check memory file to see if there is enough free memory to complete
      * this allocation. */
     if (VMM_LZYWR == (vmm.opts&VMM_LZYWR)) {
@@ -556,6 +564,8 @@ __vmm_sigipc__(int const sig, siginfo_t * const si, void * const ctx)
   assert(SIGIPC <= SIGRTMAX);
   assert(SIGIPC == sig);
 
+  /*printf("***** ==SIGIPC==> %5d (%zu)\n", (int)getpid(), vmm.curpages);*/
+
   /* evict all memory */
   ret = __ooc_mevictall_int__(&l_pages, &numwr);
   assert(-1 != ret);
@@ -563,6 +573,9 @@ __vmm_sigipc__(int const sig, siginfo_t * const si, void * const ctx)
   /* update ipc memory statistics */
   *(vmm.ipc.smem)          += l_pages;
   vmm.ipc.pmem[vmm.ipc.id] -= l_pages;
+
+  /* change my eligibility to ineligible */
+  vmm.ipc.flags[vmm.ipc.id] &= ~IPC_ELIGIBLE;
 
   /* signal to the waiting process that the memory has been released */
   ret = sem_post(vmm.ipc.trn1);
