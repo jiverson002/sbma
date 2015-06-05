@@ -106,6 +106,8 @@ __ooc_malloc__(size_t const __size)
   if (0 == __size)
     return NULL;
 
+  assert(__size > 0);
+
   /* compute allocation sizes */
   page_size = vmm.page_size;
   s_pages   = 1+((sizeof(struct ate)-1)/page_size);
@@ -249,6 +251,8 @@ __ooc_realloc__(void * const __ptr, size_t const __size)
   struct ate * ate;
   char ofname[FILENAME_MAX], nfname[FILENAME_MAX];
 
+  assert(__size > 0);
+
   page_size = vmm.page_size;
   s_pages   = 1+((sizeof(struct ate)-1)/page_size);
   ate       = (struct ate*)((uintptr_t)__ptr-(s_pages*page_size));
@@ -264,13 +268,6 @@ __ooc_realloc__(void * const __ptr, size_t const __size)
     /* do nothing */
   }
   else if (nn_pages < on_pages) {
-    /* resize allocation */
-    /*naddr = (uintptr_t)mremap((void*)oaddr,\
-      (s_pages+on_pages+of_pages)*page_size,\
-      (s_pages+nn_pages+nf_pages)*page_size, MREMAP_MAYMOVE);
-    if ((uintptr_t)MAP_FAILED == naddr)
-      return NULL;*/
-
     /* adjust l_pages for the pages which will be unmapped */
     ate->n_pages = nn_pages;
     for (i=nn_pages; i<on_pages; ++i) {
@@ -325,9 +322,12 @@ __ooc_realloc__(void * const __ptr, size_t const __size)
     }
 
     /* resize allocation */
+    /*naddr = (uintptr_t)mremap((void*)oaddr,\
+      (s_pages+on_pages+of_pages)*page_size,\
+      (s_pages+nn_pages+nf_pages)*page_size, MREMAP_MAYMOVE);*/
     naddr = (uintptr_t)mremap((void*)oaddr,\
       (s_pages+on_pages+of_pages)*page_size,\
-      (s_pages+nn_pages+nf_pages)*page_size, MREMAP_MAYMOVE);
+      (s_pages+nn_pages+nf_pages)*page_size, 0);
     if ((uintptr_t)MAP_FAILED == naddr)
       return NULL;
 
@@ -362,16 +362,28 @@ __ooc_realloc__(void * const __ptr, size_t const __size)
       if (-1 == rename(ofname, nfname))
         return NULL;
     }
-    if (-1 == truncate(nfname, nn_pages*page_size))
-      return NULL;
+    /*if (-1 == truncate(nfname, nn_pages*page_size))
+      return NULL;*/
 
-    /* set pointer for the allocation table entry */
-    ate = (struct ate*)naddr;
+    /* if the ate has changed */
+    if (ate != (struct ate*)naddr) {
+      /* remove old ate from mmu */
+      ret = __mmu_invalidate_ate__(&(vmm.mmu), ate);
+      if (-1 == ret)
+        return NULL;
+
+      /* set pointer for the allocation table entry */
+      ate = (struct ate*)naddr;
+
+      /* insert new ate into mmu */
+      ret = __mmu_insert_ate__(&(vmm.mmu), ate);
+      if (-1 == ret)
+        return NULL;
+    }
 
     /* populate ate structure */
     ate->n_pages = nn_pages;
-    ate->l_pages =\
-      ol_pages+((nn_pages-on_pages)+(nf_pages-of_pages))*page_size;
+    ate->l_pages = ol_pages+((nn_pages-on_pages)+(nf_pages-of_pages));
     ate->base    = naddr+(s_pages*page_size);
     ate->flags   = (uint8_t*)(naddr+((s_pages+nn_pages)*page_size));
 
