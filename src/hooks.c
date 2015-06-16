@@ -28,7 +28,6 @@
 #include <sys/types.h> /* stat, open */
 #include <unistd.h>    /* ssize_t, stat */
 
-#include "klmalloc.h"
 #include "sbma.h"
 
 
@@ -131,7 +130,6 @@ libc_free(void * const ptr)
 }
 
 
-#include <stdint.h>
 /*************************************************************************/
 /*! Hook: libc stat */
 /*************************************************************************/
@@ -359,7 +357,7 @@ malloc(size_t const size)
 /*#ifdef USE_LIBC
   void * ptr = libc_malloc(size);
 #else
-  void * ptr = KL_malloc(size);
+  void * ptr = SBMA_malloc(size);
 #endif
   printf("m %p %zu\n", ptr, size);
   return ptr;*/
@@ -367,7 +365,7 @@ malloc(size_t const size)
 #ifdef USE_LIBC
   return libc_malloc(size);
 #else
-  return KL_malloc(size);
+  return SBMA_malloc(size);
 #endif
 }
 
@@ -386,7 +384,7 @@ calloc(size_t const num, size_t const size)
 #ifdef USE_LIBC
   return libc_calloc(num, size);
 #else
-  return KL_calloc(num, size);
+  return SBMA_calloc(num, size);
 #endif
 }
 
@@ -400,12 +398,12 @@ realloc(void * const ptr, size_t const size)
   HOOK_INIT(calloc);
 
   if (NULL == ptr)
-    return KL_malloc(size);
+    return SBMA_malloc(size);
 
 #ifdef USE_LIBC
   return libc_realloc(ptr, size);
 #else
-  return KL_realloc(ptr, size);
+  return SBMA_realloc(ptr, size);
 #endif
 }
 
@@ -433,7 +431,7 @@ free(void * const ptr)
 #ifdef USE_LIBC
   libc_free(ptr);
 #else
-  KL_free(ptr);
+  SBMA_free(ptr);
 #endif
 }
 
@@ -446,7 +444,7 @@ mallinfo(void)
 {
   HOOK_INIT(calloc);
 
-  return KL_mallinfo();
+  return SBMA_mallinfo();
 }
 
 
@@ -456,10 +454,10 @@ mallinfo(void)
 extern int
 stat(char const * path, struct stat * buf)
 {
-  if (1 == sbma_mexist(path))
-    (void)sbma_mtouch((void*)path, strlen(path));
-  if (1 == sbma_mexist(buf))
-    (void)sbma_mtouch((void*)buf, sizeof(struct stat));
+  if (1 == SBMA_mexist(path))
+    (void)SBMA_mtouch((void*)path, strlen(path));
+  if (1 == SBMA_mexist(buf))
+    (void)SBMA_mtouch((void*)buf, sizeof(struct stat));
 
   return libc_stat(path, buf);
 }
@@ -471,17 +469,10 @@ stat(char const * path, struct stat * buf)
 extern int
 __xstat(int ver, const char * path, struct stat * buf)
 {
-  //printf("[%5d]:%s:%d\n", (int)getpid(), __func__, __LINE__);
-  if (1 == sbma_mexist(path)) {
-    //printf("[%5d]:%s:%d\n", (int)getpid(), __func__, __LINE__);
-    (void)sbma_mtouch((void*)path, strlen(path));
-  }
-  //printf("[%5d]:%s:%d\n", (int)getpid(), __func__, __LINE__);
-  if (1 == sbma_mexist(buf)) {
-    //printf("[%5d]:%s:%d\n", (int)getpid(), __func__, __LINE__);
-    (void)sbma_mtouch((void*)buf, sizeof(struct stat));
-  }
-  //printf("[%5d]:%s:%d\n", (int)getpid(), __func__, __LINE__);
+  if (1 == SBMA_mexist(path))
+    (void)SBMA_mtouch((void*)path, strlen(path));
+  if (1 == SBMA_mexist(buf))
+    (void)SBMA_mtouch((void*)buf, sizeof(struct stat));
 
   return libc___xstat(ver, path, buf);
 }
@@ -495,8 +486,8 @@ __xstat(int ver, const char * path, struct stat * buf)
 extern int
 __xstat64(int ver, const char * path, struct stat64 * buf)
 {
-  if (1 == sbma_mexist(path))
-    (void)sbma_mtouch((void*)path, strlen(path));
+  if (1 == SBMA_mexist(path))
+    (void)SBMA_mtouch((void*)path, strlen(path));
 
   return libc_xstat64(ver, path, buf);
 }
@@ -513,8 +504,8 @@ open(char const * path, int flags, ...)
   va_list list;
   mode_t mode=0;
 
-  if (1 == sbma_mexist(path))
-    (void)sbma_mtouch((void*)path, strlen(path));
+  if (1 == SBMA_mexist(path))
+    (void)SBMA_mtouch((void*)path, strlen(path));
 
   if (O_CREAT == (flags&O_CREAT)) {
     va_start(list, flags);
@@ -531,15 +522,15 @@ open(char const * path, int flags, ...)
 extern ssize_t
 read(int const fd, void * const buf, size_t const count)
 {
-  if (1 == sbma_mexist(buf)) {
-    /* NOTE: memset() must be used instead of sbma_mtouch() for the following
+  if (1 == SBMA_mexist(buf)) {
+    /* NOTE: memset() must be used instead of SBMA_mtouch() for the following
      * reason. If the relevant memory page has been written to disk and thus,
-     * given no R/W permissions, the using sbma_mtouch() with SBPAGE_DIRTY
+     * given no R/W permissions, the using SBMA_mtouch() with SBPAGE_DIRTY
      * will give the relevant page appropriate permissions, however, it will
      * cause the page not be read from disk.  This is incorrect if the page is
      * a shared page, since then any data that was in the shared page, but not
      * part of the relevant memory, will be lost. */
-    //(void)sbma_mtouch(buf, count);
+    //(void)SBMA_mtouch(buf, count);
     memset(buf, 0, count);
   }
 
@@ -553,25 +544,8 @@ read(int const fd, void * const buf, size_t const count)
 extern ssize_t
 write(int const fd, void const * const buf, size_t const count)
 {
-  //printf("[%5d]:%s:%d\n", (int)getpid(), __func__, __LINE__);
-  if (1 == sbma_mexist(buf)) {
-    //printf("[%5d]:%s:%d\n", (int)getpid(), __func__, __LINE__);
-    (void)sbma_mtouch((void*)buf, count);
-  }
-  //printf("[%5d]:%s:%d %c\n", (int)getpid(), __func__, __LINE__,
-    //((char*)buf)[0]);
-  //for (size_t i=0; i<count; ++i) {
-    //printf("%zu", i);
-    //fflush(stdout);
-    //if (((char*)buf)[i] == 10) {
-      //printf("-");
-      //fflush(stdout);
-    //}
-    //printf(".");
-    //fflush(stdout);
-  //}
-  //printf("\n");
-  //printf("[%5d]:%s:%d\n", (int)getpid(), __func__, __LINE__);
+  if (1 == SBMA_mexist(buf))
+    (void)SBMA_mtouch((void*)buf, count);
 
   return libc_write(fd, buf, count);
 }
@@ -584,10 +558,10 @@ extern size_t
 fread(void * const buf, size_t const size, size_t const num,
       FILE * const stream)
 {
-  if (1 == sbma_mexist(buf)) {
+  if (1 == SBMA_mexist(buf)) {
     /* NOTE: For an explaination of why memset() must be used instead of
-     * sbma_mtouch(), see discussion in read(). */
-    //(void)sbma_mtouch(buf, size*num);
+     * SBMA_mtouch(), see discussion in read(). */
+    //(void)SBMA_mtouch(buf, size*num);
     memset(buf, 0, size*num);
   }
 
@@ -603,8 +577,8 @@ extern size_t
 fwrite(void const * const buf, size_t const size, size_t const num,
        FILE * const stream)
 {
-  if (1 == sbma_mexist(buf))
-    (void)sbma_mtouch((void*)buf, size);
+  if (1 == SBMA_mexist(buf))
+    (void)SBMA_mtouch((void*)buf, size);
 
   return libc_fwrite(buf, size, num, stream);
 }
@@ -616,7 +590,7 @@ fwrite(void const * const buf, size_t const size, size_t const num,
 extern int
 mlock(void const * const addr, size_t const len)
 {
-  (void)sbma_mtouch((void*)addr, len);
+  (void)SBMA_mtouch((void*)addr, len);
 
   return libc_mlock(addr, len);
 }
@@ -638,7 +612,7 @@ munlock(void const * const addr, size_t const len)
 extern int
 mlockall(int flags)
 {
-  (void)sbma_mtouchall();
+  (void)SBMA_mtouchall();
 
   return libc_mlockall(flags);
 }
@@ -660,10 +634,10 @@ munlockall(void)
 extern int
 msync(void * const addr, size_t const len, int const flags)
 {
-  /*if (0 == sbma_mexist(addr))
+  /*if (0 == SBMA_mexist(addr))
     return libc_msync(addr, len, flags);
   else
-    return sbma_sync(addr, len);*/
+    return SBMA_sync(addr, len);*/
   if (NULL == addr || 0 == len || 0 == flags) {}
   return 0;
 }

@@ -135,6 +135,9 @@ the possibly moved allocated space.
 #include "klmalloc.h" /* klmalloc library */
 
 
+/****************************************************************************/
+/*! Required function prototypes. */
+/****************************************************************************/
 void * libc_malloc(size_t const size);
 void * libc_calloc(size_t const num, size_t const size);
 void * libc_realloc(void * const ptr, size_t const size);
@@ -938,6 +941,7 @@ kl_block_alloc(kl_mem_t * const mem, size_t const size)
 }
 
 
+#ifdef CALL_SYS_REALLOC
 /****************************************************************************/
 /* Reallocate a existing block (only for increasing size) */
 /****************************************************************************/
@@ -965,11 +969,13 @@ kl_block_realloc(kl_mem_t * const mem, void * const oblock,
 
   return nblock;
 }
+#endif
 
 
 /****************************************************************************/
 /* =========================================================================*/
 /****************************************************************************/
+void * PTR = NULL;
 
 
 /****************************************************************************/
@@ -1155,6 +1161,8 @@ kl_chunk_del(kl_mem_t * const mem, kl_chunk_t * const chunk)
   size_t bidx;
 
   GET_LOCK(&(mem->lock));
+
+  assert(KL_G_SIZE(chunk) >= CHUNK_MIN_SIZE);
 
   bidx = KL_SIZE2BIN(KL_G_SIZE(chunk));
 
@@ -1583,15 +1591,15 @@ KL_malloc(size_t const size)
     ptr = BRICK_PTR(brick);
 
     assert(size <= BRICK_MAX_SIZE);
+    assert(KL_BRICK_SIZE(size) <= KL_G_SIZE(brick));
     assert(KL_BRICK == KL_TYPEOF(brick));
-    assert(KL_BRICK_SIZE(size) == KL_G_SIZE(brick));
   }
   else if (NULL != (chunk=kl_chunk_get(&mem, size))) {
     ptr = CHUNK_PTR(chunk);
 
     assert(size <= CHUNK_MAX_SIZE);
-    assert(KL_CHUNK == KL_TYPEOF(chunk));
     assert(KL_CHUNK_SIZE(size) <= KL_G_SIZE(chunk));
+    assert(KL_CHUNK == KL_TYPEOF(chunk));
   }
   else if (NULL != (chunk=kl_chunk_solo(&mem, size))) {
     ptr = CHUNK_PTR(chunk);
@@ -1603,6 +1611,7 @@ KL_malloc(size_t const size)
   }
 
   assert(KL_ISALIGNED(ptr));
+  assert(0 != KL_G_SIZE(KL_G_ALLOC(ptr)));
 
   return ptr;
 }
@@ -1628,6 +1637,8 @@ KL_calloc(size_t const num, size_t const size)
     return NULL;
   memset(ptr, 0, num*size);
 
+  assert(0 != KL_G_SIZE(KL_G_ALLOC(ptr)));
+
   return ptr;
 }
 
@@ -1638,6 +1649,7 @@ KL_calloc(size_t const num, size_t const size)
 KL_EXPORT void *
 KL_realloc(void * const ptr, size_t const size)
 {
+  int ret;
   size_t osize, block_size;
   void * nptr;
   kl_chunk_t * chunk;
@@ -1651,13 +1663,17 @@ KL_realloc(void * const ptr, size_t const size)
   }
   LET_LOCK(&(mem.init_lock));
 
-  /* See if current allocation is large enough. */
-  if (size <= KL_G_SIZE(KL_G_ALLOC(ptr)))
-    return ptr;
-
   chunk = (kl_chunk_t*)KL_G_ALLOC(ptr);
   osize = KL_G_SIZE(chunk);
+  assert(0 != osize);
 
+  /* See if current allocation is large enough. */
+  if (KL_BRICK_SIZE(size) <= osize)
+    return ptr;
+  else if (KL_CHUNK_SIZE(size) <= osize)
+    return ptr;
+
+#if 0
 #ifdef CALL_SYS_REALLOC
   if (osize > KL_chunk_max_size()) {
     GET_LOCK(&(mem.lock));
@@ -1697,18 +1713,44 @@ KL_realloc(void * const ptr, size_t const size)
 
     return CHUNK_PTR(chunk);
   }
-#endif
 
   MALLOC:
+#endif
+#endif
   /* Allocate new, larger region of memory. */
   if (NULL == (nptr=KL_malloc(size)))
     return NULL;
+  assert(osize <= KL_G_SIZE(KL_G_ALLOC(nptr)));
 
-  /* Copy old memory to new memory. */
-  memcpy(nptr, ptr, osize);
+#if 0
+#ifdef CALL_SYS_REMAP
+  if (osize > KL_chunk_max_size()) {
+    /* Remap old memory to new memory. */
+    ret = CALL_SYS_REMAP(KL_G_PREV(KL_G_ALLOC(nptr)),\
+      KL_G_PREV(KL_G_ALLOC(ptr)));
+    if (-1 == ret)
+      return NULL;
+  }
+  else {
+#endif
+#else
+    /* Copy old memory to new memory. */
+    memcpy(nptr, ptr, osize);
+#endif
+#if 0
+#ifdef CALL_SYS_REMAP
+  }
+#endif
+#endif
 
   /* Release old memory region. */
   KL_free(ptr);
+
+  if (size <= KL_brick_max_size())
+    assert(KL_BRICK == KL_TYPEOF(KL_G_ALLOC(nptr)));
+  else
+    assert(KL_CHUNK == KL_TYPEOF(KL_G_ALLOC(nptr)));
+  assert(0 != KL_G_SIZE(KL_G_ALLOC(nptr)));
 
   return nptr;
 }
@@ -1717,7 +1759,7 @@ KL_realloc(void * const ptr, size_t const size)
 /****************************************************************************/
 /* Release size bytes of memory */
 /****************************************************************************/
-KL_EXPORT void
+KL_EXPORT int
 KL_free(void * const ptr)
 {
   kl_alloc_t * alloc;
@@ -1727,7 +1769,7 @@ KL_free(void * const ptr)
   if (M_ENABLED_ON != mem.enabled) {
     LET_LOCK(&(mem.init_lock));
     libc_free(ptr);
-    return;
+    return 0;
   }
   LET_LOCK(&(mem.init_lock));
 
@@ -1741,6 +1783,8 @@ KL_free(void * const ptr)
       kl_chunk_put(&mem, (kl_chunk_t*)alloc);
       break;
   }
+
+  return 0;
 }
 
 

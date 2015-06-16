@@ -56,9 +56,12 @@ __ooc_mallinfo__(void)
 
   memset(&mi, 0, sizeof(struct mallinfo));
 
-  ret = LOCK_GET(&(vmm.lock));
+  /* Not checking the return value here is a hack which allows this function
+   * to be called even after __vmm_destroy__() has been called. */
+  /*ret = LOCK_GET(&(vmm.lock));
   if (-1 == ret)
-    return mi;
+    return mi;*/
+  (void)LOCK_GET(&(vmm.lock));
 
   mi.smblks  = vmm.numrf; /* read faults */
   mi.ordblks = vmm.numwf; /* write faults */
@@ -70,9 +73,12 @@ __ooc_mallinfo__(void)
   mi.fordblks = vmm.maxpages; /* high water mark for loaded syspages */
   mi.keepcost = vmm.numpages; /* syspages allocated */
 
-  ret = LOCK_LET(&(vmm.lock));
+  /* Not checking the return value here is a hack which allows this function
+   * to be called even after __vmm_destroy__() has been called. */
+  /*ret = LOCK_LET(&(vmm.lock));
   if (-1 == ret)
-    return mi;
+    return mi;*/
+  (void)LOCK_LET(&(vmm.lock));
 
   return mi;
 }

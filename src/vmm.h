@@ -27,7 +27,7 @@
  *  disabled, the number of kernel calls will be reduced during
  *  __vmm_swap_i__() */
 /****************************************************************************/
-#define USE_GHOST 1
+#define USE_GHOST 0
 
 
 /****************************************************************************/
@@ -563,8 +563,6 @@ __vmm_sigipc__(int const sig, siginfo_t * const si, void * const ctx)
   /* make sure we received a SIGIPC */
   assert(SIGIPC <= SIGRTMAX);
   assert(SIGIPC == sig);
-
-  /*printf("***** ==SIGIPC==> %5d (%zu)\n", (int)getpid(), vmm.curpages);*/
 
   /* evict all memory */
   ret = __ooc_mevictall_int__(&l_pages, &numwr);

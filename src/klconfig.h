@@ -3,9 +3,9 @@
 
 
 /* enable use of assert */
-//#ifdef NDEBUG
-//# undef NDEBUG
-//#endif
+#ifdef NDEBUG
+# undef NDEBUG
+#endif
 
 
 /* BDMPI requires pthread support */
@@ -172,7 +172,6 @@ do {                                                                        \
 # define SYS_ALLOC_FAIL MAP_FAILED
 # define CALL_SYS_ALLOC(P,S) \
   ((P)=mmap(NULL, S, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0))
-# define CALL_SYS_REALLOC(P,O,S,N) ((P)=mremap(O,S,N,MREMAP_MAYMOVE))
 # define CALL_SYS_FREE(P,S)        munmap(P,S)
 # define CALL_SYS_BZERO(P,S)
 #endif
@@ -188,15 +187,16 @@ do {                                                                        \
 # define SYS_ALLOC_FAIL NULL
 # define CALL_SYS_ALLOC(P,S) \
   (0 == posix_memalign(&(P),MEMORY_ALLOCATION_ALIGNMENT,S) ? (P) : NULL)
-# define CALL_SYS_REALLOC(P,O,S) ((P)=libc_realloc(O,S))
 # define CALL_SYS_FREE(P,S)      libc_free(P)
 # define CALL_SYS_BZERO(P,S)     memset(P, 0, S)
 #endif
 #ifdef USE_SBMALLOC
-# include "sbma.h"
+void * sbma_malloc(size_t const size);
+int sbma_remap(void * const nptr, void * const ptr);
+int sbma_free(void * const ptr);
 # define SYS_ALLOC_FAIL NULL
 # define CALL_SYS_ALLOC(P,S)       ((P)=sbma_malloc(S))
-# define CALL_SYS_REALLOC(P,O,S,N) ((P)=sbma_realloc(O,N))
+# define CALL_SYS_REMAP(N,O)       sbma_remap(N,O)
 # define CALL_SYS_FREE(P,S)        sbma_free(P)
 # define CALL_SYS_BZERO(P,S)
 #endif

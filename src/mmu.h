@@ -102,7 +102,7 @@ static inline int
 __mmu_insert_ate__(struct mmu * const __mmu, struct ate * const __ate)
 {
   /* acquire lock */
-  if (-1 == LOCK_GET(&(__mmu_>lock)))
+  if (-1 == LOCK_GET(&(__mmu->lock)))
     return -1;
 
   /* insert at beginning of doubly linked list */
@@ -119,7 +119,7 @@ __mmu_insert_ate__(struct mmu * const __mmu, struct ate * const __ate)
   }
 
   /* release lock */
-  if (-1 == LOCK_LET(&(__mmu_>lock)))
+  if (-1 == LOCK_LET(&(__mmu->lock)))
     return -1;
 
   return 0;
@@ -173,7 +173,7 @@ __mmu_lookup_ate__(struct mmu * const __mmu, void const * const __addr)
   }
 
   /* lock ate */
-  if (-1 == LOCK_GET(&(ate->lock))) {
+  if (NULL != ate && -1 == LOCK_GET(&(ate->lock))) {
     (void)LOCK_LET(&(__mmu->lock));
     return (struct ate*)-1;
   }
