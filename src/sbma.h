@@ -62,6 +62,7 @@ void * SBMA_malloc(size_t const size);
 void * SBMA_calloc(size_t const num, size_t const size);
 int    SBMA_free(void * const ptr);
 void * SBMA_realloc(void * const ptr, size_t const size);
+int    SBMA_remap(void * const nptr, void * const ptr);
 
 /* mcntrl.c */
 int SBMA_init(char const * const fstem, size_t const page_size,

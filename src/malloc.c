@@ -231,7 +231,7 @@ __ooc_remap__(void * const __nptr, void * const __ptr)
   if (-1 == ret)
     return -1;
 
-  if (nflags < oflags) {
+  if (nf_pages < of_pages) {
     /* copy page flags */
     memcpy(nflags, oflags, nf_pages*page_size);
 
@@ -260,7 +260,7 @@ __ooc_remap__(void * const __nptr, void * const __ptr)
   /* grant read-write permission to dirty pages of new memory */
   for (i=0; i<nn_pages; ++i) {
     if (MMU_DIRTY == (nflags[i]&MMU_DIRTY)) {
-      ret = mprotect((void*)((uintptr_t)__nptr+i*page_size), page_size,\
+      ret = mprotect((void*)((uintptr_t)__nptr+(i*page_size)), page_size,\
         PROT_READ|PROT_WRITE);
       if (-1 == ret)
         return -1;

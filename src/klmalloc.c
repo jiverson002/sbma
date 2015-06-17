@@ -941,43 +941,6 @@ kl_block_alloc(kl_mem_t * const mem, size_t const size)
 }
 
 
-#ifdef CALL_SYS_REALLOC
-/****************************************************************************/
-/* Reallocate a existing block (only for increasing size) */
-/****************************************************************************/
-static void *
-kl_block_realloc(kl_mem_t * const mem, void * const oblock,
-                 size_t const osize, size_t const nsize)
-{
-  void * ret, * nblock;
-
-  /* Get system memory. */
-  ret = CALL_SYS_REALLOC(nblock, oblock, osize, nsize);
-  if (SYS_ALLOC_FAIL == ret)
-    return NULL;
-  CALL_SYS_BZERO(nblock, nsize);
-
-  GET_LOCK(&(mem->lock));
-
-  /* Accounting. */
-  mem->mem_total += (nsize-osize);
-  if (mem->mem_total > mem->mem_max)
-    mem->mem_max = mem->mem_total;
-  mem->sys_ctr++;
-
-  LET_LOCK(&(mem->lock));
-
-  return nblock;
-}
-#endif
-
-
-/****************************************************************************/
-/* =========================================================================*/
-/****************************************************************************/
-void * PTR = NULL;
-
-
 /****************************************************************************/
 /* Add a node to a free brick data structure */
 /****************************************************************************/
@@ -1236,11 +1199,6 @@ kl_chunk_put(kl_mem_t * const mem, kl_chunk_t * chunk)
 
   /* Sanity check: chunk size is still valid. */
   assert(KL_G_SIZE(chunk) >= CHUNK_MIN_SIZE);
-
-  /* TODO: Implicitly, the following rule prevents large allocations from
-   * going into the free chunk data structure.  Thus, it also prevents the
-   * limitation described above.  However, in many cases, it would be nice to
-   * keep large allocations around for quicker allocation time. */
 
   /* If chunk is the only chunk, release memory back to system. */
   if (KL_ISFIRST(chunk) && KL_ISLAST(chunk)) {
@@ -1597,6 +1555,7 @@ KL_malloc(size_t const size)
   else if (NULL != (chunk=kl_chunk_get(&mem, size))) {
     ptr = CHUNK_PTR(chunk);
 
+    assert(size <= FIXED_MAX_SIZE);
     assert(size <= CHUNK_MAX_SIZE);
     assert(KL_CHUNK_SIZE(size) <= KL_G_SIZE(chunk));
     assert(KL_CHUNK == KL_TYPEOF(chunk));
@@ -1604,10 +1563,11 @@ KL_malloc(size_t const size)
   else if (NULL != (chunk=kl_chunk_solo(&mem, size))) {
     ptr = CHUNK_PTR(chunk);
 
+    assert(size > FIXED_MAX_SIZE);
     assert(size <= CHUNK_MAX_SIZE);
-    assert(KL_CHUNK == KL_TYPEOF(chunk));
     //assert(KL_CHUNK_SIZE(size) <= KL_G_SIZE(chunk));
     assert(KL_CHUNK_SIZE(size) == KL_G_SIZE(chunk));
+    assert(KL_CHUNK == KL_TYPEOF(chunk));
   }
 
   assert(KL_ISALIGNED(ptr));
@@ -1673,58 +1633,13 @@ KL_realloc(void * const ptr, size_t const size)
   else if (KL_CHUNK_SIZE(size) <= osize)
     return ptr;
 
-#if 0
-#ifdef CALL_SYS_REALLOC
-  if (osize > KL_chunk_max_size()) {
-    GET_LOCK(&(mem.lock));
-
-    block = (kl_var_block_t*)KL_G_PREV(chunk);
-    assert(BLOCK_HEADER_ALIGN == BLOCK_HDR(block));
-    assert(BLOCK_HEADER_ALIGN == BLOCK_FTR(block, KL_BLOCK_SIZE(osize)));
-
-    /* Determine appropriate allocation size. */
-    block_size = KL_BLOCK_SIZE(KL_CHUNK_SIZE(size));
-    assert(block_size > BLOCK_DEFAULT_SIZE);
-
-    block = (kl_var_block_t*)kl_block_realloc(&mem, block,\
-      KL_BLOCK_SIZE(osize), block_size);
-    if (NULL == block) {
-      LET_LOCK(&(mem.lock));
-      goto MALLOC;
-    }
-
-    /* Set block header and footer size. */
-    BLOCK_HDR(block) = BLOCK_HEADER_ALIGN;
-    BLOCK_FTR(block, block_size) = BLOCK_HDR(block);
-
-    /* Set the chunk to be returned. */
-    chunk = (kl_chunk_t*)BLOCK_PTR(block);
-
-    /* Set chunk header and footer size (set chunk as in use). */
-    CHUNK_HDR(chunk) = KL_CHUNK_SIZE(size);
-    CHUNK_FTR(chunk) = 0;
-
-    /* Sanity check. */
-    assert(KL_CHUNK_SIZE(size) == KL_G_SIZE(chunk));
-    assert(block_size == KL_BLOCK_SIZE(KL_G_SIZE(chunk)));
-    assert(block_size == KL_BLOCK_SIZE(KL_CHUNK_SIZE(size)));
-
-    LET_LOCK(&(mem.lock));
-
-    return CHUNK_PTR(chunk);
-  }
-
-  MALLOC:
-#endif
-#endif
   /* Allocate new, larger region of memory. */
   if (NULL == (nptr=KL_malloc(size)))
     return NULL;
   assert(osize <= KL_G_SIZE(KL_G_ALLOC(nptr)));
 
-#if 0
 #ifdef CALL_SYS_REMAP
-  if (osize > KL_chunk_max_size()) {
+  if (osize > FIXED_MAX_SIZE) {
     /* Remap old memory to new memory. */
     ret = CALL_SYS_REMAP(KL_G_PREV(KL_G_ALLOC(nptr)),\
       KL_G_PREV(KL_G_ALLOC(ptr)));
@@ -1733,14 +1648,10 @@ KL_realloc(void * const ptr, size_t const size)
   }
   else {
 #endif
-#else
     /* Copy old memory to new memory. */
     memcpy(nptr, ptr, osize);
-#endif
-#if 0
 #ifdef CALL_SYS_REMAP
   }
-#endif
 #endif
 
   /* Release old memory region. */
