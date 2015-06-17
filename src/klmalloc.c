@@ -1610,7 +1610,7 @@ KL_EXPORT void *
 KL_realloc(void * const ptr, size_t const size)
 {
   int ret;
-  size_t osize, block_size;
+  size_t osize, block_size, off;
   void * nptr;
   kl_chunk_t * chunk;
   kl_var_block_t * block;
@@ -1640,9 +1640,12 @@ KL_realloc(void * const ptr, size_t const size)
 
 #ifdef CALL_SYS_REMAP
   if (osize > FIXED_MAX_SIZE) {
+    off = (uintptr_t)ptr-(uintptr_t)KL_G_PREV(KL_G_ALLOC(ptr));
+    assert(off == (uintptr_t)nptr-(uintptr_t)KL_G_PREV(KL_G_ALLOC(nptr)));
+
     /* Remap old memory to new memory. */
     ret = CALL_SYS_REMAP(KL_G_PREV(KL_G_ALLOC(nptr)),\
-      KL_G_PREV(KL_G_ALLOC(ptr)));
+      KL_G_PREV(KL_G_ALLOC(ptr)), osize, off);
     if (-1 == ret)
       return NULL;
   }

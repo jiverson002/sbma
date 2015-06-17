@@ -200,67 +200,66 @@ __ooc_realloc__(void * const __ptr, size_t const __size)
 /*! Remap an address range to a new address. */
 /****************************************************************************/
 extern int
-__ooc_remap__(void * const __nptr, void * const __ptr)
+__ooc_remap__(void * const __nbase, void * const __obase, size_t const __size,
+              size_t const __off)
 {
   int ret;
-  size_t i, page_size, s_pages, cn_pages, on_pages, of_pages;
-  size_t nn_pages, nf_pages;
+  size_t i, page_size, s_pages, beg, end;
   uintptr_t oaddr, naddr;
+  void * optr, * nptr;
   uint8_t * oflags, * nflags;
   struct ate * oate, * nate;
   char ofname[FILENAME_MAX], nfname[FILENAME_MAX];
 
   page_size = vmm.page_size;
   s_pages   = 1+((sizeof(struct ate)-1)/page_size);
-  oate      = (struct ate*)((uintptr_t)__ptr-(s_pages*page_size));
+  oate      = (struct ate*)((uintptr_t)__obase-(s_pages*page_size));
   oaddr     = (uintptr_t)oate;
   oflags    = oate->flags;
-  on_pages  = oate->n_pages;
-  of_pages  = 1+((on_pages*sizeof(uint8_t)-1)/page_size);
-  nate      = (struct ate*)((uintptr_t)__nptr-(s_pages*page_size));
+  optr      = (void*)((uintptr_t)__obase+__off);
+  nate      = (struct ate*)((uintptr_t)__nbase-(s_pages*page_size));
   naddr     = (uintptr_t)nate;
   nflags    = nate->flags;
-  nn_pages  = nate->n_pages;
-  nf_pages  = 1+((nn_pages*sizeof(uint8_t)-1)/page_size);
+  nptr      = (void*)((uintptr_t)__nbase+__off);
 
-  assert((uintptr_t)__ptr == oate->base);
-  assert((uintptr_t)__nptr == nate->base);
+  assert((uintptr_t)__obase == oate->base);
+  assert((uintptr_t)__nbase == nate->base);
+  assert(nate->l_pages == nate->n_pages);
+
+  /* need to make sure that all bytes are captured, thus beg is a floor
+   * operation and end is a ceil operation. */
+  beg = ((uintptr_t)nptr-nate->base)/page_size;
+  end = 1+(((uintptr_t)nptr+__size-nate->base-1)/page_size);
 
   /* load old memory */
-  ret = __ooc_mtouch__(__ptr, on_pages*page_size);
+  ret = __ooc_mtouch__(optr, __size);
   if (-1 == ret)
     return -1;
 
-  if (nf_pages < of_pages) {
-    /* copy page flags */
-    memcpy(nflags, oflags, nf_pages*page_size);
-
-    cn_pages = nn_pages;
-  }
-  else {
-    /* copy page flags */
-    memcpy(nflags, oflags, of_pages*page_size);
-
-    cn_pages = on_pages;
-  }
-
   /* grant read-write permission to new memory */
-  ret = mprotect(__nptr, cn_pages*page_size, PROT_READ|PROT_WRITE);
+  ret = mprotect((void*)((uintptr_t)nptr-__off), __size+__off,\
+    PROT_READ|PROT_WRITE);
   if (-1 == ret)
     return -1;
 
   /* copy memory */
-  memcpy(__nptr, __ptr, cn_pages*page_size);
+  memcpy(nptr, optr, __size);
 
   /* grant read-only permission to new memory */
-  ret = mprotect(__nptr, cn_pages*page_size, PROT_READ);
+  ret = mprotect((void*)((uintptr_t)nptr-__off), __size+__off, PROT_READ);
   if (-1 == ret)
     return -1;
 
-  /* grant read-write permission to dirty pages of new memory */
-  for (i=0; i<nn_pages; ++i) {
+  for (i=beg; i<end; ++i) {
+    assert(MMU_RSDNT != (nflags[i]&MMU_RSDNT));
+
+    /* copy zfill and dirty bit from old flag for clean pages */
+    if (MMU_DIRTY != (nflags[i]&MMU_DIRTY))
+      nflags[i] |= (oflags[i]&(MMU_ZFILL|MMU_DIRTY));
+
+    /* grant read-write permission to dirty pages of new memory */
     if (MMU_DIRTY == (nflags[i]&MMU_DIRTY)) {
-      ret = mprotect((void*)((uintptr_t)__nptr+(i*page_size)), page_size,\
+      ret = mprotect((void*)((uintptr_t)__nbase+(i*page_size)), page_size,\
         PROT_READ|PROT_WRITE);
       if (-1 == ret)
         return -1;

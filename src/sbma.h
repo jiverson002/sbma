@@ -7,7 +7,7 @@
 
 #define SBMA_MAJOR 0
 #define SBMA_MINOR 1
-#define SBMA_PATCH 1
+#define SBMA_PATCH 2
 #define SBMA_RCAND 0
 
 
@@ -62,7 +62,8 @@ void * SBMA_malloc(size_t const size);
 void * SBMA_calloc(size_t const num, size_t const size);
 int    SBMA_free(void * const ptr);
 void * SBMA_realloc(void * const ptr, size_t const size);
-int    SBMA_remap(void * const nptr, void * const ptr);
+int    SBMA_remap(void * const nbase, void * const obase, size_t const size,
+                  size_t const off);
 
 /* mcntrl.c */
 int SBMA_init(char const * const fstem, size_t const page_size,
