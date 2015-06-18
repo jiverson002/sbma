@@ -85,7 +85,7 @@ __ooc_malloc__(size_t const __size)
     return NULL;
   /*if (-1 == ftruncate(fd, n_pages*page_size))
     return NULL;*/
-  if (-1 == libc_close(fd))
+  if (-1 == close(fd))
     return NULL;
 
   /* set pointer for the allocation table entry */

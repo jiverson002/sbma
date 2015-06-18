@@ -88,11 +88,9 @@ extern "C" {
 #endif
 
 extern int     libc_open(char const *, int, ...);
-extern int     libc_close(int);
 extern ssize_t libc_read(int const, void * const, size_t const);
 extern ssize_t libc_write(int const, void const * const, size_t const);
 extern int     libc_mlock(void const * const, size_t const);
-extern int     libc_munlock(void const * const, size_t const);
 
 #ifdef __cplusplus
 }

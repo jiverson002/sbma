@@ -163,7 +163,7 @@ __ipc_init__(struct ipc * const __ipc, int const __n_procs,
     return -1;
 
   /* close the file descriptor */
-  ret = libc_close(shm_fd);
+  ret = close(shm_fd);
   if (-1 == ret)
     return -1;
 

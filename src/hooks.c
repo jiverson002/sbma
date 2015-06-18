@@ -204,20 +204,6 @@ libc_open(char const * path, int flags, ...)
 
 
 /*************************************************************************/
-/*! Hook: libc close */
-/*************************************************************************/
-extern int
-libc_close(int fd)
-{
-  static ssize_t (*_libc_close)(int)=NULL;
-
-  HOOK_INIT(close);
-
-  return _libc_close(fd);
-}
-
-
-/*************************************************************************/
 /*! Hook: libc read */
 /*************************************************************************/
 extern ssize_t
@@ -290,20 +276,6 @@ libc_mlock(void const * const addr, size_t const len)
 
 
 /*************************************************************************/
-/*! Hook: libc munlock */
-/*************************************************************************/
-extern int
-libc_munlock(void const * const addr, size_t const len)
-{
-  static int (*_libc_munlock)(void const*, size_t)=NULL;
-
-  HOOK_INIT(munlock);
-
-  return _libc_munlock(addr, len);
-}
-
-
-/*************************************************************************/
 /*! Hook: libc mlockall */
 /*************************************************************************/
 extern int
@@ -314,20 +286,6 @@ libc_mlockall(int flags)
   HOOK_INIT(mlockall);
 
   return _libc_mlockall(flags);
-}
-
-
-/*************************************************************************/
-/*! Hook: libc munlockall */
-/*************************************************************************/
-extern int
-libc_munlockall(void)
-{
-  static int (*_libc_munlockall)(void)=NULL;
-
-  HOOK_INIT(munlockall);
-
-  return _libc_munlockall();
 }
 
 
@@ -597,16 +555,6 @@ mlock(void const * const addr, size_t const len)
 
 
 /*************************************************************************/
-/*! Hook: munlock */
-/*************************************************************************/
-extern int
-munlock(void const * const addr, size_t const len)
-{
-  return libc_munlock(addr, len);
-}
-
-
-/*************************************************************************/
 /*! Hook: mlockall */
 /*************************************************************************/
 extern int
@@ -618,28 +566,16 @@ mlockall(int flags)
 }
 
 
-/*************************************************************************/
-/*! Hook: munlockall */
-/*************************************************************************/
-extern int
-munlockall(void)
-{
-  return libc_munlockall();
-}
-
-
 /****************************************************************************/
 /*! Hook: msync */
 /****************************************************************************/
 extern int
 msync(void * const addr, size_t const len, int const flags)
 {
-  /*if (0 == SBMA_mexist(addr))
+  if (0 == SBMA_mexist(addr))
     return libc_msync(addr, len, flags);
   else
-    return SBMA_sync(addr, len);*/
-  if (NULL == addr || 0 == len || 0 == flags) {}
-  return 0;
+    return SBMA_mevict(addr, len);
 }
 
 

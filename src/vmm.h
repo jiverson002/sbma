@@ -266,7 +266,7 @@ __vmm_swap_i__(struct ate * const __ate, size_t const __beg,
   }
 
   /* close file */
-  ret = libc_close(fd);
+  ret = close(fd);
   if (-1 == ret)
     return -1;
 
@@ -384,12 +384,12 @@ __vmm_swap_o__(struct ate * const __ate, size_t const __beg,
   }
 
   /* close file */
-  ret = libc_close(fd);
+  ret = close(fd);
   if (-1 == ret)
     return -1;
 
   /* unlock the memory from RAM */
-  ret = libc_munlock((void*)(addr+(__beg*page_size)), __num*page_size);
+  ret = munlock((void*)(addr+(__beg*page_size)), __num*page_size);
   if (-1 == ret)
     return -1;
 
