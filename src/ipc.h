@@ -265,6 +265,19 @@ __ipc_eligible__(struct ipc * const __ipc, int const __eligible)
   if (-1 == ret)
     return -1;
 
+#if 1
+  if (IPC_ELIGIBLE == (__eligible&IPC_ELIGIBLE)) {
+    ret = sem_post(__ipc->cnt);
+    if (-1 == ret)
+      return -1;
+  }
+  else {
+    ret = sem_wait(__ipc->cnt);
+    if (-1 == ret)
+      return -1;
+  }
+#endif
+
   return 0;
 }
 
@@ -276,15 +289,21 @@ __ipc_eligible__(struct ipc * const __ipc, int const __eligible)
 static ssize_t
 __ipc_madmit__(struct ipc * const __ipc, size_t const __value)
 {
+  /* TODO: There is some potential for optimization here regarding how and
+   * when processes are chosen for eviction. For example, instead of choosing
+   * to evict the process with the most resident memory, we could chose the
+   * process with the least or the process with the least, but still greater
+   * than the request. Another example is instead of blindly evicting
+   * processes, even if their resident memory will not satisfy the request, we
+   * can choose not to evict processes unless the eviction will successfully
+   * satisfy the request.
+   */
+
   int ret, i, ii;
   ssize_t smem, mxmem;
   uint8_t * flags;
   int * pid;
   size_t * pmem;
-
-  ret = sem_wait(__ipc->mtx);
-  if (-1 == ret)
-    return -1;
 
   // 1) check to see if there is enough free system memory
   // 2) if not, then signal to the process with the most memory
@@ -294,14 +313,25 @@ __ipc_madmit__(struct ipc * const __ipc, size_t const __value)
   //        bdmp_recv for EINTR
   // 3) repeat until enough free memory or no processes have any loaded memory
 
+#if 1
+  RETRY:
+#endif
+  ret = sem_wait(__ipc->mtx);
+  if (-1 == ret)
+    return -1;
+
   /* update system and process memory counts */
   *__ipc->smem -= __value;
-  __ipc->pmem[__ipc->id] += __value;
 
   smem  = *__ipc->smem;
   pmem  = __ipc->pmem;
   pid   = __ipc->pid;
   flags = __ipc->flags;
+
+#if 1
+  /* mark myself as ineligible */
+  flags[__ipc->id] &= ~IPC_ELIGIBLE;
+#endif
 
   while (smem < 0) {
     /* find a process which has memory and is eligible */
@@ -311,9 +341,12 @@ __ipc_madmit__(struct ipc * const __ipc, size_t const __value)
       if (i == __ipc->id)
         continue;
 
-      if (pmem[i] > mxmem && IPC_ELIGIBLE == (flags[i]&IPC_ELIGIBLE)) {
-        ii = i;
-        mxmem = pmem[i];
+      if (IPC_ELIGIBLE == (flags[i]&IPC_ELIGIBLE)) {
+        /*if (pmem[__ipc->id] >= pmem[i] && pmem[i] > mxmem) {*/
+        if (pmem[i] > mxmem) {
+          ii = i;
+          mxmem = pmem[i];
+        }
       }
     }
 
@@ -340,9 +373,36 @@ __ipc_madmit__(struct ipc * const __ipc, size_t const __value)
     smem  = *__ipc->smem;
   }
 
+  if (smem < 0) {
+#if 1
+    /* mark myself as eligible */
+    flags[__ipc->id] |= IPC_ELIGIBLE;
+#endif
+
+    *__ipc->smem += __value;
+  }
+  else {
+    __ipc->pmem[__ipc->id] += __value;
+  }
+
   ret = sem_post(__ipc->mtx);
   if (-1 == ret)
     return -1;
+
+#if 1
+  if (smem < 0) {
+    ret = sem_wait(__ipc->cnt);
+    if (-1 == ret)
+      return -1;
+    ret = sem_post(__ipc->cnt);
+    if (-1 == ret)
+      return -1;
+
+    goto RETRY;
+  }
+#endif
+
+  assert (smem >= 0);
 
   return smem;
 }
