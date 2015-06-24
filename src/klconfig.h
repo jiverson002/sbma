@@ -192,13 +192,15 @@ do {                                                                        \
 #endif
 #ifdef USE_SBMALLOC
 void * sbma_malloc(size_t const size);
+void * sbma_realloc(void * const ptr, size_t const size);
+int sbma_free(void * const ptr);
 int sbma_remap(void * const nptr, void * const ptr, size_t const num,
                size_t const off);
-int sbma_free(void * const ptr);
 # define SYS_ALLOC_FAIL NULL
-# define CALL_SYS_ALLOC(P,S)     ((P)=sbma_malloc(S))
-# define CALL_SYS_REMAP(N,O,S,F) sbma_remap(N,O,S,F)
-# define CALL_SYS_FREE(P,S)      sbma_free(P)
+# define CALL_SYS_ALLOC(P,S)       ((P)=sbma_malloc(S))
+# define CALL_SYS_REALLOC(N,O,S,F) ((N)=sbma_realloc(O,F))
+# define CALL_SYS_REMAP(N,O,S,F)   sbma_remap(N,O,S,F)
+# define CALL_SYS_FREE(P,S)        sbma_free(P)
 # define CALL_SYS_BZERO(P,S)
 #endif
 

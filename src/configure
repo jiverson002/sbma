@@ -348,7 +348,7 @@ p \#{{{1
 p \# Version information
 p DATE    = \"`date`\"
 p COMMIT  = \"`git rev-parse --short HEAD`\"
-p VERSION = \"0.1.2\"
+p VERSION = \"0.1.3\"
 p
 p "AUTOFLAGS = \\"
 if [ 'x' != "x${BUILD[${CONFIG['build']}]}" ] ; then
@@ -487,16 +487,15 @@ p \# MAINTAINER TARGETS \(NON-PORTABLE\)
 p \#--------------------------------------------------------------------------
 p \#{{{1
 p 'dist:'
-p '	cd .. && \'
-p  'mkdir klmalloc-$(VERSION) && \'
-p  'ln -s ../src klmalloc-$(VERSION)/src && \'
-p  'cp src/Makefile . && \'
-p  'make -sC klmalloc-$(VERSION)/src maintainer-clean > /dev/null && \'
-p  'sed -i '"'"'s|^COMMIT \+=.*$$|COMMIT='"'"'"$(COMMIT)"'"'"'|'"'"' src/Makefile && \'
-p  'tar --exclude=.* -czhf klmalloc-$(VERSION).tar.gz klmalloc-$(VERSION) && \'
-p  'mv -f Makefile src && \'
-p  'mv -f klmalloc-$(VERSION).tar.gz src && \'
-p  'rm -rf klmalloc-$(VERSION)'
+p ' cd .. && \'
+p  'mkdir sbma-$(VERSION) && \'
+p  'cp -r src sbma-$(VERSION)/src && \'
+p  'make -sC sbma-$(VERSION)/src maintainer-clean > /dev/null && \'
+p  'rm -rf sbma-$(VERSION)/src/old sbma-$(VERSION)/src/test && \'
+p  'rm -rf sbma-$(VERSION)/.git* && \'
+p  'tar -czhf sbma-$(VERSION).tar.gz sbma-$(VERSION) && \'
+p  'mv -f sbma-$(VERSION).tar.gz src && \'
+p  'rm -rf sbma-$(VERSION)'
 p
 p 'maintainer-clean:'
 p '	make clean > /dev/null'

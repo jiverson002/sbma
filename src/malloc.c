@@ -192,7 +192,162 @@ __ooc_free__(void * const __ptr)
 extern void *
 __ooc_realloc__(void * const __ptr, size_t const __size)
 {
-  return NULL;
+  int ret;
+  size_t i, page_size, s_pages, on_pages, of_pages, ol_pages;
+  size_t nn_pages, nf_pages;
+  uintptr_t oaddr, naddr;
+  uint8_t * oflags;
+  struct ate * ate;
+  char ofname[FILENAME_MAX], nfname[FILENAME_MAX];
+
+  assert(__size > 0);
+
+  page_size = vmm.page_size;
+  s_pages   = 1+((sizeof(struct ate)-1)/page_size);
+  ate       = (struct ate*)((uintptr_t)__ptr-(s_pages*page_size));
+  oaddr     = ate->base-(s_pages*page_size);
+  oflags    = ate->flags;
+  on_pages  = ate->n_pages;
+  of_pages  = 1+((on_pages*sizeof(uint8_t)-1)/page_size);
+  ol_pages  = ate->l_pages;
+  nn_pages  = 1+((__size-1)/page_size);
+  nf_pages  = 1+((nn_pages*sizeof(uint8_t)-1)/page_size);
+
+  if (nn_pages == on_pages) {
+    /* do nothing */
+  }
+  else if (nn_pages < on_pages) {
+    /* adjust l_pages for the pages which will be unmapped */
+    ate->n_pages = nn_pages;
+    for (i=nn_pages; i<on_pages; ++i) {
+      if (MMU_RSDNT != (oflags[i]&MMU_RSDNT))
+        ate->l_pages--;
+    }
+
+    /* update protection for new page flags area of allocation */
+    ret = mprotect((void*)(oaddr+((s_pages+nn_pages)*page_size)),\
+      nf_pages*page_size, PROT_READ|PROT_WRITE);
+    if (-1 == ret)
+      return NULL;
+
+    /* lock new page flags area of allocation into RAM */
+    ret = libc_mlock((void*)(oaddr+((s_pages+nn_pages)*page_size)),\
+      nf_pages*page_size);
+    if (-1 == ret)
+      return NULL;
+
+    /* copy page flags to new location */
+    memmove((void*)(oaddr+((s_pages+nn_pages)*page_size)),\
+      (void*)(oaddr+((s_pages+on_pages)*page_size)), nf_pages*page_size);
+
+    /* unmap unused section of memory */
+    ret = munmap((void*)(oaddr+((s_pages+nn_pages+nf_pages)*page_size)),\
+      ((on_pages-nn_pages)+(of_pages-nf_pages))*page_size);
+    if (-1 == ret)
+      return NULL;
+
+    /* update memory file */
+    if (VMM_LZYWR == (vmm.opts&VMM_LZYWR)) {
+      ret = __ipc_mevict__(&(vmm.ipc),\
+        -__vmm_to_sys__((on_pages-nn_pages)+(of_pages-nf_pages)));
+      if (-1 == ret)
+        return NULL;
+    }
+
+    /* track number of syspages currently loaded and allocated */
+    __vmm_track__(curpages,\
+      -__vmm_to_sys__((ol_pages-ate->l_pages)+(of_pages-nf_pages)));
+    __vmm_track__(numpages,\
+      -__vmm_to_sys__((on_pages-nn_pages)+(of_pages-nf_pages)));
+  }
+  else {
+    /* check memory file to see if there is enough free memory to complete
+     * this allocation. */
+    if (VMM_LZYWR == (vmm.opts&VMM_LZYWR)) {
+      ret = __ipc_madmit__(&(vmm.ipc),\
+        __vmm_to_sys__((nn_pages-on_pages)+(nf_pages+of_pages)));
+      if (-1 == ret)
+        return NULL;
+    }
+
+    /* resize allocation */
+#if 1
+    naddr = (uintptr_t)mremap((void*)oaddr,\
+      (s_pages+on_pages+of_pages)*page_size,\
+      (s_pages+nn_pages+nf_pages)*page_size, MREMAP_MAYMOVE);
+#else
+    naddr = (uintptr_t)mremap((void*)oaddr,\
+      (s_pages+on_pages+of_pages)*page_size,\
+      (s_pages+nn_pages+nf_pages)*page_size, 0);
+#endif
+    if ((uintptr_t)MAP_FAILED == naddr)
+      return NULL;
+
+    /* copy page flags to new location */
+    memmove((void*)(naddr+((s_pages+nn_pages)*page_size)),\
+      (void*)(naddr+((s_pages+on_pages)*page_size)), of_pages*page_size);
+
+    /* grant read-only permission to extended area of application memory */
+    ret = mprotect((void*)(naddr+((s_pages+on_pages)*page_size)),\
+      (nn_pages-on_pages)*page_size, PROT_READ);
+    if (-1 == ret)
+      return NULL;
+
+    /* lock new area of allocation into RAM */
+    ret = libc_mlock((void*)(naddr+(s_pages+on_pages)*page_size),\
+      ((nn_pages-on_pages)+nf_pages)*page_size);
+    if (-1 == ret)
+      return NULL;
+
+    if (0 > snprintf(nfname, FILENAME_MAX, "%s%d-%zx", vmm.fstem,\
+      (int)getpid(), naddr))
+    {
+      return NULL;
+    }
+    /* if the allocation has moved */
+    if (oaddr != naddr) {
+      /* move old file to new file and trucate to size */
+      if (0 > snprintf(ofname, FILENAME_MAX, "%s%d-%zx", vmm.fstem,\
+        (int)getpid(), oaddr))
+      {
+        return NULL;
+      }
+      if (-1 == rename(ofname, nfname))
+        return NULL;
+
+      /* set pointer for the allocation table entry */
+      ate = (struct ate*)naddr;
+
+      /* remove old ate from mmu */
+      ret = __mmu_invalidate_ate__(&(vmm.mmu), ate);
+      if (-1 == ret)
+        return NULL;
+
+      /* insert new ate into mmu */
+      ret = __mmu_insert_ate__(&(vmm.mmu), ate);
+      if (-1 == ret)
+        return NULL;
+    }
+    /*if (-1 == truncate(nfname, nn_pages*page_size))
+      return NULL;*/
+
+    /* populate ate structure */
+    ate->n_pages = nn_pages;
+    ate->l_pages = ol_pages+((nn_pages-on_pages)+(nf_pages-of_pages));
+    ate->base    = naddr+(s_pages*page_size);
+    ate->flags   = (uint8_t*)(naddr+((s_pages+nn_pages)*page_size));
+
+    /* track number of syspages currently loaded, currently allocated, and
+     * high water mark number of syspages */
+    __vmm_track__(curpages,\
+      __vmm_to_sys__((nn_pages-on_pages)+(nf_pages-of_pages)));
+    __vmm_track__(numpages,\
+      __vmm_to_sys__((nn_pages-on_pages)+(nf_pages-of_pages)));
+    __vmm_track__(maxpages,\
+      vmm.curpages>vmm.maxpages?vmm.curpages-vmm.maxpages:0);
+  }
+
+  return (void*)ate->base;
 }
 
 

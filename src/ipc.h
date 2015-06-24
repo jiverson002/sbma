@@ -265,7 +265,7 @@ __ipc_eligible__(struct ipc * const __ipc, int const __eligible)
   if (-1 == ret)
     return -1;
 
-#if 1
+#ifdef TEST
   if (IPC_ELIGIBLE == (__eligible&IPC_ELIGIBLE)) {
     ret = sem_post(__ipc->cnt);
     if (-1 == ret)
@@ -313,7 +313,7 @@ __ipc_madmit__(struct ipc * const __ipc, size_t const __value)
   //        bdmp_recv for EINTR
   // 3) repeat until enough free memory or no processes have any loaded memory
 
-#if 1
+#ifdef TEST
   RETRY:
 #endif
   ret = sem_wait(__ipc->mtx);
@@ -328,7 +328,7 @@ __ipc_madmit__(struct ipc * const __ipc, size_t const __value)
   pid   = __ipc->pid;
   flags = __ipc->flags;
 
-#if 1
+#ifdef TEST
   /* mark myself as ineligible */
   flags[__ipc->id] &= ~IPC_ELIGIBLE;
 #endif
@@ -374,7 +374,7 @@ __ipc_madmit__(struct ipc * const __ipc, size_t const __value)
   }
 
   if (smem < 0) {
-#if 1
+#ifdef TEST
     /* mark myself as eligible */
     flags[__ipc->id] |= IPC_ELIGIBLE;
 #endif
@@ -389,7 +389,7 @@ __ipc_madmit__(struct ipc * const __ipc, size_t const __value)
   if (-1 == ret)
     return -1;
 
-#if 1
+#ifdef TEST
   if (smem < 0) {
     ret = sem_wait(__ipc->cnt);
     if (-1 == ret)
