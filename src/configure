@@ -550,7 +550,7 @@ p \# MAINTAINER TARGETS \(NON-PORTABLE\)
 p \#--------------------------------------------------------------------------
 p \#{{{1
 p 'dist:'
-p ' cd .. && \'
+p '	cd .. && \'
 p  'mkdir sbma-$(VERSION) && \'
 p  'cp -r src sbma-$(VERSION)/src && \'
 p  'make -sC sbma-$(VERSION)/src maintainer-clean > /dev/null && \'
@@ -563,5 +563,5 @@ p
 p 'maintainer-clean:'
 p '	make clean > /dev/null'
 p '	rm -f Makefile'
-p '	rm -f klmalloc-$(VERSION).tar.gz'
+p '	rm -f sbma-$(VERSION).tar.gz'
 p \#}}}1
