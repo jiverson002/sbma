@@ -508,15 +508,23 @@ open(char const * path, int flags, ...)
 extern ssize_t
 read(int const fd, void * const buf, size_t const count)
 {
+  /* NOTE: Consider the following execution sequence. During the call to
+   * memset, the first n pages of buf are loaded, then the process must wait
+   * because the system cannot support any additional memory. While waiting,
+   * the process receives a SIGIPC and evicts all of the memory which it had
+   * previously admitted. When memset finishes, buf[0, count) is not all
+   * resident. This is an error. A hack to address this is to first call
+   * SBMA_mtouch which does a single load for the whole range. However, this
+   * is a larger issue which should be addressed at some point. */
   if (1 == SBMA_mexist(buf)) {
     /* NOTE: memset() must be used instead of SBMA_mtouch() for the following
      * reason. If the relevant memory page has been written to disk and thus,
      * given no R/W permissions, then using SBMA_mtouch() with SBPAGE_DIRTY
      * will give the relevant page appropriate permissions, however, it will
-     * cause the page not be read from disk.  This is incorrect if the page is
+     * cause the page not be read from disk. This is incorrect if the page is
      * a shared page, since then any data that was in the shared page, but not
      * part of the relevant memory, will be lost. */
-    //(void)SBMA_mtouch(buf, count);
+    (void)SBMA_mtouch(buf, count);
     memset(buf, 0, count);
   }
 
@@ -547,7 +555,7 @@ fread(void * const buf, size_t const size, size_t const num,
   if (1 == SBMA_mexist(buf)) {
     /* NOTE: For an explaination of why memset() must be used instead of
      * SBMA_mtouch(), see discussion in read(). */
-    //(void)SBMA_mtouch(buf, size*num);
+    (void)SBMA_mtouch(buf, size*num);
     memset(buf, 0, size*num);
   }
 
