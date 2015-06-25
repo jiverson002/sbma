@@ -86,7 +86,7 @@ __ooc_mtouch_int__(struct ate * const __ate, void * const __addr,
   beg = ((uintptr_t)__addr-__ate->base)/page_size;
   end = 1+(((uintptr_t)__addr+__len-__ate->base-1)/page_size);
 
-  numrd = __vmm_swap_i__(__ate, beg, end-beg);
+  numrd = __vmm_swap_i__(__ate, beg, end-beg, vmm.opts&VMM_GHOST);
   if (-1 == numrd)
     return -1;
 

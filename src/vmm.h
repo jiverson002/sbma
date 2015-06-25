@@ -49,14 +49,6 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 
 /****************************************************************************/
-/*! This should only be disabled for single threaded applications. When
- *  disabled, the number of kernel calls will be reduced during
- *  __vmm_swap_i__() */
-/****************************************************************************/
-#define USE_GHOST 1
-
-
-/****************************************************************************/
 /*! Required function prototypes. */
 /****************************************************************************/
 extern int __ooc_mevictall_int__(size_t * const, size_t * const);
@@ -191,7 +183,7 @@ __vmm_write__(int const __fd, void const * const __buf, size_t __len,
 /****************************************************************************/
 static inline ssize_t
 __vmm_swap_i__(struct ate * const __ate, size_t const __beg,
-               size_t const __num)
+               size_t const __num, int const __ghost)
 {
   int ret, fd;
   size_t ip, page_size, end, numrd=0;
@@ -219,18 +211,19 @@ __vmm_swap_i__(struct ate * const __ate, size_t const __beg,
   flags     = __ate->flags;
   end       = __beg+__num;
 
-#if defined(USE_GHOST) && USE_GHOST > 0
-  /* mmap temporary memory with write protection for loading from disk */
-  addr = (uintptr_t)mmap(NULL, __num*page_size, PROT_WRITE,\
-    MAP_PRIVATE|MAP_ANONYMOUS|MAP_NORESERVE|MAP_LOCKED, -1, 0);
-  if ((uintptr_t)MAP_FAILED == addr)
-    return -1;
-#else
-  addr = __ate->base+(__beg*page_size);
-  ret  = mprotect((void*)addr, __num*page_size, PROT_WRITE);
-  if (-1 == ret)
-    return -1;
-#endif
+  if (VMM_GHOST == __ghost) {
+    /* mmap temporary memory with write protection for loading from disk */
+    addr = (uintptr_t)mmap(NULL, __num*page_size, PROT_WRITE,\
+      MAP_PRIVATE|MAP_ANONYMOUS|MAP_NORESERVE|MAP_LOCKED, -1, 0);
+    if ((uintptr_t)MAP_FAILED == addr)
+      return -1;
+  }
+  else {
+    addr = __ate->base+(__beg*page_size);
+    ret  = mprotect((void*)addr, __num*page_size, PROT_WRITE);
+    if (-1 == ret)
+      return -1;
+  }
 
   /* compute file name */
   if (0 > snprintf(fname, FILENAME_MAX, "%s%d-%zx", vmm.fstem, (int)getpid(),\
@@ -260,20 +253,20 @@ __vmm_swap_i__(struct ate * const __ate, size_t const __beg,
       if (-1 == ret)
         return -1;
 
-#if defined(USE_GHOST) && USE_GHOST > 0
-      /* give read permission to temporary pages */
-      ret = mprotect((void*)(addr+((ipfirst-__beg)*page_size)),\
-        (ip-ipfirst)*page_size, PROT_READ);
-      if (-1 == ret)
-        return -1;
-      /* remap temporary pages into persistent memory */
-      raddr = (uintptr_t)mremap((void*)(addr+((ipfirst-__beg)*page_size)),\
-        (ip-ipfirst)*page_size, (ip-ipfirst)*page_size,\
-        MREMAP_MAYMOVE|MREMAP_FIXED,
-        (void*)(__ate->base+(ipfirst*page_size)));
-      if (-1 == raddr)
-        return -1;
-#endif
+      if (VMM_GHOST == __ghost) {
+        /* give read permission to temporary pages */
+        ret = mprotect((void*)(addr+((ipfirst-__beg)*page_size)),\
+          (ip-ipfirst)*page_size, PROT_READ);
+        if (-1 == ret)
+          return -1;
+        /* remap temporary pages into persistent memory */
+        raddr = (uintptr_t)mremap((void*)(addr+((ipfirst-__beg)*page_size)),\
+          (ip-ipfirst)*page_size, (ip-ipfirst)*page_size,\
+          MREMAP_MAYMOVE|MREMAP_FIXED,
+          (void*)(__ate->base+(ipfirst*page_size)));
+        if (-1 == raddr)
+          return -1;
+      }
 
       numrd += (ip-ipfirst);
 
@@ -296,28 +289,29 @@ __vmm_swap_i__(struct ate * const __ate, size_t const __beg,
   if (-1 == ret)
     return -1;
 
-#if defined(USE_GHOST) && USE_GHOST > 0
-  /* unmap any remaining temporary pages */
-  ret = munmap((void*)addr, __num*page_size);
-  if (-1 == ret)
-    return -1;
-#else
-  /* update protection of temporary mapping to read-only */
-  ret = mprotect((void*)addr, __num*page_size, PROT_READ);
-  if (-1 == ret)
-    return -1;
+  if (VMM_GHOST == __ghost) {
+    /* unmap any remaining temporary pages */
+    ret = munmap((void*)addr, __num*page_size);
+    if (-1 == ret)
+      return -1;
+  }
+  else {
+    /* update protection of temporary mapping to read-only */
+    ret = mprotect((void*)addr, __num*page_size, PROT_READ);
+    if (-1 == ret)
+      return -1;
 
-  /* update protection of temporary mapping and copy data for any dirty pages
-   * */
-  for (ip=__beg; ip<end; ++ip) {
-    if (MMU_DIRTY == (flags[ip]&MMU_DIRTY)) {
-      ret = mprotect((void*)(addr+((ip-__beg)*page_size)), page_size,\
-        PROT_READ|PROT_WRITE);
-      if (-1 == ret)
-        return -1;
+    /* update protection of temporary mapping and copy data for any dirty pages
+     * */
+    for (ip=__beg; ip<end; ++ip) {
+      if (MMU_DIRTY == (flags[ip]&MMU_DIRTY)) {
+        ret = mprotect((void*)(addr+((ip-__beg)*page_size)), page_size,\
+          PROT_READ|PROT_WRITE);
+        if (-1 == ret)
+          return -1;
+      }
     }
   }
-#endif
 
   /* return the number of pages read from disk */
   return numrd;
@@ -540,11 +534,11 @@ __vmm_sigsegv__(int const sig, siginfo_t * const si, void * const ctx)
 
     /* swap in the required memory */
     if (VMM_LZYRD == (vmm.opts&VMM_LZYRD)) {
-      numrd = __vmm_swap_i__(ate, ip, 1);
+      numrd = __vmm_swap_i__(ate, ip, 1, vmm.opts&VMM_GHOST);
       assert(-1 != numrd);
     }
     else {
-      numrd = __vmm_swap_i__(ate, 0, ate->n_pages);
+      numrd = __vmm_swap_i__(ate, 0, ate->n_pages, vmm.opts&VMM_GHOST);
       assert(-1 != numrd);
     }
 
