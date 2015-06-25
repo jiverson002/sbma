@@ -508,7 +508,6 @@ open(char const * path, int flags, ...)
 extern ssize_t
 read(int const fd, void * const buf, size_t const count)
 {
-  assert(IPC_ELIGIBLE != (vmm.ipc.flags[vmm.ipc.id]&IPC_ELIGIBLE));
   if (1 == SBMA_mexist(buf)) {
     /* NOTE: memset() must be used instead of SBMA_mtouch() for the following
      * reason. If the relevant memory page has been written to disk and thus,
@@ -521,7 +520,6 @@ read(int const fd, void * const buf, size_t const count)
     memset(buf, 0, count);
   }
 
-  assert(IPC_ELIGIBLE != (vmm.ipc.flags[vmm.ipc.id]&IPC_ELIGIBLE));
   return libc_read(fd, buf, count);
 }
 

@@ -53,7 +53,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *  disabled, the number of kernel calls will be reduced during
  *  __vmm_swap_i__() */
 /****************************************************************************/
-#define USE_GHOST 0
+#define USE_GHOST 1
 
 
 /****************************************************************************/
@@ -505,11 +505,6 @@ __vmm_sigsegv__(int const sig, siginfo_t * const si, void * const ctx)
 
   /* lookup allocation table entry */
   ate = __mmu_lookup_ate__(&(vmm.mmu), (void*)addr);
-  if (NULL == ate) {
-    printf("[%5d] %s:%d (%s)\n", (int)getpid(), basename(__FILE__), __LINE__,
-      strerror(errno));
-    fflush(stdout);
-  }
   assert(NULL != ate);
 
   ip    = (addr-ate->base)/page_size;
@@ -679,6 +674,8 @@ __vmm_init__(struct vmm * const __vmm, size_t const __page_size,
   /* initialize vmm lock */
   if (-1 == LOCK_INIT(&(__vmm->lock)))
     return -1;
+
+  assert(IPC_ELIGIBLE != (vmm.ipc.flags[vmm.ipc.id]&IPC_ELIGIBLE));
 
   return 0;
 }

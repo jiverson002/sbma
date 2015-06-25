@@ -55,6 +55,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #define IPC_CNT  "/sem-bdmpi-sbma-ipc-cnt"
 #define IPC_TRN1 "/sem-bdmpi-sbma-ipc-trn1"
 #define IPC_TRN2 "/sem-bdmpi-sbma-ipc-trn2"
+#define IPC_SID  "/sem-bdmpi-sbma-ipc-sid"
 
 #define SIGIPC   (SIGRTMIN+0)
 
@@ -148,7 +149,7 @@ __ipc_init__(struct ipc * const __ipc, int const __n_procs,
 {
   int ret, shm_fd, id;
   void * shm;
-  sem_t * mtx, * cnt, * trn1, * trn2;
+  sem_t * mtx, * cnt, * trn1, * trn2, * sid;
   int * idp;
 
   /* initialize semaphores */
@@ -163,6 +164,9 @@ __ipc_init__(struct ipc * const __ipc, int const __n_procs,
     return -1;
   trn2 = sem_open(IPC_TRN2, O_RDWR|O_CREAT, S_IRUSR|S_IWUSR, 0);
   if (SEM_FAILED == trn2)
+    return -1;
+  sid = sem_open(IPC_SID, O_RDWR|O_CREAT, S_IRUSR|S_IWUSR, 1);
+  if (SEM_FAILED == sid)
     return -1;
 
   /* try to create a new shared memory region -- if i create, then i should
@@ -200,9 +204,25 @@ __ipc_init__(struct ipc * const __ipc, int const __n_procs,
   if (-1 == ret)
     return -1;
 
+  /* begin critical section */
+  ret = sem_wait(sid);
+  if (-1 == ret)
+    return -1;
+
   /* id pointer is last sizeof(int) bytes of shm */
   idp = (int*)((uintptr_t)shm+IPC_LEN(__n_procs)-sizeof(int));
   id  = (*idp)++;
+
+  /* end critical section */
+  ret = sem_post(sid);
+  if (-1 == ret)
+    return -1;
+  ret = sem_close(sid);
+  if (-1 == ret)
+    return -1;
+  ret = sem_unlink(IPC_SID);
+  if (-1 == ret && ENOENT != errno)
+    return -1;
 
   if (id >= __n_procs)
     return -1;
@@ -222,8 +242,6 @@ __ipc_init__(struct ipc * const __ipc, int const __n_procs,
 
   /* set my process id */
   __ipc->pid[id] = (int)getpid();
-
-  //IPC_BARRIER(__ipc);
 
   return 0;
 }
@@ -290,11 +308,8 @@ __ipc_eligible__(struct ipc * const __ipc, int const __eligible)
     if (-1 == ret) {
       if (EINTR == errno)
         errno = 0;
-      else {
-        printf("[%5d] %s:%d\n", (int)getpid(), basename(__FILE__), __LINE__);
-        fflush(stdout);
+      else
         return -1;
-      }
     }
     else {
       break;
@@ -311,11 +326,8 @@ __ipc_eligible__(struct ipc * const __ipc, int const __eligible)
     if (-1 == ret) {
       if (EINTR == errno)
         errno = 0;
-      else {
-        printf("[%5d] %s:%d\n", (int)getpid(), basename(__FILE__), __LINE__);
-        fflush(stdout);
+      else
         return -1;
-      }
     }
     else {
       break;
@@ -329,11 +341,8 @@ __ipc_eligible__(struct ipc * const __ipc, int const __eligible)
       if (-1 == ret) {
         if (EINTR == errno)
           errno = 0;
-        else {
-          printf("[%5d] %s:%d\n", (int)getpid(), basename(__FILE__), __LINE__);
-          fflush(stdout);
+        else
           return -1;
-        }
       }
       else {
         break;
@@ -342,11 +351,8 @@ __ipc_eligible__(struct ipc * const __ipc, int const __eligible)
   }
   else {
     ret = sem_wait(__ipc->cnt);
-    if (-1 == ret) {
-      printf("[%5d] %s:%d\n", (int)getpid(), basename(__FILE__), __LINE__);
-      fflush(stdout);
+    if (-1 == ret)
       return -1;
-    }
   }
 #endif
 
@@ -398,11 +404,8 @@ __ipc_madmit__(struct ipc * const __ipc, size_t const __value)
     if (-1 == ret) {
       if (EINTR == errno)
         errno = 0;
-      else {
-        printf("[%5d] %s:%d\n", (int)getpid(), basename(__FILE__), __LINE__);
-        fflush(stdout);
+      else
         return -1;
-      }
     }
     else {
       break;
@@ -473,11 +476,8 @@ __ipc_madmit__(struct ipc * const __ipc, size_t const __value)
     if (-1 == ret) {
       if (EINTR == errno)
         errno = 0;
-      else {
-        printf("[%5d] %s:%d\n", (int)getpid(), basename(__FILE__), __LINE__);
-        fflush(stdout);
+      else
         return -1;
-      }
     }
     else {
       break;
@@ -491,11 +491,8 @@ __ipc_madmit__(struct ipc * const __ipc, size_t const __value)
       if (-1 == ret) {
         if (EINTR == errno)
           errno = 0;
-        else {
-          printf("[%5d] %s:%d\n", (int)getpid(), basename(__FILE__), __LINE__);
-          fflush(stdout);
+        else
           return -1;
-        }
       }
       else {
         break;
@@ -506,11 +503,8 @@ __ipc_madmit__(struct ipc * const __ipc, size_t const __value)
       if (-1 == ret) {
         if (EINTR == errno)
           errno = 0;
-        else {
-          printf("[%5d] %s:%d\n", (int)getpid(), basename(__FILE__), __LINE__);
-          fflush(stdout);
+        else
           return -1;
-        }
       }
       else {
         break;
@@ -522,7 +516,7 @@ __ipc_madmit__(struct ipc * const __ipc, size_t const __value)
 #endif
 
   assert(IPC_ELIGIBLE != (__ipc->flags[__ipc->id]&IPC_ELIGIBLE));
-  assert (smem >= 0);
+  assert(smem >= 0);
 
   return smem;
 }
@@ -542,22 +536,16 @@ __ipc_mevict__(struct ipc * const __ipc, ssize_t const __value)
   assert(IPC_ELIGIBLE != (__ipc->flags[__ipc->id]&IPC_ELIGIBLE));
 
   ret = sem_wait(__ipc->mtx);
-  if (-1 == ret) {
-    printf("[%5d] %s:%d\n", (int)getpid(), basename(__FILE__), __LINE__);
-    fflush(stdout);
+  if (-1 == ret)
     return -1;
-  }
 
   *__ipc->smem -= __value;
   assert(__ipc->pmem[__ipc->id] >= -__value);
   __ipc->pmem[__ipc->id] += __value;
 
   ret = sem_post(__ipc->mtx);
-  if (-1 == ret) {
-    printf("[%5d] %s:%d\n", (int)getpid(), basename(__FILE__), __LINE__);
-    fflush(stdout);
+  if (-1 == ret)
     return -1;
-  }
 
   assert(IPC_ELIGIBLE != (__ipc->flags[__ipc->id]&IPC_ELIGIBLE));
 
