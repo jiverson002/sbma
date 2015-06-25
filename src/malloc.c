@@ -82,6 +82,7 @@ __ooc_malloc__(size_t const __size)
   /* check memory file to see if there is enough free memory to complete this
    * allocation. */
   if (VMM_LZYWR == (vmm.opts&VMM_LZYWR)) {
+    assert(IPC_ELIGIBLE != (vmm.ipc.flags[vmm.ipc.id]&IPC_ELIGIBLE));
     ret = __ipc_madmit__(&(vmm.ipc), __vmm_to_sys__(s_pages+n_pages+f_pages));
     if (-1 == ret)
       return NULL;
@@ -290,6 +291,7 @@ __ooc_realloc__(void * const __ptr, size_t const __size)
     /* check memory file to see if there is enough free memory to complete
      * this allocation. */
     if (VMM_LZYWR == (vmm.opts&VMM_LZYWR)) {
+      assert(IPC_ELIGIBLE != (vmm.ipc.flags[vmm.ipc.id]&IPC_ELIGIBLE));
       ret = __ipc_madmit__(&(vmm.ipc),\
         __vmm_to_sys__((nn_pages-on_pages)+(nf_pages+of_pages)));
       if (-1 == ret)

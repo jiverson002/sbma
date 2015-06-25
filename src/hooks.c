@@ -54,7 +54,9 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <sys/types.h> /* stat, open */
 #include <unistd.h>    /* ssize_t, stat */
 
+#include "ipc.h"
 #include "sbma.h"
+#include "vmm.h"
 
 
 /****************************************************************************/
@@ -506,10 +508,11 @@ open(char const * path, int flags, ...)
 extern ssize_t
 read(int const fd, void * const buf, size_t const count)
 {
+  assert(IPC_ELIGIBLE != (vmm.ipc.flags[vmm.ipc.id]&IPC_ELIGIBLE));
   if (1 == SBMA_mexist(buf)) {
     /* NOTE: memset() must be used instead of SBMA_mtouch() for the following
      * reason. If the relevant memory page has been written to disk and thus,
-     * given no R/W permissions, the using SBMA_mtouch() with SBPAGE_DIRTY
+     * given no R/W permissions, then using SBMA_mtouch() with SBPAGE_DIRTY
      * will give the relevant page appropriate permissions, however, it will
      * cause the page not be read from disk.  This is incorrect if the page is
      * a shared page, since then any data that was in the shared page, but not
@@ -518,6 +521,7 @@ read(int const fd, void * const buf, size_t const count)
     memset(buf, 0, count);
   }
 
+  assert(IPC_ELIGIBLE != (vmm.ipc.flags[vmm.ipc.id]&IPC_ELIGIBLE));
   return libc_read(fd, buf, count);
 }
 

@@ -117,6 +117,7 @@ __ooc_mtouch__(void * const __addr, size_t const __len)
   /* check memory file to see if there is enough free memory to complete this
    * allocation. */
   if (VMM_LZYWR == (vmm.opts&VMM_LZYWR)) {
+    assert(IPC_ELIGIBLE != (vmm.ipc.flags[vmm.ipc.id]&IPC_ELIGIBLE));
     ret = __ipc_madmit__(&(vmm.ipc), l_pages);
     if (-1 == ret)
       return -1;
@@ -181,6 +182,7 @@ __ooc_mtouchall__(void)
   /* check memory file to see if there is enough free memory to complete this
    * allocation. */
   if (VMM_LZYWR == (vmm.opts&VMM_LZYWR)) {
+    assert(IPC_ELIGIBLE != (vmm.ipc.flags[vmm.ipc.id]&IPC_ELIGIBLE));
     ret = __ipc_madmit__(&(vmm.ipc), l_pages);
     if (-1 == ret)
       return -1;

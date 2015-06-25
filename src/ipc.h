@@ -28,6 +28,11 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #define __IPC_H__ 1
 
 
+#ifdef NDEBUG
+# undef NDEBUG
+#endif
+
+
 #include <assert.h>    /* assert library */
 #include <errno.h>     /* errno */
 #include <fcntl.h>     /* O_RDWR, O_CREAT, O_EXCL */
@@ -109,7 +114,7 @@ do {\
   (sizeof(ssize_t)+(__N_PROCS)*(sizeof(size_t)+sizeof(int)+sizeof(uint8_t))+\
     sizeof(int))
 
-//#define TEST
+#define TEST
 
 
 /****************************************************************************/
@@ -280,29 +285,68 @@ __ipc_eligible__(struct ipc * const __ipc, int const __eligible)
 {
   int ret;
 
-  ret = sem_wait(__ipc->mtx);
-  if (-1 == ret)
-    return -1;
+  for (;;) {
+    ret = sem_wait(__ipc->mtx);
+    if (-1 == ret) {
+      if (EINTR == errno)
+        errno = 0;
+      else {
+        printf("[%5d] %s:%d\n", (int)getpid(), basename(__FILE__), __LINE__);
+        fflush(stdout);
+        return -1;
+      }
+    }
+    else {
+      break;
+    }
+  }
 
   if (IPC_ELIGIBLE == (__eligible&IPC_ELIGIBLE))
     __ipc->flags[__ipc->id] |= IPC_ELIGIBLE;
   else
     __ipc->flags[__ipc->id] &= ~IPC_ELIGIBLE;
 
-  ret = sem_post(__ipc->mtx);
-  if (-1 == ret)
-    return -1;
+  for (;;) {
+    ret = sem_post(__ipc->mtx);
+    if (-1 == ret) {
+      if (EINTR == errno)
+        errno = 0;
+      else {
+        printf("[%5d] %s:%d\n", (int)getpid(), basename(__FILE__), __LINE__);
+        fflush(stdout);
+        return -1;
+      }
+    }
+    else {
+      break;
+    }
+  }
 
 #ifdef TEST
   if (IPC_ELIGIBLE == (__eligible&IPC_ELIGIBLE)) {
-    ret = sem_post(__ipc->cnt);
-    if (-1 == ret)
-      return -1;
+    for (;;) {
+      ret = sem_post(__ipc->cnt);
+      if (-1 == ret) {
+        if (EINTR == errno)
+          errno = 0;
+        else {
+          printf("[%5d] %s:%d\n", (int)getpid(), basename(__FILE__), __LINE__);
+          fflush(stdout);
+          return -1;
+        }
+      }
+      else {
+        break;
+      }
+    }
   }
   else {
     ret = sem_wait(__ipc->cnt);
-    if (-1 == ret)
+    if (-1 == ret) {
+      printf("[%5d] %s:%d\n", (int)getpid(), basename(__FILE__), __LINE__);
+      fflush(stdout);
       return -1;
+    }
   }
 #endif
 
@@ -341,17 +385,31 @@ __ipc_madmit__(struct ipc * const __ipc, size_t const __value)
   //        bdmp_recv for EINTR
   // 3) repeat until enough free memory or no processes have any loaded memory
 
+  assert(IPC_ELIGIBLE != (__ipc->flags[__ipc->id]&IPC_ELIGIBLE));
+
 #ifdef TEST
   RETRY:
 #endif
-  ret = sem_wait(__ipc->mtx);
-  if (-1 == ret)
-    return -1;
+  /* Must check for an interrupt here due to the RETRY label. If this code is
+   * executed due to a jump to RETRY, then the process MAY still be eligible
+   * for eviction. */
+  for (;;) {
+    ret = sem_wait(__ipc->mtx);
+    if (-1 == ret) {
+      if (EINTR == errno)
+        errno = 0;
+      else {
+        printf("[%5d] %s:%d\n", (int)getpid(), basename(__FILE__), __LINE__);
+        fflush(stdout);
+        return -1;
+      }
+    }
+    else {
+      break;
+    }
+  }
 
-  /* update system and process memory counts */
-  *__ipc->smem -= __value;
-
-  smem  = *__ipc->smem;
+  smem  = *__ipc->smem-__value;
   pmem  = __ipc->pmem;
   pid   = __ipc->pid;
   flags = __ipc->flags;
@@ -378,11 +436,9 @@ __ipc_madmit__(struct ipc * const __ipc, size_t const __value)
       }
     }
 
-    /* no such process is exists, break loop */
+    /* no such process exists, break loop */
     if (-1 == ii)
       break;
-
-    /*printf("%5d ==SIGIPC==> %5d (%zu)\n", (int)getpid(), pid[ii], pmem[ii]);*/
 
     /* such a process is available, tell it to free memory */
     ret = kill(pid[ii], SIGIPC);
@@ -398,7 +454,7 @@ __ipc_madmit__(struct ipc * const __ipc, size_t const __value)
       return -1;
     }
 
-    smem  = *__ipc->smem;
+    smem  = *__ipc->smem-__value;
   }
 
   if (smem < 0) {
@@ -406,30 +462,66 @@ __ipc_madmit__(struct ipc * const __ipc, size_t const __value)
     /* mark myself as eligible */
     flags[__ipc->id] |= IPC_ELIGIBLE;
 #endif
-
-    *__ipc->smem += __value;
   }
   else {
+    *__ipc->smem -= __value;
     __ipc->pmem[__ipc->id] += __value;
   }
 
-  ret = sem_post(__ipc->mtx);
-  if (-1 == ret)
-    return -1;
+  for (;;) {
+    ret = sem_post(__ipc->mtx);
+    if (-1 == ret) {
+      if (EINTR == errno)
+        errno = 0;
+      else {
+        printf("[%5d] %s:%d\n", (int)getpid(), basename(__FILE__), __LINE__);
+        fflush(stdout);
+        return -1;
+      }
+    }
+    else {
+      break;
+    }
+  }
 
 #ifdef TEST
   if (smem < 0) {
-    ret = sem_wait(__ipc->cnt);
-    if (-1 == ret)
-      return -1;
-    ret = sem_post(__ipc->cnt);
-    if (-1 == ret)
-      return -1;
+    for (;;) {
+      ret = sem_wait(__ipc->cnt);
+      if (-1 == ret) {
+        if (EINTR == errno)
+          errno = 0;
+        else {
+          printf("[%5d] %s:%d\n", (int)getpid(), basename(__FILE__), __LINE__);
+          fflush(stdout);
+          return -1;
+        }
+      }
+      else {
+        break;
+      }
+    }
+    for (;;) {
+      ret = sem_post(__ipc->cnt);
+      if (-1 == ret) {
+        if (EINTR == errno)
+          errno = 0;
+        else {
+          printf("[%5d] %s:%d\n", (int)getpid(), basename(__FILE__), __LINE__);
+          fflush(stdout);
+          return -1;
+        }
+      }
+      else {
+        break;
+      }
+    }
 
     goto RETRY;
   }
 #endif
 
+  assert(IPC_ELIGIBLE != (__ipc->flags[__ipc->id]&IPC_ELIGIBLE));
   assert (smem >= 0);
 
   return smem;
@@ -447,17 +539,27 @@ __ipc_mevict__(struct ipc * const __ipc, ssize_t const __value)
   if (__value > 0)
     return -1;
 
+  assert(IPC_ELIGIBLE != (__ipc->flags[__ipc->id]&IPC_ELIGIBLE));
+
   ret = sem_wait(__ipc->mtx);
-  if (-1 == ret)
+  if (-1 == ret) {
+    printf("[%5d] %s:%d\n", (int)getpid(), basename(__FILE__), __LINE__);
+    fflush(stdout);
     return -1;
+  }
 
   *__ipc->smem -= __value;
   assert(__ipc->pmem[__ipc->id] >= -__value);
   __ipc->pmem[__ipc->id] += __value;
 
   ret = sem_post(__ipc->mtx);
-  if (-1 == ret)
+  if (-1 == ret) {
+    printf("[%5d] %s:%d\n", (int)getpid(), basename(__FILE__), __LINE__);
+    fflush(stdout);
     return -1;
+  }
+
+  assert(IPC_ELIGIBLE != (__ipc->flags[__ipc->id]&IPC_ELIGIBLE));
 
   return 0;
 }

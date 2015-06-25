@@ -55,15 +55,28 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
                       /* 1: deadlock diagnostics */
 
 # if defined(DEADLOCK) && DEADLOCK > 0
-#   define DL_PRINTF(...) printf(__VA_ARGS__)
+#   define DL_PRINTF(...) printf(__VA_ARGS__), fflush(stdout)
 # else
 #   define DL_PRINTF(...) (void)0
 # endif
 
 static __thread int retval;
 static __thread struct timespec ts;
+static __thread pthread_mutexattr_t attr;
 
-# define LOCK_INIT(LOCK) pthread_mutex_init(LOCK, NULL)
+# define LOCK_INIT(LOCK)                                                    \
+  /* The locks must be of recursive type in-order for the multi-threaded
+   * code to work.  This is because a process might receive a SIGIPC while
+   * handling a SIGSEGV. */                                                 \
+(                                                                           \
+  ((0 != (retval=pthread_mutexattr_init(&attr))) ||                         \
+   (0 != (retval=pthread_mutexattr_settype(&attr,                           \
+    PTHREAD_MUTEX_RECURSIVE))) ||                                           \
+   (0 != (retval=pthread_mutex_init(LOCK, &attr))))                         \
+    ? (DL_PRINTF("Mutex init failed@%s:%d [retval %d %s]\n", __func__,      \
+       __LINE__, retval, strerror(retval)), -1)                             \
+    : 0                                                                     \
+)
 # define LOCK_FREE(LOCK) pthread_mutex_destroy(LOCK)
 # define _LOCK_GET(LOCK)                                                    \
 (                                                                           \
