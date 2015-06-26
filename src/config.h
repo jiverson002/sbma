@@ -51,7 +51,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 # include <time.h>        /* CLOCK_REALTIME, struct timespec, clock_gettime */
 # include <unistd.h>      /* syscall */
 
-# define DEADLOCK 0   /* 0: no deadlock diagnostics, */
+# define DEADLOCK 1   /* 0: no deadlock diagnostics, */
                       /* 1: deadlock diagnostics */
 
 # if defined(DEADLOCK) && DEADLOCK > 0

@@ -501,6 +501,8 @@ __vmm_sigsegv__(int const sig, siginfo_t * const si, void * const ctx)
   ate = __mmu_lookup_ate__(&(vmm.mmu), (void*)addr);
   assert(NULL != ate);
 
+  //printf("[%5d] SIGSEGV %p\n", (int)getpid(), si->si_addr);
+
   ip    = (addr-ate->base)/page_size;
   flags = ate->flags;
 
@@ -590,6 +592,8 @@ __vmm_sigipc__(int const sig, siginfo_t * const si, void * const ctx)
   /* make sure we received a SIGIPC */
   assert(SIGIPC <= SIGRTMAX);
   assert(SIGIPC == sig);
+
+  //printf("[%5d] SIGIPC\n", (int)getpid());
 
   /* change my eligibility to ineligible - must be before any potential
    * waiting, since SIGIPC could be raised again then. */

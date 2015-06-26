@@ -77,11 +77,13 @@ enum SBMA_vmm_opt_code
  * Virtual memory manager process eligibility bits:
  *
  *   bit 0 ==    0: ineligible           1: eligible for ipc memory eviction
+ *   bit 1 ==    0:                      1: blocked in __ooc_madmit__
  */
 /****************************************************************************/
 enum SBMA_ipc_code
 {
-  IPC_ELIGIBLE = 1 << 0
+  IPC_ELIGIBLE = 1 << 0,
+  IPC_MADMIT   = 1 << 1
 };
 
 

@@ -60,6 +60,29 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #define SIGIPC   (SIGRTMIN+0)
 
 
+#define HNDLINTR(CMND)\
+do {\
+  for (;;) {\
+    int ret = CMND;\
+    if (-1 == ret) {\
+      if (EINTR == errno) {\
+        errno = 0;\
+      }\
+      else if (ETIMEDOUT == errno) {\
+        errno = 0;\
+        break;\
+      }\
+      else {\
+        return -1;\
+      }\
+    }\
+    else {\
+      break;\
+    }\
+  }\
+} while (0)
+
+
 #define IPC_BARRIER(__IPC)\
 do {\
   int __ipc_ret, __ipc_i, __ipc_count;\
@@ -301,53 +324,35 @@ __ipc_destroy__(struct ipc * const __ipc)
 static int
 __ipc_eligible__(struct ipc * const __ipc, int const __eligible)
 {
-  int ret;
+  int ret, i;
 
-  for (;;) {
-    ret = sem_wait(__ipc->mtx);
-    if (-1 == ret) {
-      if (EINTR == errno)
-        errno = 0;
-      else
-        return -1;
-    }
-    else {
-      break;
-    }
-  }
+  HNDLINTR(sem_wait(__ipc->mtx));
 
-  if (IPC_ELIGIBLE == (__eligible&IPC_ELIGIBLE))
-    __ipc->flags[__ipc->id] |= IPC_ELIGIBLE;
-  else
-    __ipc->flags[__ipc->id] &= ~IPC_ELIGIBLE;
-
-  for (;;) {
-    ret = sem_post(__ipc->mtx);
-    if (-1 == ret) {
-      if (EINTR == errno)
-        errno = 0;
-      else
-        return -1;
-    }
-    else {
-      break;
-    }
-  }
-
-#ifdef TEST
   if (IPC_ELIGIBLE == (__eligible&IPC_ELIGIBLE)) {
-    for (;;) {
-      ret = sem_post(__ipc->cnt);
-      if (-1 == ret) {
-        if (EINTR == errno)
-          errno = 0;
-        else
-          return -1;
-      }
-      else {
+    for (i=0; i<__ipc->n_procs; ++i) {
+      if (i == __ipc->id)
+        continue;
+
+      if (IPC_MADMIT == (__ipc->flags[i]&IPC_MADMIT)) {
+        __ipc->flags[i] &= ~IPC_MADMIT;
+
+        HNDLINTR(sem_post(__ipc->cnt));
+
         break;
       }
     }
+
+    __ipc->flags[__ipc->id] |= IPC_ELIGIBLE;
+  }
+  else {
+    __ipc->flags[__ipc->id] &= ~IPC_ELIGIBLE;
+  }
+
+  HNDLINTR(sem_post(__ipc->mtx));
+
+#ifdef TESTX
+  if (IPC_ELIGIBLE == (__eligible&IPC_ELIGIBLE)) {
+    HNDLINTR(sem_post(__ipc->cnt));
   }
   else {
     ret = sem_wait(__ipc->cnt);
@@ -379,6 +384,7 @@ __ipc_madmit__(struct ipc * const __ipc, size_t const __value)
 
   int ret, i, ii;
   ssize_t smem, mxmem;
+  struct timespec ts;
   uint8_t * flags;
   int * pid;
   size_t * pmem;
@@ -392,6 +398,8 @@ __ipc_madmit__(struct ipc * const __ipc, size_t const __value)
   // 3) repeat until enough free memory or no processes have any loaded memory
 
   assert(IPC_ELIGIBLE != (__ipc->flags[__ipc->id]&IPC_ELIGIBLE));
+  assert(IPC_MADMIT != (__ipc->flags[__ipc->id]&IPC_MADMIT));
+  /*printf("[%5d] %s:%d\n", (int)getpid(), basename(__FILE__), __LINE__);*/
 
 #ifdef TEST
   RETRY:
@@ -399,18 +407,7 @@ __ipc_madmit__(struct ipc * const __ipc, size_t const __value)
   /* Must check for an interrupt here due to the RETRY label. If this code is
    * executed due to a jump to RETRY, then the process MAY still be eligible
    * for eviction. */
-  for (;;) {
-    ret = sem_wait(__ipc->mtx);
-    if (-1 == ret) {
-      if (EINTR == errno)
-        errno = 0;
-      else
-        return -1;
-    }
-    else {
-      break;
-    }
-  }
+  HNDLINTR(sem_wait(__ipc->mtx));
 
   smem  = *__ipc->smem-__value;
   pmem  = __ipc->pmem;
@@ -418,11 +415,11 @@ __ipc_madmit__(struct ipc * const __ipc, size_t const __value)
   flags = __ipc->flags;
 
 #ifdef TEST
-  /* mark myself as ineligible */
-  flags[__ipc->id] &= ~IPC_ELIGIBLE;
+  /* mark myself as ineligible and not blocked in madmit */
+  flags[__ipc->id] &= ~(IPC_ELIGIBLE|IPC_MADMIT);
 #endif
 
-  while (smem < 0) {
+  while (smem <= 0) {
     /* find a process which has memory and is eligible */
     mxmem = 0;
     ii    = -1;
@@ -460,10 +457,10 @@ __ipc_madmit__(struct ipc * const __ipc, size_t const __value)
     smem  = *__ipc->smem-__value;
   }
 
-  if (smem < 0) {
+  if (smem <= 0) {
 #ifdef TEST
-    /* mark myself as eligible */
-    flags[__ipc->id] |= IPC_ELIGIBLE;
+    /* mark myself as eligible and blocked in madmit */
+    flags[__ipc->id] |= (IPC_ELIGIBLE|IPC_MADMIT);
 #endif
   }
   else {
@@ -471,51 +468,36 @@ __ipc_madmit__(struct ipc * const __ipc, size_t const __value)
     __ipc->pmem[__ipc->id] += __value;
   }
 
-  for (;;) {
-    ret = sem_post(__ipc->mtx);
-    if (-1 == ret) {
-      if (EINTR == errno)
-        errno = 0;
-      else
-        return -1;
-    }
-    else {
-      break;
-    }
-  }
+  HNDLINTR(sem_post(__ipc->mtx));
 
 #ifdef TEST
-  if (smem < 0) {
-    for (;;) {
-      ret = sem_wait(__ipc->cnt);
-      if (-1 == ret) {
-        if (EINTR == errno)
-          errno = 0;
-        else
-          return -1;
-      }
-      else {
-        break;
-      }
+  if (smem <= 0) {
+    /*printf("[%5d] %s:%d (%zd,%zu)\n", (int)getpid(), basename(__FILE__),
+      __LINE__, smem, __value);*/
+
+    if (0 != clock_gettime(CLOCK_REALTIME, &ts))
+      return -1;
+    if (ts.tv_nsec >= 750000000) {
+      ts.tv_sec++;
+      ts.tv_nsec = (ts.tv_nsec-750000000);
     }
-    for (;;) {
-      ret = sem_post(__ipc->cnt);
-      if (-1 == ret) {
-        if (EINTR == errno)
-          errno = 0;
-        else
-          return -1;
-      }
-      else {
-        break;
-      }
+    else {
+      ts.tv_nsec += 250000000;
     }
+
+    HNDLINTR(sem_timedwait(__ipc->cnt, &ts));
+#ifdef TESTX
+    HNDLINTR(sem_post(__ipc->cnt));
+#endif
+
+    /*printf("[%5d] %s:%d\n", (int)getpid(), basename(__FILE__), __LINE__);*/
 
     goto RETRY;
   }
 #endif
 
   assert(IPC_ELIGIBLE != (__ipc->flags[__ipc->id]&IPC_ELIGIBLE));
+  assert(IPC_MADMIT != (__ipc->flags[__ipc->id]&IPC_MADMIT));
   assert(smem >= 0);
 
   return smem;
