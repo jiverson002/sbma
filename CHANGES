@@ -1,0 +1,11 @@
+[0.1.4] * Added copyright info
+
+[0.1.3] * Introduced __ooc_realloc__()
+
+[0.1.2] * Unreported bug fix in __ooc_remap__()
+
+[0.1.1] * Bug fix #0000013
+
+[0.1.0] * Introduced lazy writing
+
+[0.0.1] * Initial release
