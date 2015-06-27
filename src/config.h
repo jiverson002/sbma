@@ -45,13 +45,14 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #ifdef USE_PTHREAD
 # include <errno.h>       /* errno library */
 # include <pthread.h>     /* pthread library */
+# include <semaphore.h>   /* semaphore library */
 # include <stdio.h>       /* printf */
 # include <string.h>      /* strerror */
 # include <sys/syscall.h> /* SYS_gettid */
 # include <time.h>        /* CLOCK_REALTIME, struct timespec, clock_gettime */
 # include <unistd.h>      /* syscall */
 
-# define DEADLOCK 1   /* 0: no deadlock diagnostics, */
+# define DEADLOCK 0   /* 0: no deadlock diagnostics, */
                       /* 1: deadlock diagnostics */
 
 # if defined(DEADLOCK) && DEADLOCK > 0
@@ -130,6 +131,9 @@ extern int     libc_open(char const *, int, ...);
 extern ssize_t libc_read(int const, void * const, size_t const);
 extern ssize_t libc_write(int const, void const * const, size_t const);
 extern int     libc_mlock(void const * const, size_t const);
+extern int     libc_sem_wait(sem_t * const sem);
+extern int     libc_sem_timedwait(sem_t * const sem,
+                                  struct timespec const * const ts);
 
 #ifdef __cplusplus
 }

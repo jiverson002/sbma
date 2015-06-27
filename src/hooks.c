@@ -54,6 +54,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <sys/types.h> /* stat, open */
 #include <unistd.h>    /* ssize_t, stat */
 
+#include "config.h"
 #include "ipc.h"
 #include "sbma.h"
 #include "vmm.h"
@@ -329,6 +330,36 @@ libc_msync(void * const addr, size_t const len, int const flags)
 
   return _libc_msync(addr, len, flags);
 }
+
+
+#ifdef USE_PTHREAD
+/****************************************************************************/
+/*! Hook: libc sem_wait */
+/****************************************************************************/
+extern int
+libc_sem_wait(sem_t * const sem)
+{
+  static int (*_libc_sem_wait)(sem_t *)=NULL;
+
+  HOOK_INIT(sem_wait);
+
+  return _libc_sem_wait(sem);
+}
+
+
+/****************************************************************************/
+/*! Hook: libc sem_timedwait */
+/****************************************************************************/
+extern int
+libc_sem_timedwait(sem_t * const sem, struct timespec const * const ts)
+{
+  static int (*_libc_sem_timedwait)(sem_t *, struct timespec const *)=NULL;
+
+  HOOK_INIT(sem_timedwait);
+
+  return _libc_sem_timedwait(sem, ts);
+}
+#endif
 
 
 //#define USE_LIBC
@@ -613,6 +644,80 @@ msync(void * const addr, size_t const len, int const flags)
   else
     return SBMA_mevict(addr, len);
 }
+
+
+#ifdef USE_PTHREAD
+/****************************************************************************/
+/*! Hook: sem_wait */
+/****************************************************************************/
+extern int
+sem_wait(sem_t * const sem)
+{
+  int ret;
+
+  ret = SBMA_eligible(IPC_ELIGIBLE);
+  if (-1 == ret)
+    return -1;
+
+  for (;;) {
+    ret = libc_sem_wait(sem);
+    if (-1 == ret) {
+      if (EINTR == errno) {
+        errno = 0;
+      }
+      else {
+        (void)SBMA_eligible(0);
+        return -1;
+      }
+    }
+    else {
+      break;
+    }
+  }
+
+  ret = SBMA_eligible(0);
+  if (-1 == ret)
+    return -1;
+
+  return 0;
+}
+
+
+/****************************************************************************/
+/*! Hook: sem_timedwait */
+/****************************************************************************/
+extern int
+sem_timedwait(sem_t * const sem, struct timespec const * const ts)
+{
+  int ret;
+
+  ret = SBMA_eligible(IPC_ELIGIBLE);
+  if (-1 == ret)
+    return -1;
+
+  for (;;) {
+    ret = libc_sem_timedwait(sem, ts);
+    if (-1 == ret) {
+      if (EINTR == errno) {
+        errno = 0;
+      }
+      else {
+        (void)SBMA_eligible(0);
+        return -1;
+      }
+    }
+    else {
+      break;
+    }
+  }
+
+  ret = SBMA_eligible(0);
+  if (-1 == ret)
+    return -1;
+
+  return 0;
+}
+#endif
 
 
 #pragma GCC pop_options

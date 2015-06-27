@@ -597,7 +597,7 @@ __vmm_sigipc__(int const sig, siginfo_t * const si, void * const ctx)
 
   /* change my eligibility to ineligible - must be before any potential
    * waiting, since SIGIPC could be raised again then. */
-  vmm.ipc.flags[vmm.ipc.id] &= ~IPC_ELIGIBLE;
+  vmm.ipc.flags[vmm.ipc.id] &= ~(IPC_ELIGIBLE|IPC_MADMIT);
 
   /* evict all memory */
   ret = __ooc_mevictall_int__(&l_pages, &numwr);

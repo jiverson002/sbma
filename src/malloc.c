@@ -67,6 +67,9 @@ __ooc_malloc__(size_t const __size)
   struct ate * ate;
   char fname[FILENAME_MAX];
 
+  /*printf("[%5d] %s:%d\n", (int)getpid(), basename(__FILE__), __LINE__);*/
+  //__ipc_print__(&(vmm.ipc));
+
   /* shortcut */
   if (0 == __size)
     return NULL;
@@ -134,11 +137,14 @@ __ooc_malloc__(size_t const __size)
   if (-1 == ret)
     return NULL;
 
+  //__ipc_print__(&(vmm.ipc));
   /* track number of syspages currently loaded, currently allocated, and high
    * water mark number of syspages */
   __vmm_track__(curpages, __vmm_to_sys__(s_pages+n_pages+f_pages));
   __vmm_track__(numpages, __vmm_to_sys__(s_pages+n_pages+f_pages));
   __vmm_track__(maxpages, vmm.curpages>vmm.maxpages?vmm.curpages-vmm.maxpages:0);
+  //__ipc_print__(&(vmm.ipc));
+  /*printf("[%5d] %s:%d\n", (int)getpid(), basename(__FILE__), __LINE__);*/
 
   return (void*)ate->base;
 }
