@@ -918,6 +918,7 @@ kl_mem_destroy(kl_mem_t * const mem)
   if (0 == mem->init)
     goto DONE;
 
+  //printf("[%5d] %s:%d\n", (int)getpid(), basename(__FILE__), __LINE__);
   for (i=0; i<mem->num_undes; ++i) {
     /* Release back to system. */
     CALL_SYS_FREE(mem->undes_bin[i], BLOCK_DEFAULT_SIZE);
@@ -926,8 +927,10 @@ kl_mem_destroy(kl_mem_t * const mem)
     mem->mem_total -= BLOCK_DEFAULT_SIZE;
   }
   mem->init = 0;
+  //printf("[%5d] %s:%d\n", (int)getpid(), basename(__FILE__), __LINE__);
 
   FREE_LOCK(&(mem->lock));
+  //printf("[%5d] %s:%d\n", (int)getpid(), basename(__FILE__), __LINE__);
 
   DONE:
   LET_LOCK(&(mem->init_lock));

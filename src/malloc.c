@@ -67,7 +67,7 @@ __ooc_malloc__(size_t const __size)
   struct ate * ate;
   char fname[FILENAME_MAX];
 
-  /*printf("[%5d] %s:%d\n", (int)getpid(), basename(__FILE__), __LINE__);*/
+  //printf("[%5d] %s:%d\n", (int)getpid(), basename(__FILE__), __LINE__);
   //__ipc_print__(&(vmm.ipc));
 
   /* shortcut */
@@ -82,6 +82,7 @@ __ooc_malloc__(size_t const __size)
   n_pages   = 1+((__size-1)/page_size);
   f_pages   = 1+((n_pages*sizeof(uint8_t)-1)/page_size);
 
+  //printf("[%5d] %s:%d\n", (int)getpid(), basename(__FILE__), __LINE__);
   /* check memory file to see if there is enough free memory to complete this
    * allocation. */
   if (VMM_LZYWR == (vmm.opts&VMM_LZYWR)) {
@@ -90,6 +91,7 @@ __ooc_malloc__(size_t const __size)
     if (-1 == ret)
       return NULL;
   }
+  //printf("[%5d] %s:%d\n", (int)getpid(), basename(__FILE__), __LINE__);
 
   /* allocate memory */
   addr = (uintptr_t)mmap(NULL, (s_pages+n_pages+f_pages)*page_size,
@@ -126,16 +128,19 @@ __ooc_malloc__(size_t const __size)
   ate->l_pages = n_pages;
   ate->base    = addr+(s_pages*page_size);
   ate->flags   = (uint8_t*)(addr+((s_pages+n_pages)*page_size));
+  //printf("[%5d] %s:%d\n", (int)getpid(), basename(__FILE__), __LINE__);
 
   /* initialize ate lock */
   ret = LOCK_INIT(&(ate->lock));
   if (-1 == ret)
     return NULL;
+  //printf("[%5d] %s:%d\n", (int)getpid(), basename(__FILE__), __LINE__);
 
   /* insert ate into mmu */
   ret = __mmu_insert_ate__(&(vmm.mmu), ate);
   if (-1 == ret)
     return NULL;
+  //printf("[%5d] %s:%d\n", (int)getpid(), basename(__FILE__), __LINE__);
 
   //__ipc_print__(&(vmm.ipc));
   /* track number of syspages currently loaded, currently allocated, and high

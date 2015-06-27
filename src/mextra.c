@@ -118,3 +118,10 @@ __ooc_eligible__(int const __eligible)
 {
   return __ipc_eligible__(&(vmm.ipc), __eligible);
 }
+
+
+extern void
+__ooc_print__(void)
+{
+  __ipc_print__(&(vmm.ipc));
+}

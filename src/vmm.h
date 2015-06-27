@@ -692,18 +692,22 @@ __vmm_destroy__(struct vmm * const __vmm)
   /* reset signal handler for SIGIPC */
   if (-1 == sigaction(SIGIPC, &(__vmm->oldact_ipc), NULL))
     return -1;
+  //printf("[%5d] %s:%d\n", (int)getpid(), basename(__FILE__), __LINE__);
 
   /* destroy mmu */
   if (-1 == __mmu_destroy__(&(__vmm->mmu)))
     return -1;
+  //printf("[%5d] %s:%d\n", (int)getpid(), basename(__FILE__), __LINE__);
 
   /* destroy ipc */
   if (-1 == __ipc_destroy__(&(__vmm->ipc)))
     return -1;
+  //printf("[%5d] %s:%d\n", (int)getpid(), basename(__FILE__), __LINE__);
 
   /* destroy mmu lock */
   if (-1 == LOCK_FREE(&(__vmm->lock)))
     return -1;
+  //printf("[%5d] %s:%d\n", (int)getpid(), basename(__FILE__), __LINE__);
 
   return 0;
 }

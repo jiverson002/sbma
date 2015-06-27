@@ -24,6 +24,10 @@ OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
+#define _GNU_SOURCE
+#include <string.h>
+#include <unistd.h>
+
 #include <malloc.h>    /* struct mallinfo */
 #include <stddef.h>    /* size_t */
 #include <sys/types.h> /* ssize_t */
@@ -121,13 +125,16 @@ sbma_destroy(void)
 extern int
 SBMA_destroy(void)
 {
+  //printf("[%5d] %s:%d\n", (int)getpid(), basename(__FILE__), __LINE__);
   /* disable the klmalloc subsystem */
   if (-1 == KL_mallopt(M_ENABLED, M_ENABLED_OFF))
     return -1;
+  //printf("[%5d] %s:%d\n", (int)getpid(), basename(__FILE__), __LINE__);
 
   /* destroy the sbma subsystem */
   if (-1 == sbma_destroy())
     return -1;
+  //printf("[%5d] %s:%d\n", (int)getpid(), basename(__FILE__), __LINE__);
 
   return 0;
 }
