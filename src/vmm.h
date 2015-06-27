@@ -593,7 +593,7 @@ __vmm_sigipc__(int const sig, siginfo_t * const si, void * const ctx)
   assert(SIGIPC <= SIGRTMAX);
   assert(SIGIPC == sig);
 
-  //printf("[%5d] SIGIPC\n", (int)getpid());
+  printf("[%5d] SIGIPC\n", (int)getpid());
 
   /* change my eligibility to ineligible - must be before any potential
    * waiting, since SIGIPC could be raised again then. */
@@ -613,8 +613,12 @@ __vmm_sigipc__(int const sig, siginfo_t * const si, void * const ctx)
 
   /* track number of syspages currently loaded, number of syspages written to
    * disk, and high water mark for syspages loaded */
+  if (l_pages > vmm.curpages)
+    printf("[%5d] %s:%d\n", (int)getpid(), basename(__FILE__), __LINE__);
   __vmm_track__(curpages, -l_pages);
   __vmm_track__(numwr, numwr);
+  //printf("[%5d] %s:%d <%zu,%zu>\n", (int)getpid(), basename(__FILE__),
+  //  __LINE__, vmm.curpages, vmm.ipc.pmem[vmm.ipc.id]);
 }
 
 
@@ -692,22 +696,18 @@ __vmm_destroy__(struct vmm * const __vmm)
   /* reset signal handler for SIGIPC */
   if (-1 == sigaction(SIGIPC, &(__vmm->oldact_ipc), NULL))
     return -1;
-  //printf("[%5d] %s:%d\n", (int)getpid(), basename(__FILE__), __LINE__);
 
   /* destroy mmu */
   if (-1 == __mmu_destroy__(&(__vmm->mmu)))
     return -1;
-  //printf("[%5d] %s:%d\n", (int)getpid(), basename(__FILE__), __LINE__);
 
   /* destroy ipc */
   if (-1 == __ipc_destroy__(&(__vmm->ipc)))
     return -1;
-  //printf("[%5d] %s:%d\n", (int)getpid(), basename(__FILE__), __LINE__);
 
   /* destroy mmu lock */
   if (-1 == LOCK_FREE(&(__vmm->lock)))
     return -1;
-  //printf("[%5d] %s:%d\n", (int)getpid(), basename(__FILE__), __LINE__);
 
   return 0;
 }

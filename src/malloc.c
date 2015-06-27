@@ -210,6 +210,8 @@ __ooc_free__(void * const __ptr)
 
   /* update memory file */
   if (VMM_LZYWR == (vmm.opts&VMM_LZYWR)) {
+    //printf("[%5d] %s:%d <%zu,%zu>\n", (int)getpid(), basename(__FILE__),
+    //  __LINE__, vmm.curpages, vmm.ipc.pmem[vmm.ipc.id]);
     ret = __ipc_mevict__(&(vmm.ipc),\
       -__vmm_to_sys__(s_pages+l_pages+f_pages));
     if (-1 == ret)
@@ -217,9 +219,13 @@ __ooc_free__(void * const __ptr)
   }
 
   /* track number of syspages currently loaded and allocated */
+  if (__vmm_to_sys__(s_pages+l_pages+f_pages) > vmm.curpages)
+    printf("[%5d] %s:%d\n", (int)getpid(), basename(__FILE__), __LINE__);
   __vmm_track__(curpages, -__vmm_to_sys__(s_pages+l_pages+f_pages));
   __vmm_track__(numpages, -__vmm_to_sys__(s_pages+n_pages+f_pages));
 
+  //printf("[%5d] %s:%d <%zu,%zu>\n", (int)getpid(), basename(__FILE__),
+  //  __LINE__, vmm.curpages, vmm.ipc.pmem[vmm.ipc.id]);
   return 0;
 }
 
@@ -286,6 +292,8 @@ __ooc_realloc__(void * const __ptr, size_t const __size)
 
     /* update memory file */
     if (VMM_LZYWR == (vmm.opts&VMM_LZYWR)) {
+      //printf("[%5d] %s:%d <%zu,%zu>\n", (int)getpid(), basename(__FILE__),
+      //  __LINE__, vmm.curpages, vmm.ipc.pmem[vmm.ipc.id]);
       ret = __ipc_mevict__(&(vmm.ipc),\
         -__vmm_to_sys__((on_pages-nn_pages)+(of_pages-nf_pages)));
       if (-1 == ret)
@@ -293,6 +301,8 @@ __ooc_realloc__(void * const __ptr, size_t const __size)
     }
 
     /* track number of syspages currently loaded and allocated */
+    if (__vmm_to_sys__((ol_pages-ate->l_pages)+(of_pages-nf_pages)) > vmm.curpages)
+      printf("[%5d] %s:%d\n", (int)getpid(), basename(__FILE__), __LINE__);
     __vmm_track__(curpages,\
       -__vmm_to_sys__((ol_pages-ate->l_pages)+(of_pages-nf_pages)));
     __vmm_track__(numpages,\
@@ -304,7 +314,7 @@ __ooc_realloc__(void * const __ptr, size_t const __size)
     if (VMM_LZYWR == (vmm.opts&VMM_LZYWR)) {
       assert(IPC_ELIGIBLE != (vmm.ipc.flags[vmm.ipc.id]&IPC_ELIGIBLE));
       ret = __ipc_madmit__(&(vmm.ipc),\
-        __vmm_to_sys__((nn_pages-on_pages)+(nf_pages+of_pages)));
+        __vmm_to_sys__((nn_pages-on_pages)+(nf_pages-of_pages)));
       if (-1 == ret)
         return NULL;
     }

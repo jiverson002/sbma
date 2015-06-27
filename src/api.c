@@ -125,16 +125,13 @@ sbma_destroy(void)
 extern int
 SBMA_destroy(void)
 {
-  //printf("[%5d] %s:%d\n", (int)getpid(), basename(__FILE__), __LINE__);
   /* disable the klmalloc subsystem */
   if (-1 == KL_mallopt(M_ENABLED, M_ENABLED_OFF))
     return -1;
-  //printf("[%5d] %s:%d\n", (int)getpid(), basename(__FILE__), __LINE__);
 
   /* destroy the sbma subsystem */
   if (-1 == sbma_destroy())
     return -1;
-  //printf("[%5d] %s:%d\n", (int)getpid(), basename(__FILE__), __LINE__);
 
   return 0;
 }

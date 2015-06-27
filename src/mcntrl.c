@@ -104,7 +104,6 @@ __ooc_destroy__(void)
   /* acquire init lock */
   if (-1 == LOCK_GET(&init_lock))
     return -1;
-  //printf("[%5d] %s:%d\n", (int)getpid(), basename(__FILE__), __LINE__);
 
   /* check if init and destroy if necessary */
   if (1 == init) {
@@ -115,12 +114,10 @@ __ooc_destroy__(void)
 
     init = 0;
   }
-  //printf("[%5d] %s:%d\n", (int)getpid(), basename(__FILE__), __LINE__);
 
   /* release init lock */
   if (-1 == LOCK_LET(&init_lock))
     return -1;
-  //printf("[%5d] %s:%d\n", (int)getpid(), basename(__FILE__), __LINE__);
 
   return 0;
 }

@@ -545,13 +545,14 @@ __ipc_mevict__(struct ipc * const __ipc, ssize_t const __value)
 
   assert(IPC_ELIGIBLE != (__ipc->flags[__ipc->id]&IPC_ELIGIBLE));
 
-  //printf("[%5d] %s:%d\n", (int)getpid(), basename(__FILE__), __LINE__);
   __ipc->flags[__ipc->id] |= IPC_ELIGIBLE;
   HNDLINTR(libc_sem_wait(__ipc->mtx));
   __ipc->flags[__ipc->id] &= ~IPC_ELIGIBLE;
-  //printf("[%5d] %s:%d\n", (int)getpid(), basename(__FILE__), __LINE__);
 
   *__ipc->smem -= __value;
+  if (__ipc->pmem[__ipc->id] < -__value)
+    printf("[%5d] %s:%d (%zd,%zu,%zd)\n", (int)getpid(), basename(__FILE__),
+      __LINE__, *__ipc->smem, __ipc->pmem[__ipc->id], __value);
   assert(__ipc->pmem[__ipc->id] >= -__value);
   __ipc->pmem[__ipc->id] += __value;
 
@@ -560,7 +561,6 @@ __ipc_mevict__(struct ipc * const __ipc, ssize_t const __value)
     return -1;
 
   assert(IPC_ELIGIBLE != (__ipc->flags[__ipc->id]&IPC_ELIGIBLE));
-  //printf("[%5d] %s:%d\n", (int)getpid(), basename(__FILE__), __LINE__);
 
   return 0;
 }
