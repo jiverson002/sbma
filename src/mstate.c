@@ -169,32 +169,42 @@ __ooc_mtouch__(void * const __addr, size_t const __len)
   ssize_t l_pages, numrd;
   struct ate * ate;
 
-  __ooc_check__(__FILE__, __LINE__);
+  //__ooc_check__(__FILE__, __LINE__);
 
   ate = __mmu_lookup_ate__(&(vmm.mmu), __addr);
   if (NULL == ate)
     return -1;
 
-  l_pages = __ooc_mtouch_probe__(ate, __addr, __len);
-  if (-1 == l_pages) {
-    (void)LOCK_LET(&(ate->lock));
-    return -1;
-  }
-  printf("[%5d] %s:%d\n", (int)getpid(), basename(__FILE__), __LINE__);
-
-  /* TODO: what happens if a SIGIPC is received during admit, then the number
-   * of pages being admitted may be off. */
-
   /* check memory file to see if there is enough free memory to complete this
    * allocation. */
-  if (VMM_LZYWR == (vmm.opts&VMM_LZYWR)) {
-    assert(IPC_ELIGIBLE != (vmm.ipc.flags[vmm.ipc.id]&IPC_ELIGIBLE));
-    ret = __ipc_madmit__(&(vmm.ipc), l_pages);
-    if (-1 == ret)
+  for (;;) {
+    l_pages = __ooc_mtouch_probe__(ate, __addr, __len);
+    if (-1 == l_pages) {
+      (void)LOCK_LET(&(ate->lock));
       return -1;
-  }
+    }
 
-  printf("[%5d] %s:%d\n", (int)getpid(), basename(__FILE__), __LINE__);
+    if (VMM_LZYWR != (vmm.opts&VMM_LZYWR)) {
+      break;
+    }
+    else {
+      assert(IPC_ELIGIBLE != (vmm.ipc.flags[vmm.ipc.id]&IPC_ELIGIBLE));
+
+      ret = __ipc_madmit__(&(vmm.ipc), l_pages);
+      if (-1 == ret) {
+        if (EAGAIN == errno) {
+          errno = 0;
+        }
+        else {
+          (void)LOCK_LET(&(ate->lock));
+          return -1;
+        }
+      }
+      else {
+        break;
+      }
+    }
+  }
 
   numrd = __ooc_mtouch_int__(ate, __addr, __len);
   if (-1 == numrd) {
@@ -213,7 +223,7 @@ __ooc_mtouch__(void * const __addr, size_t const __len)
   __vmm_track__(maxpages,\
     vmm.curpages>vmm.maxpages?vmm.curpages-vmm.maxpages:0);
 
-  __ooc_check__(__FILE__, __LINE__);
+  //__ooc_check__(__FILE__, __LINE__);
 
   return l_pages;
 }
@@ -225,8 +235,9 @@ __ooc_mtouch__(void * const __addr, size_t const __len)
 extern ssize_t
 __ooc_mtouchall__(void)
 {
+  int ret;
   size_t l_pages=0, numrd=0;
-  ssize_t ret;
+  ssize_t retval;
   struct ate * ate;
 
   ret = LOCK_GET(&(vmm.lock));
@@ -239,28 +250,48 @@ __ooc_mtouchall__(void)
       (void)LOCK_LET(&(vmm.lock));
       return -1;
     }
-    ret = __ooc_mtouch_probe__(ate, (void*)ate->base,\
-      ate->n_pages*vmm.page_size);
-    if (-1 == ret) {
-      (void)LOCK_LET(&(ate->lock));
-      (void)LOCK_LET(&(vmm.lock));
-      return -1;
+
+    /* check memory file to see if there is enough free memory to complete
+     * this allocation. */
+    for (;;) {
+      retval = __ooc_mtouch_probe__(ate, (void*)ate->base,\
+        ate->n_pages*vmm.page_size);
+      if (-1 == retval) {
+        (void)LOCK_LET(&(ate->lock));
+        (void)LOCK_LET(&(vmm.lock));
+        return -1;
+      }
+
+      if (VMM_LZYWR != (vmm.opts&VMM_LZYWR)) {
+        break;
+      }
+      else {
+        assert(IPC_ELIGIBLE != (vmm.ipc.flags[vmm.ipc.id]&IPC_ELIGIBLE));
+
+        ret = __ipc_madmit__(&(vmm.ipc), retval);
+        if (-1 == ret) {
+          if (EAGAIN == errno) {
+            errno = 0;
+          }
+          else {
+            (void)LOCK_LET(&(ate->lock));
+            (void)LOCK_LET(&(vmm.lock));
+            return -1;
+          }
+        }
+        else {
+          break;
+        }
+      }
     }
+
     ret = LOCK_LET(&(ate->lock));
     if (-1 == ret) {
       (void)LOCK_LET(&(vmm.lock));
       return -1;
     }
-    l_pages += ret;
-  }
 
-  /* check memory file to see if there is enough free memory to complete this
-   * allocation. */
-  if (VMM_LZYWR == (vmm.opts&VMM_LZYWR)) {
-    assert(IPC_ELIGIBLE != (vmm.ipc.flags[vmm.ipc.id]&IPC_ELIGIBLE));
-    ret = __ipc_madmit__(&(vmm.ipc), l_pages);
-    if (-1 == ret)
-      return -1;
+    l_pages += retval;
   }
 
   for (ate=vmm.mmu.a_tbl; NULL!=ate; ate=ate->next) {
@@ -296,7 +327,7 @@ __ooc_mtouchall__(void)
   __vmm_track__(maxpages,\
     vmm.curpages>vmm.maxpages?vmm.curpages-vmm.maxpages:0);
 
-  __ooc_check__(__FILE__, __LINE__);
+  //__ooc_check__(__FILE__, __LINE__);
 
   return l_pages;
 }
@@ -461,7 +492,7 @@ __ooc_mevict__(void * const __addr, size_t const __len)
   __vmm_track__(curpages, -l_pages);
   __vmm_track__(numwr, numwr);
 
-  __ooc_check__(__FILE__, __LINE__);
+  //__ooc_check__(__FILE__, __LINE__);
 
   return l_pages;
 }
@@ -550,7 +581,7 @@ __ooc_mevictall__(void)
   __vmm_track__(curpages, -l_pages);
   __vmm_track__(numwr, numwr);
 
-  __ooc_check__(__FILE__, __LINE__);
+  //__ooc_check__(__FILE__, __LINE__);
 
   return l_pages;
 }

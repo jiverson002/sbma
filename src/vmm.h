@@ -507,31 +507,41 @@ __vmm_sigsegv__(int const sig, siginfo_t * const si, void * const ctx)
   flags = ate->flags;
 
   if (MMU_RSDNT == (flags[ip]&MMU_RSDNT)) {
-    if (VMM_LZYRD == (vmm.opts&VMM_LZYRD))
-      l_pages = 1;
-    else
-      l_pages = ate->n_pages-ate->l_pages;
+    for (;;) {
+      if (VMM_LZYRD == (vmm.opts&VMM_LZYRD))
+        l_pages = 1;
+      else
+        l_pages = ate->n_pages-ate->l_pages;
 
-    /* TODO: in current code, each read fault requires a check with the ipc
-     * memory tracking to ensure there is enough free space. However, in
-     * previous versions of the SIGSEGV handler, this check was only done once
-     * per allocation when lazy reading is enabled. On one hand, the current
-     * implementation is better because it will result in a smaller number of
-     * times that a process is asked to evict all of its memory. On the other
-     * hand, it requires the acquisition of a mutex for every read fault. */
+      /* TODO: in current code, each read fault requires a check with the ipc
+       * memory tracking to ensure there is enough free space. However, in
+       * previous versions of the SIGSEGV handler, this check was only done
+       * once per allocation when lazy reading is enabled. On one hand, the
+       * current implementation is better because it will result in a smaller
+       * number of times that a process is asked to evict all of its memory.
+       * On the other hand, it requires the acquisition of a mutex for every
+       * read fault. */
 
-    /* FIXME: if lazy read is not enabled and the process receives SIGIPC
-     * during call to __ipc_madmit__, then the l_pages may not be correct,
-     * since the SIGIPC will cause the process to evict any resident pages of
-     * the allocation. This may not be an issue, since aggressive read will
-     * guarantee that the allocation is never partially loaded? */
+      if (VMM_LZYWR != (vmm.opts&VMM_LZYWR)) {
+        break;
+      }
+      else {
+        assert(IPC_ELIGIBLE != (vmm.ipc.flags[vmm.ipc.id]&IPC_ELIGIBLE));
 
-    /* check memory file to see if there is enough free memory to complete
-     * this allocation. */
-    if (VMM_LZYWR == (vmm.opts&VMM_LZYWR)) {
-      assert(IPC_ELIGIBLE != (vmm.ipc.flags[vmm.ipc.id]&IPC_ELIGIBLE));
-      ret = __ipc_madmit__(&(vmm.ipc), __vmm_to_sys__(l_pages));
-      assert(-1 != ret);
+        ret = __ipc_madmit__(&(vmm.ipc), __vmm_to_sys__(l_pages));
+        if (-1 == ret) {
+          if (EAGAIN == errno) {
+            errno = 0;
+          }
+          else {
+            (void)LOCK_LET(&(ate->lock));
+            assert(0);
+          }
+        }
+        else {
+          break;
+        }
+      }
     }
 
     /* swap in the required memory */
@@ -593,7 +603,7 @@ __vmm_sigipc__(int const sig, siginfo_t * const si, void * const ctx)
   assert(SIGIPC <= SIGRTMAX);
   assert(SIGIPC == sig);
 
-  printf("[%5d] SIGIPC\n", (int)getpid());
+  //printf("[%5d] SIGIPC\n", (int)getpid());
 
   /* change my eligibility to ineligible - must be before any potential
    * waiting, since SIGIPC could be raised again then. */

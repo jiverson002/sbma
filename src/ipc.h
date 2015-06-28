@@ -373,20 +373,6 @@ __ipc_eligible__(struct ipc * const __ipc, int const __eligible)
 }
 
 
-static inline void
-__ipc_print__(struct ipc const * const __ipc)
-{
-  int i;
-  libc_sem_wait(__ipc->trn2);
-  printf("[%5d,%5d] <%zu> [", (int)getpid(), __ipc->id, *__ipc->smem);
-  for (i=0; i<__ipc->n_procs; ++i)
-    printf(" (%d,%d,%zu)", __ipc->pid[i], __ipc->flags[i], __ipc->pmem[i]);
-  printf(" ]\n");
-  fflush(stdout);
-  sem_post(__ipc->trn2);
-}
-
-
 /****************************************************************************/
 /*! Account for resident memory before admission. Check to see if the system
  *  can support the addition of __value bytes of memory. */
@@ -422,25 +408,19 @@ __ipc_madmit__(struct ipc * const __ipc, size_t const __value)
   assert(IPC_ELIGIBLE != (__ipc->flags[__ipc->id]&IPC_ELIGIBLE));
   assert(IPC_MADMIT != (__ipc->flags[__ipc->id]&IPC_MADMIT));
 
-#ifdef TEST
-  RETRY:
-#endif
-  /* Must check for an interrupt here due to the RETRY label. If this code is
-   * executed due to a jump to RETRY, then the process MAY still be eligible
-   * for eviction. */
   __ipc->flags[__ipc->id] |= IPC_ELIGIBLE;
-  HNDLINTR(libc_sem_wait(__ipc->mtx));
+  ret = libc_sem_wait(__ipc->mtx);
+  if (-1 == ret) {
+    if (EINTR == errno)
+      errno = EAGAIN;
+    return -1;
+  }
   __ipc->flags[__ipc->id] &= ~IPC_ELIGIBLE;
 
   smem  = *__ipc->smem-__value;
   pmem  = __ipc->pmem;
   pid   = __ipc->pid;
   flags = __ipc->flags;
-
-#ifdef TEST
-  /* mark myself as ineligible and not blocked in madmit */
-  flags[__ipc->id] &= ~(IPC_ELIGIBLE|IPC_MADMIT);
-#endif
 
   while (smem < 0) {
     /* find a process which has memory and is eligible */
@@ -480,13 +460,7 @@ __ipc_madmit__(struct ipc * const __ipc, size_t const __value)
     smem  = *__ipc->smem-__value;
   }
 
-  if (smem < 0) {
-#ifdef TEST
-    /* mark myself as eligible and blocked in madmit */
-    flags[__ipc->id] |= (IPC_ELIGIBLE|IPC_MADMIT);
-#endif
-  }
-  else {
+  if (smem >= 0) {
     *__ipc->smem -= __value;
     __ipc->pmem[__ipc->id] += __value;
   }
@@ -499,8 +473,9 @@ __ipc_madmit__(struct ipc * const __ipc, size_t const __value)
   if (smem < 0) {
     //printf("[%5d] %s:%d (%zd,%zu,%zd)\n", (int)getpid(), basename(__FILE__),
     //  __LINE__, *__ipc->smem, __value, smem);
-    //__ipc_print__(__ipc);
-    //printf("[%5d] %s:%d\n", (int)getpid(), basename(__FILE__), __LINE__);
+
+    /* mark myself as eligible and blocked in madmit */
+    flags[__ipc->id] |= (IPC_ELIGIBLE|IPC_MADMIT);
 
     if (0 != clock_gettime(CLOCK_REALTIME, &ts))
       return -1;
@@ -512,15 +487,19 @@ __ipc_madmit__(struct ipc * const __ipc, size_t const __value)
       ts.tv_nsec += 250000000;
     }
 
-    /*===== HERE =====*/
-    HNDLINTR(libc_sem_timedwait(__ipc->cnt, &ts));
-#ifdef TESTX
-    ret = sem_post(__ipc->cnt);
-    if (-1 == ret)
-      return -1;
-#endif
+    ret = libc_sem_timedwait(__ipc->cnt, &ts);
+    if (-1 == ret) {
+      if (EINTR == errno || ETIMEDOUT == errno)
+        errno = EAGAIN;
+    }
+    else {
+      errno = EAGAIN;
+    }
 
-    goto RETRY;
+    /* mark myself as ineligible and not blocked in madmit */
+    flags[__ipc->id] &= ~(IPC_ELIGIBLE|IPC_MADMIT);
+
+    return -1;
   }
 #endif
 

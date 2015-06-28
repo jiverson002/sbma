@@ -87,9 +87,19 @@ __ooc_malloc__(size_t const __size)
    * allocation. */
   if (VMM_LZYWR == (vmm.opts&VMM_LZYWR)) {
     assert(IPC_ELIGIBLE != (vmm.ipc.flags[vmm.ipc.id]&IPC_ELIGIBLE));
-    ret = __ipc_madmit__(&(vmm.ipc), __vmm_to_sys__(s_pages+n_pages+f_pages));
-    if (-1 == ret)
-      return NULL;
+    for (;;) {
+      ret = __ipc_madmit__(&(vmm.ipc),\
+        __vmm_to_sys__(s_pages+n_pages+f_pages));
+      if (-1 == ret) {
+        if (EAGAIN == errno)
+          errno = 0;
+        else
+          return NULL;
+      }
+      else {
+        break;
+      }
+    }
   }
   //printf("[%5d] %s:%d\n", (int)getpid(), basename(__FILE__), __LINE__);
 
@@ -214,8 +224,13 @@ __ooc_free__(void * const __ptr)
     //  __LINE__, vmm.curpages, vmm.ipc.pmem[vmm.ipc.id]);
     ret = __ipc_mevict__(&(vmm.ipc),\
       -__vmm_to_sys__(s_pages+l_pages+f_pages));
-    if (-1 == ret)
+    if (-1 == ret) {
+      if (EAGAIN == errno) {
+        printf("[%5d] %s:%d (%zu,%zu)\n", (int)getpid(), basename(__FILE__),
+          __LINE__, l_pages, ate->l_pages);
+      }
       return -1;
+    }
   }
 
   /* track number of syspages currently loaded and allocated */
@@ -313,10 +328,19 @@ __ooc_realloc__(void * const __ptr, size_t const __size)
      * this allocation. */
     if (VMM_LZYWR == (vmm.opts&VMM_LZYWR)) {
       assert(IPC_ELIGIBLE != (vmm.ipc.flags[vmm.ipc.id]&IPC_ELIGIBLE));
-      ret = __ipc_madmit__(&(vmm.ipc),\
-        __vmm_to_sys__((nn_pages-on_pages)+(nf_pages-of_pages)));
-      if (-1 == ret)
-        return NULL;
+      for (;;) {
+        ret = __ipc_madmit__(&(vmm.ipc),\
+          __vmm_to_sys__((nn_pages-on_pages)+(nf_pages-of_pages)));
+        if (-1 == ret) {
+          if (EAGAIN == errno)
+            errno = 0;
+          else
+            return NULL;
+        }
+        else {
+          break;
+        }
+      }
     }
 
     /* resize allocation */
