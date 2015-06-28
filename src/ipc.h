@@ -326,9 +326,12 @@ __ipc_eligible__(struct ipc * const __ipc, int const __eligible)
 {
   int ret, i;
 
-  __ipc->flags[__ipc->id] |= IPC_ELIGIBLE;
+  //__ipc->flags[__ipc->id] |= IPC_ELIGIBLE;
   HNDLINTR(libc_sem_wait(__ipc->mtx));
-  __ipc->flags[__ipc->id] &= ~IPC_ELIGIBLE;
+  //__ipc->flags[__ipc->id] &= ~IPC_ELIGIBLE;
+  //ret = libc_sem_wait(__ipc->mtx);
+  //if (-1 == ret)
+  //  return -1;
 
   if (IPC_ELIGIBLE == (__eligible&IPC_ELIGIBLE)) {
     for (i=0; i<__ipc->n_procs; ++i) {
@@ -355,19 +358,6 @@ __ipc_eligible__(struct ipc * const __ipc, int const __eligible)
   ret = sem_post(__ipc->mtx);
   if (-1 == ret)
     return -1;
-
-#ifdef TESTX
-  if (IPC_ELIGIBLE == (__eligible&IPC_ELIGIBLE)) {
-    ret = sem_post(__ipc->cnt);
-    if (-1 == ret)
-      return -1;
-  }
-  else {
-    ret = libc_sem_wait(__ipc->cnt);
-    if (-1 == ret)
-      return -1;
-  }
-#endif
 
   return 0;
 }
@@ -408,14 +398,14 @@ __ipc_madmit__(struct ipc * const __ipc, size_t const __value)
   assert(IPC_ELIGIBLE != (__ipc->flags[__ipc->id]&IPC_ELIGIBLE));
   assert(IPC_MADMIT != (__ipc->flags[__ipc->id]&IPC_MADMIT));
 
-  __ipc->flags[__ipc->id] |= IPC_ELIGIBLE;
+  //__ipc->flags[__ipc->id] |= IPC_ELIGIBLE;
   ret = libc_sem_wait(__ipc->mtx);
   if (-1 == ret) {
-    if (EINTR == errno)
-      errno = EAGAIN;
+    //if (EINTR == errno)
+    //  errno = EAGAIN;
     return -1;
   }
-  __ipc->flags[__ipc->id] &= ~IPC_ELIGIBLE;
+  //__ipc->flags[__ipc->id] &= ~IPC_ELIGIBLE;
 
   smem  = *__ipc->smem-__value;
   pmem  = __ipc->pmem;
@@ -524,9 +514,12 @@ __ipc_mevict__(struct ipc * const __ipc, ssize_t const __value)
 
   assert(IPC_ELIGIBLE != (__ipc->flags[__ipc->id]&IPC_ELIGIBLE));
 
-  __ipc->flags[__ipc->id] |= IPC_ELIGIBLE;
-  HNDLINTR(libc_sem_wait(__ipc->mtx));
-  __ipc->flags[__ipc->id] &= ~IPC_ELIGIBLE;
+  ret = libc_sem_wait(__ipc->mtx);
+  if (-1 == ret)
+    return -1;
+  //__ipc->flags[__ipc->id] |= IPC_ELIGIBLE;
+  //HNDLINTR(libc_sem_wait(__ipc->mtx));
+  //__ipc->flags[__ipc->id] &= ~IPC_ELIGIBLE;
 
   *__ipc->smem -= __value;
   if (__ipc->pmem[__ipc->id] < -__value)
