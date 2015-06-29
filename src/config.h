@@ -51,6 +51,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 /****************************************************************************/
 #ifdef USE_PTHREAD
 # include <errno.h>       /* errno library */
+# include <mqueue.h>
 # include <pthread.h>     /* pthread library */
 # include <semaphore.h>   /* semaphore library */
 # include <stdio.h>       /* printf */

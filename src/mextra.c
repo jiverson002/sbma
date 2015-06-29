@@ -116,5 +116,8 @@ __ooc_mallinfo__(void)
 extern int
 __ooc_eligible__(int const __eligible)
 {
+  if (0 == vmm.init)
+    return 0;
+
   return __ipc_eligible__(&(vmm.ipc), __eligible);
 }

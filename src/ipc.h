@@ -64,16 +64,10 @@ do {\
   for (;;) {\
     int ret = CMND;\
     if (-1 == ret) {\
-      if (EINTR == errno) {\
+      if (EINTR == errno)\
         errno = 0;\
-      }\
-      else if (ETIMEDOUT == errno) {\
-        errno = 0;\
-        break;\
-      }\
-      else {\
+      else\
         return -1;\
-      }\
     }\
     else {\
       break;\
@@ -82,60 +76,10 @@ do {\
 } while (0)
 
 
-#define IPC_BARRIER(__IPC)\
-do {\
-  int __ipc_ret, __ipc_i, __ipc_count;\
-  /* mutex.wait() */\
-  __ipc_ret = sem_wait((__IPC)->mtx);\
-  ASSERT(-1 != __ipc_ret);\
-  /* count += 1 */\
-  __ipc_ret = sem_post((__IPC)->cnt);\
-  ASSERT(-1 != __ipc_ret);\
-  /* if count == n: */\
-  __ipc_ret = sem_getvalue((__IPC)->cnt, &__ipc_count);\
-  ASSERT(-1 != __ipc_ret);\
-  if((__IPC)->n_procs == __ipc_count) {\
-    /* turnstile.signal(n) # unlock the first */\
-    for(__ipc_i=0; __ipc_i<(__IPC)->n_procs; ++__ipc_i) {\
-      __ipc_ret = sem_post((__IPC)->trn1);\
-      ASSERT(-1 != __ipc_ret);\
-    }\
-  }\
-  /* mutex.signal() */\
-  __ipc_ret = sem_post((__IPC)->mtx);\
-  ASSERT(-1 != __ipc_ret);\
-  /* turnstile.wait() # first turnstile */\
-  __ipc_ret = sem_wait((__IPC)->trn1);\
-  ASSERT(-1 != __ipc_ret);\
-\
-  /* mutex.wait() */\
-  __ipc_ret = sem_wait((__IPC)->mtx);\
-  ASSERT(-1 != __ipc_ret);\
-  /* count -= 1 */\
-  __ipc_ret = sem_wait((__IPC)->cnt);\
-  ASSERT(-1 != __ipc_ret);\
-  /* if count == 0: */\
-  __ipc_ret = sem_getvalue((__IPC)->cnt, &__ipc_count);\
-  ASSERT(-1 != __ipc_ret);\
-  if(0 == __ipc_count) {\
-    /* turnstile2.signal(n) # unlock the second */\
-    for(__ipc_i=0; __ipc_i<(__IPC)->n_procs; ++__ipc_i) {\
-      __ipc_ret = sem_post((__IPC)->trn2);\
-      ASSERT(-1 != __ipc_ret);\
-    }\
-  }\
-  /* mutex.signal() */\
-  __ipc_ret = sem_post((__IPC)->mtx);\
-  ASSERT(-1 != __ipc_ret);\
-  /* turnstile2.wait() # second turnstile */\
-  __ipc_ret = sem_wait((__IPC)->trn2);\
-  ASSERT(-1 != __ipc_ret);\
-} while (0)
-
-
 #define IPC_LEN(__N_PROCS)\
   (sizeof(ssize_t)+(__N_PROCS)*(sizeof(size_t)+sizeof(int)+sizeof(uint8_t))+\
     sizeof(int))
+
 
 #define TEST
 
@@ -325,34 +269,24 @@ __ipc_eligible__(struct ipc * const __ipc, int const __eligible)
 {
   int ret, i;
 
-  //__ipc->flags[__ipc->id] |= IPC_ELIGIBLE;
-  HNDLINTR(libc_sem_wait(__ipc->mtx));
-  //__ipc->flags[__ipc->id] &= ~IPC_ELIGIBLE;
-  //ret = libc_sem_wait(__ipc->mtx);
-  //if (-1 == ret)
-  //  return -1;
-
-  if (IPC_ELIGIBLE == (__eligible&IPC_ELIGIBLE)) {
-    for (i=0; i<__ipc->n_procs; ++i) {
-      if (i == __ipc->id)
-        continue;
-
-      if (IPC_MADMIT == (__ipc->flags[i]&IPC_MADMIT)) {
-        __ipc->flags[i] &= ~IPC_MADMIT;
-
-        ret = sem_post(__ipc->cnt);
-        if (-1 == ret)
-          return -1;
-
-        break;
-      }
+  /* Wait for mutex, retrying if interrupted by a signal */
+  for (;;) {
+    ret = libc_sem_wait(__ipc->mtx);
+    if (-1 == ret) {
+      if (EINTR == errno)
+        errno = 0;
+      else
+        return -1;
     }
+    else {
+      break;
+    }
+  }
 
+  if (IPC_ELIGIBLE == (__eligible&IPC_ELIGIBLE))
     __ipc->flags[__ipc->id] |= IPC_ELIGIBLE;
-  }
-  else {
+  else
     __ipc->flags[__ipc->id] &= ~IPC_ELIGIBLE;
-  }
 
   ret = sem_post(__ipc->mtx);
   if (-1 == ret)
@@ -395,16 +329,13 @@ __ipc_madmit__(struct ipc * const __ipc, size_t const __value)
   // 3) repeat until enough free memory or no processes have any loaded memory
 
   ASSERT(IPC_ELIGIBLE != (__ipc->flags[__ipc->id]&IPC_ELIGIBLE));
-  ASSERT(IPC_MADMIT != (__ipc->flags[__ipc->id]&IPC_MADMIT));
 
-  //__ipc->flags[__ipc->id] |= IPC_ELIGIBLE;
-  ret = libc_sem_wait(__ipc->mtx);
-  if (-1 == ret) {
-    //if (EINTR == errno)
-    //  errno = EAGAIN;
-    return -1;
-  }
-  //__ipc->flags[__ipc->id] &= ~IPC_ELIGIBLE;
+  HNDLINTR(libc_sem_wait(__ipc->mtx));
+  //ret = libc_sem_wait(__ipc->mtx);
+  //if (-1 == ret) {
+  //  ASSERT(EINTR != errno);
+  //  return -1;
+  //}
 
   smem  = *__ipc->smem-__value;
   pmem  = __ipc->pmem;
@@ -420,7 +351,6 @@ __ipc_madmit__(struct ipc * const __ipc, size_t const __value)
         continue;
 
       if (IPC_ELIGIBLE == (flags[i]&IPC_ELIGIBLE)) {
-        /*if (pmem[__ipc->id] >= pmem[i] && pmem[i] > mxmem) {*/
         if (pmem[i] > mxmem) {
           ii = i;
           mxmem = pmem[i];
@@ -442,6 +372,7 @@ __ipc_madmit__(struct ipc * const __ipc, size_t const __value)
     /* wait for it to signal it has finished */
     ret = libc_sem_wait(__ipc->trn1);
     if (-1 == ret) {
+      ASSERT(EINTR != errno);
       (void)sem_post(__ipc->mtx);
       return -1;
     }
@@ -464,36 +395,23 @@ __ipc_madmit__(struct ipc * const __ipc, size_t const __value)
     //  __LINE__, *__ipc->smem, __value, smem);
 
     /* mark myself as eligible and blocked in madmit */
-    flags[__ipc->id] |= (IPC_ELIGIBLE|IPC_MADMIT);
+    flags[__ipc->id] |= IPC_ELIGIBLE;
 
-    if (0 != clock_gettime(CLOCK_REALTIME, &ts))
+    ts.tv_sec  = 0;
+    ts.tv_nsec = 250000000;
+    ret = nanosleep(&ts, NULL);
+    if (-1 == ret && EINTR != errno)
       return -1;
-    if (ts.tv_nsec >= 750000000) {
-      ts.tv_sec++;
-      ts.tv_nsec = (ts.tv_nsec-750000000);
-    }
-    else {
-      ts.tv_nsec += 250000000;
-    }
-
-    ret = libc_sem_timedwait(__ipc->cnt, &ts);
-    if (-1 == ret) {
-      if (EINTR == errno || ETIMEDOUT == errno)
-        errno = EAGAIN;
-    }
-    else {
-      errno = EAGAIN;
-    }
 
     /* mark myself as ineligible and not blocked in madmit */
-    flags[__ipc->id] &= ~(IPC_ELIGIBLE|IPC_MADMIT);
+    flags[__ipc->id] &= ~IPC_ELIGIBLE;
 
+    errno = EAGAIN;
     return -1;
   }
 #endif
 
   ASSERT(IPC_ELIGIBLE != (__ipc->flags[__ipc->id]&IPC_ELIGIBLE));
-  ASSERT(IPC_MADMIT != (__ipc->flags[__ipc->id]&IPC_MADMIT));
   ASSERT(smem >= 0);
 
   return smem;
@@ -513,18 +431,16 @@ __ipc_mevict__(struct ipc * const __ipc, ssize_t const __value)
 
   ASSERT(IPC_ELIGIBLE != (__ipc->flags[__ipc->id]&IPC_ELIGIBLE));
 
-  ret = libc_sem_wait(__ipc->mtx);
-  if (-1 == ret)
-    return -1;
-  //__ipc->flags[__ipc->id] |= IPC_ELIGIBLE;
-  //HNDLINTR(libc_sem_wait(__ipc->mtx));
-  //__ipc->flags[__ipc->id] &= ~IPC_ELIGIBLE;
+  HNDLINTR(libc_sem_wait(__ipc->mtx));
+  //ret = libc_sem_wait(__ipc->mtx);
+  //if (-1 == ret) {
+  //  ASSERT(EINTR != errno);
+  //  return -1;
+  //}
+
+  ASSERT(__ipc->pmem[__ipc->id] >= -__value);
 
   *__ipc->smem -= __value;
-  if (__ipc->pmem[__ipc->id] < -__value)
-    printf("[%5d] %s:%d (%zd,%zu,%zd)\n", (int)getpid(), basename(__FILE__),
-      __LINE__, *__ipc->smem, __ipc->pmem[__ipc->id], __value);
-  ASSERT(__ipc->pmem[__ipc->id] >= -__value);
   __ipc->pmem[__ipc->id] += __value;
 
   ret = sem_post(__ipc->mtx);

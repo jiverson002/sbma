@@ -358,6 +358,39 @@ libc_sem_timedwait(sem_t * const sem, struct timespec const * const ts)
 
   return _libc_sem_timedwait(sem, ts);
 }
+
+
+/****************************************************************************/
+/*! Hook: libc mq_receive */
+/****************************************************************************/
+extern ssize_t
+libc_mq_receive(mqd_t const mqdes, char * const msg_ptr, size_t const msg_len,
+                unsigned * const msg_prio)
+{
+  static int (*_libc_mq_receive)(mqd_t, char *, size_t, unsigned *)=NULL;
+
+  HOOK_INIT(mq_receive);
+
+  return _libc_mq_receive(mqdes, msg_ptr, msg_len, msg_prio);
+}
+
+
+/****************************************************************************/
+/*! Hook: libc mq_timedreceive */
+/****************************************************************************/
+extern ssize_t
+libc_mq_timedreceive(mqd_t const mqdes, char * const msg_ptr,
+                     size_t const msg_len, unsigned * const msg_prio,
+                     struct timespec const * const abs_timeout)
+{
+  static int (*_libc_mq_timedreceive)(mqd_t, char *, size_t, unsigned *,\
+    struct timespec const *)=NULL;
+
+  HOOK_INIT(mq_timedreceive);
+
+  return _libc_mq_timedreceive(mqdes, msg_ptr, msg_len, msg_prio,\
+    abs_timeout);
+}
 #endif
 
 
@@ -658,6 +691,7 @@ sem_wait(sem_t * const sem)
   if (-1 == ret)
     return -1;
 
+  /* TODO: issue #0000021 */
   for (;;) {
     ret = libc_sem_wait(sem);
     if (-1 == ret) {
@@ -694,6 +728,7 @@ sem_timedwait(sem_t * const sem, struct timespec const * const ts)
   if (-1 == ret)
     return -1;
 
+  /* TODO: issue #0000021 */
   for (;;) {
     ret = libc_sem_timedwait(sem, ts);
     if (-1 == ret) {
@@ -715,6 +750,86 @@ sem_timedwait(sem_t * const sem, struct timespec const * const ts)
     return -1;
 
   return 0;
+}
+
+
+/****************************************************************************/
+/*! Hook: mq_receive */
+/****************************************************************************/
+extern ssize_t
+mq_receive(mqd_t const mqdes, char * const msg_ptr, size_t const msg_len,
+           unsigned * const msg_prio)
+{
+  int ret;
+  ssize_t retval;
+
+  ret = SBMA_eligible(IPC_ELIGIBLE);
+  if (-1 == ret)
+    return -1;
+
+  /* TODO: issue #0000021 */
+  for (;;) {
+    retval = libc_mq_receive(mqdes, msg_ptr, msg_len, msg_prio);
+    if (-1 == ret) {
+      if (EINTR == errno) {
+        errno = 0;
+      }
+      else {
+        (void)SBMA_eligible(0);
+        return -1;
+      }
+    }
+    else {
+      break;
+    }
+  }
+
+  ret = SBMA_eligible(0);
+  if (-1 == ret)
+    return -1;
+
+  return retval;
+}
+
+
+/****************************************************************************/
+/*! Hook: mq_timedreceive */
+/****************************************************************************/
+extern ssize_t
+mq_timedreceive(mqd_t const mqdes, char * const msg_ptr, size_t const msg_len,
+                unsigned * const msg_prio,
+                struct timespec const * const abs_timeout)
+{
+  int ret;
+  ssize_t reval;
+
+  ret = SBMA_eligible(IPC_ELIGIBLE);
+  if (-1 == ret)
+    return -1;
+
+  /* TODO: issue #0000021 */
+  for (;;) {
+    retval = libc_mq_timedreceive(mqdes, msg_ptr, msg_len, msg_prio,\
+      abs_timeout);
+    if (-1 == ret) {
+      if (EINTR == errno) {
+        errno = 0;
+      }
+      else {
+        (void)SBMA_eligible(0);
+        return -1;
+      }
+    }
+    else {
+      break;
+    }
+  }
+
+  ret = SBMA_eligible(0);
+  if (-1 == ret)
+    return -1;
+
+  return retval;
 }
 #endif
 
