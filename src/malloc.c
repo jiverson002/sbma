@@ -74,7 +74,7 @@ __ooc_malloc__(size_t const __size)
   if (0 == __size)
     return NULL;
 
-  assert(__size > 0);
+  ASSERT(__size > 0);
 
   /* compute allocation sizes */
   page_size = vmm.page_size;
@@ -86,7 +86,7 @@ __ooc_malloc__(size_t const __size)
   /* check memory file to see if there is enough free memory to complete this
    * allocation. */
   if (VMM_LZYWR == (vmm.opts&VMM_LZYWR)) {
-    assert(IPC_ELIGIBLE != (vmm.ipc.flags[vmm.ipc.id]&IPC_ELIGIBLE));
+    ASSERT(IPC_ELIGIBLE != (vmm.ipc.flags[vmm.ipc.id]&IPC_ELIGIBLE));
     for (;;) {
       ret = __ipc_madmit__(&(vmm.ipc),\
         __vmm_to_sys__(s_pages+n_pages+f_pages));
@@ -259,7 +259,7 @@ __ooc_realloc__(void * const __ptr, size_t const __size)
   struct ate * ate;
   char ofname[FILENAME_MAX], nfname[FILENAME_MAX];
 
-  assert(__size > 0);
+  ASSERT(__size > 0);
 
   page_size = vmm.page_size;
   s_pages   = 1+((sizeof(struct ate)-1)/page_size);
@@ -327,7 +327,7 @@ __ooc_realloc__(void * const __ptr, size_t const __size)
     /* check memory file to see if there is enough free memory to complete
      * this allocation. */
     if (VMM_LZYWR == (vmm.opts&VMM_LZYWR)) {
-      assert(IPC_ELIGIBLE != (vmm.ipc.flags[vmm.ipc.id]&IPC_ELIGIBLE));
+      ASSERT(IPC_ELIGIBLE != (vmm.ipc.flags[vmm.ipc.id]&IPC_ELIGIBLE));
       for (;;) {
         ret = __ipc_madmit__(&(vmm.ipc),\
           __vmm_to_sys__((nn_pages-on_pages)+(nf_pages-of_pages)));
@@ -450,9 +450,9 @@ __ooc_remap__(void * const __nbase, void * const __obase, size_t const __size,
   nflags    = nate->flags;
   nptr      = (void*)((uintptr_t)__nbase+__off);
 
-  assert((uintptr_t)__obase == oate->base);
-  assert((uintptr_t)__nbase == nate->base);
-  assert(nate->l_pages == nate->n_pages);
+  ASSERT((uintptr_t)__obase == oate->base);
+  ASSERT((uintptr_t)__nbase == nate->base);
+  ASSERT(nate->l_pages == nate->n_pages);
 
   /* need to make sure that all bytes are captured, thus beg is a floor
    * operation and end is a ceil operation. */
@@ -479,7 +479,7 @@ __ooc_remap__(void * const __nbase, void * const __obase, size_t const __size,
     return -1;
 
   for (i=beg; i<end; ++i) {
-    assert(MMU_RSDNT != (nflags[i]&MMU_RSDNT));
+    ASSERT(MMU_RSDNT != (nflags[i]&MMU_RSDNT));
 
     /* copy zfill and dirty bit from old flag for clean pages */
     if (MMU_DIRTY != (nflags[i]&MMU_DIRTY))

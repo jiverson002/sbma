@@ -33,7 +33,6 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #endif
 
 
-#include <assert.h>   /* assert */
 #include <fcntl.h>    /* O_RDWR, O_CREAT, O_EXCL */
 #include <signal.h>   /* struct sigaction, siginfo_t, sigemptyset, sigaction */
 #include <stddef.h>   /* NULL, size_t */
@@ -193,9 +192,9 @@ __vmm_swap_i__(struct ate * const __ate, size_t const __beg,
   char fname[FILENAME_MAX];
 
   /* error check input values */
-  assert(NULL != __ate);
-  assert(__num <= __ate->n_pages);
-  assert(__beg <= __ate->n_pages-__num);
+  ASSERT(NULL != __ate);
+  ASSERT(__num <= __ate->n_pages);
+  ASSERT(__beg <= __ate->n_pages-__num);
 
   /* shortcut */
   if (0 == __num)
@@ -275,7 +274,7 @@ __vmm_swap_i__(struct ate * const __ate, size_t const __beg,
 
     if (ip != end) {
       if (MMU_RSDNT == (flags[ip]&MMU_RSDNT)) {
-        assert(__ate->l_pages < __ate->n_pages);
+        ASSERT(__ate->l_pages < __ate->n_pages);
         __ate->l_pages++;
 
         /* flag: *0* */
@@ -334,9 +333,9 @@ __vmm_swap_o__(struct ate * const __ate, size_t const __beg,
   char fname[FILENAME_MAX];
 
   /* error check input values */
-  assert(NULL != __ate);
-  assert(__num <= __ate->n_pages);
-  assert(__beg <= __ate->n_pages-__num);
+  ASSERT(NULL != __ate);
+  ASSERT(__num <= __ate->n_pages);
+  ASSERT(__beg <= __ate->n_pages-__num);
 
   /* shortcut */
   if (0 == __num)
@@ -370,7 +369,7 @@ __vmm_swap_o__(struct ate * const __ate, size_t const __beg,
   for (ipfirst=-1,ip=__beg; ip<=end; ++ip) {
     if (ip != end && (MMU_DIRTY != (flags[ip]&MMU_DIRTY))) {
       if (MMU_RSDNT != (flags[ip]&MMU_RSDNT)) {
-        assert(__ate->l_pages > 0);
+        ASSERT(__ate->l_pages > 0);
         __ate->l_pages--;
       }
 
@@ -380,12 +379,12 @@ __vmm_swap_o__(struct ate * const __ate, size_t const __beg,
     }
 
     if (ip != end && (MMU_DIRTY == (flags[ip]&MMU_DIRTY))) {
-      assert(MMU_RSDNT != (flags[ip]&MMU_RSDNT)); /* is resident */
+      ASSERT(MMU_RSDNT != (flags[ip]&MMU_RSDNT)); /* is resident */
 
       if (-1 == ipfirst)
         ipfirst = ip;
 
-      assert(__ate->l_pages > 0);
+      ASSERT(__ate->l_pages > 0);
       __ate->l_pages--;
 
       /* flag: 011 */
@@ -443,9 +442,9 @@ __vmm_swap_x__(struct ate * const __ate, size_t const __beg,
   uint8_t * flags;
 
   /* error check input values */
-  assert(NULL != __ate);
-  assert(__num <= __ate->n_pages);
-  assert(__beg <= __ate->n_pages-__num);
+  ASSERT(NULL != __ate);
+  ASSERT(__num <= __ate->n_pages);
+  ASSERT(__beg <= __ate->n_pages-__num);
 
   /* shortcut */
   if (0 == __num)
@@ -491,7 +490,7 @@ __vmm_sigsegv__(int const sig, siginfo_t * const si, void * const ctx)
   struct ate * ate;
 
   /* make sure we received a SIGSEGV */
-  assert(SIGSEGV == sig);
+  ASSERT(SIGSEGV == sig);
 
   /* setup local variables */
   page_size = vmm.page_size;
@@ -499,7 +498,7 @@ __vmm_sigsegv__(int const sig, siginfo_t * const si, void * const ctx)
 
   /* lookup allocation table entry */
   ate = __mmu_lookup_ate__(&(vmm.mmu), (void*)addr);
-  assert(NULL != ate);
+  ASSERT(NULL != ate);
 
   //printf("[%5d] SIGSEGV %p\n", (int)getpid(), si->si_addr);
 
@@ -526,7 +525,7 @@ __vmm_sigsegv__(int const sig, siginfo_t * const si, void * const ctx)
         break;
       }
       else {
-        assert(IPC_ELIGIBLE != (vmm.ipc.flags[vmm.ipc.id]&IPC_ELIGIBLE));
+        ASSERT(IPC_ELIGIBLE != (vmm.ipc.flags[vmm.ipc.id]&IPC_ELIGIBLE));
 
         ret = __ipc_madmit__(&(vmm.ipc), __vmm_to_sys__(l_pages));
         if (-1 == ret) {
@@ -535,7 +534,7 @@ __vmm_sigsegv__(int const sig, siginfo_t * const si, void * const ctx)
           }
           else {
             (void)LOCK_LET(&(ate->lock));
-            assert(0);
+            ASSERT(0);
           }
         }
         else {
@@ -547,16 +546,16 @@ __vmm_sigsegv__(int const sig, siginfo_t * const si, void * const ctx)
     /* swap in the required memory */
     if (VMM_LZYRD == (vmm.opts&VMM_LZYRD)) {
       numrd = __vmm_swap_i__(ate, ip, 1, vmm.opts&VMM_GHOST);
-      assert(-1 != numrd);
+      ASSERT(-1 != numrd);
     }
     else {
       numrd = __vmm_swap_i__(ate, 0, ate->n_pages, vmm.opts&VMM_GHOST);
-      assert(-1 != numrd);
+      ASSERT(-1 != numrd);
     }
 
     /* release lock on alloction table entry */
     ret = LOCK_LET(&(ate->lock));
-    assert(-1 != ret);
+    ASSERT(-1 != ret);
 
     /* track number of read faults, syspages read from disk, syspages
      * currently loaded, and high water mark for syspages loaded */
@@ -568,7 +567,7 @@ __vmm_sigsegv__(int const sig, siginfo_t * const si, void * const ctx)
   }
   else {
     /* sanity check */
-    assert(MMU_DIRTY != (flags[ip]&MMU_DIRTY)); /* not dirty */
+    ASSERT(MMU_DIRTY != (flags[ip]&MMU_DIRTY)); /* not dirty */
 
     /* flag: 100 */
     flags[ip] = MMU_DIRTY;
@@ -576,11 +575,11 @@ __vmm_sigsegv__(int const sig, siginfo_t * const si, void * const ctx)
     /* update protection to read-write */
     ret = mprotect((void*)(ate->base+(ip*page_size)), page_size,\
       PROT_READ|PROT_WRITE);
-    assert(-1 != ret);
+    ASSERT(-1 != ret);
 
     /* release lock on alloction table entry */
     ret = LOCK_LET(&(ate->lock));
-    assert(-1 != ret);
+    ASSERT(-1 != ret);
 
     /* track number of write faults */
     __vmm_track__(numwf, 1);
@@ -600,8 +599,8 @@ __vmm_sigipc__(int const sig, siginfo_t * const si, void * const ctx)
   size_t l_pages, numwr;
 
   /* make sure we received a SIGIPC */
-  assert(SIGIPC <= SIGRTMAX);
-  assert(SIGIPC == sig);
+  ASSERT(SIGIPC <= SIGRTMAX);
+  ASSERT(SIGIPC == sig);
 
   //printf("[%5d] SIGIPC\n", (int)getpid());
 
@@ -611,7 +610,7 @@ __vmm_sigipc__(int const sig, siginfo_t * const si, void * const ctx)
 
   /* evict all memory */
   ret = __ooc_mevictall_int__(&l_pages, &numwr);
-  assert(-1 != ret);
+  ASSERT(-1 != ret);
 
   /* update ipc memory statistics */
   *(vmm.ipc.smem)          += l_pages;
@@ -619,7 +618,7 @@ __vmm_sigipc__(int const sig, siginfo_t * const si, void * const ctx)
 
   /* signal to the waiting process that the memory has been released */
   ret = sem_post(vmm.ipc.trn1);
-  assert(-1 != ret);
+  ASSERT(-1 != ret);
 
   /* track number of syspages currently loaded, number of syspages written to
    * disk, and high water mark for syspages loaded */
@@ -687,7 +686,7 @@ __vmm_init__(struct vmm * const __vmm, size_t const __page_size,
   if (-1 == LOCK_INIT(&(__vmm->lock)))
     return -1;
 
-  assert(IPC_ELIGIBLE != (vmm.ipc.flags[vmm.ipc.id]&IPC_ELIGIBLE));
+  ASSERT(IPC_ELIGIBLE != (vmm.ipc.flags[vmm.ipc.id]&IPC_ELIGIBLE));
 
   return 0;
 }

@@ -42,7 +42,6 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #pragma GCC optimize("O0")
 
 
-#include <assert.h>    /* assert */
 #include <dlfcn.h>     /* dlsym */
 #include <fcntl.h>     /* open */
 #include <malloc.h>    /* struct mallinfo */
@@ -68,11 +67,11 @@ do {                                                                        \
   if (NULL == _libc_calloc) {                                               \
     _libc_calloc = internal_calloc;                                         \
     *((void **) &_libc_calloc) = dlsym(RTLD_NEXT, "calloc");                \
-    assert(NULL != _libc_calloc);                                           \
+    ASSERT(NULL != _libc_calloc);                                           \
   }                                                                         \
   if (NULL == _libc_##func) {                                               \
     *((void **) &_libc_##func) = dlsym(RTLD_NEXT, #func);                   \
-    assert(NULL != _libc_##func);                                           \
+    ASSERT(NULL != _libc_##func);                                           \
   }                                                                         \
 } while (0)
 

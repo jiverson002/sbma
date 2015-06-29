@@ -33,7 +33,6 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #endif
 
 
-#include <assert.h>    /* assert library */
 #include <errno.h>     /* errno */
 #include <fcntl.h>     /* O_RDWR, O_CREAT, O_EXCL */
 #include <semaphore.h> /* semaphore library */
@@ -88,49 +87,49 @@ do {\
   int __ipc_ret, __ipc_i, __ipc_count;\
   /* mutex.wait() */\
   __ipc_ret = sem_wait((__IPC)->mtx);\
-  assert(-1 != __ipc_ret);\
+  ASSERT(-1 != __ipc_ret);\
   /* count += 1 */\
   __ipc_ret = sem_post((__IPC)->cnt);\
-  assert(-1 != __ipc_ret);\
+  ASSERT(-1 != __ipc_ret);\
   /* if count == n: */\
   __ipc_ret = sem_getvalue((__IPC)->cnt, &__ipc_count);\
-  assert(-1 != __ipc_ret);\
+  ASSERT(-1 != __ipc_ret);\
   if((__IPC)->n_procs == __ipc_count) {\
     /* turnstile.signal(n) # unlock the first */\
     for(__ipc_i=0; __ipc_i<(__IPC)->n_procs; ++__ipc_i) {\
       __ipc_ret = sem_post((__IPC)->trn1);\
-      assert(-1 != __ipc_ret);\
+      ASSERT(-1 != __ipc_ret);\
     }\
   }\
   /* mutex.signal() */\
   __ipc_ret = sem_post((__IPC)->mtx);\
-  assert(-1 != __ipc_ret);\
+  ASSERT(-1 != __ipc_ret);\
   /* turnstile.wait() # first turnstile */\
   __ipc_ret = sem_wait((__IPC)->trn1);\
-  assert(-1 != __ipc_ret);\
+  ASSERT(-1 != __ipc_ret);\
 \
   /* mutex.wait() */\
   __ipc_ret = sem_wait((__IPC)->mtx);\
-  assert(-1 != __ipc_ret);\
+  ASSERT(-1 != __ipc_ret);\
   /* count -= 1 */\
   __ipc_ret = sem_wait((__IPC)->cnt);\
-  assert(-1 != __ipc_ret);\
+  ASSERT(-1 != __ipc_ret);\
   /* if count == 0: */\
   __ipc_ret = sem_getvalue((__IPC)->cnt, &__ipc_count);\
-  assert(-1 != __ipc_ret);\
+  ASSERT(-1 != __ipc_ret);\
   if(0 == __ipc_count) {\
     /* turnstile2.signal(n) # unlock the second */\
     for(__ipc_i=0; __ipc_i<(__IPC)->n_procs; ++__ipc_i) {\
       __ipc_ret = sem_post((__IPC)->trn2);\
-      assert(-1 != __ipc_ret);\
+      ASSERT(-1 != __ipc_ret);\
     }\
   }\
   /* mutex.signal() */\
   __ipc_ret = sem_post((__IPC)->mtx);\
-  assert(-1 != __ipc_ret);\
+  ASSERT(-1 != __ipc_ret);\
   /* turnstile2.wait() # second turnstile */\
   __ipc_ret = sem_wait((__IPC)->trn2);\
-  assert(-1 != __ipc_ret);\
+  ASSERT(-1 != __ipc_ret);\
 } while (0)
 
 
@@ -395,8 +394,8 @@ __ipc_madmit__(struct ipc * const __ipc, size_t const __value)
   //        bdmp_recv for EINTR
   // 3) repeat until enough free memory or no processes have any loaded memory
 
-  assert(IPC_ELIGIBLE != (__ipc->flags[__ipc->id]&IPC_ELIGIBLE));
-  assert(IPC_MADMIT != (__ipc->flags[__ipc->id]&IPC_MADMIT));
+  ASSERT(IPC_ELIGIBLE != (__ipc->flags[__ipc->id]&IPC_ELIGIBLE));
+  ASSERT(IPC_MADMIT != (__ipc->flags[__ipc->id]&IPC_MADMIT));
 
   //__ipc->flags[__ipc->id] |= IPC_ELIGIBLE;
   ret = libc_sem_wait(__ipc->mtx);
@@ -493,9 +492,9 @@ __ipc_madmit__(struct ipc * const __ipc, size_t const __value)
   }
 #endif
 
-  assert(IPC_ELIGIBLE != (__ipc->flags[__ipc->id]&IPC_ELIGIBLE));
-  assert(IPC_MADMIT != (__ipc->flags[__ipc->id]&IPC_MADMIT));
-  assert(smem >= 0);
+  ASSERT(IPC_ELIGIBLE != (__ipc->flags[__ipc->id]&IPC_ELIGIBLE));
+  ASSERT(IPC_MADMIT != (__ipc->flags[__ipc->id]&IPC_MADMIT));
+  ASSERT(smem >= 0);
 
   return smem;
 }
@@ -512,7 +511,7 @@ __ipc_mevict__(struct ipc * const __ipc, ssize_t const __value)
   if (__value > 0)
     return -1;
 
-  assert(IPC_ELIGIBLE != (__ipc->flags[__ipc->id]&IPC_ELIGIBLE));
+  ASSERT(IPC_ELIGIBLE != (__ipc->flags[__ipc->id]&IPC_ELIGIBLE));
 
   ret = libc_sem_wait(__ipc->mtx);
   if (-1 == ret)
@@ -525,14 +524,14 @@ __ipc_mevict__(struct ipc * const __ipc, ssize_t const __value)
   if (__ipc->pmem[__ipc->id] < -__value)
     printf("[%5d] %s:%d (%zd,%zu,%zd)\n", (int)getpid(), basename(__FILE__),
       __LINE__, *__ipc->smem, __ipc->pmem[__ipc->id], __value);
-  assert(__ipc->pmem[__ipc->id] >= -__value);
+  ASSERT(__ipc->pmem[__ipc->id] >= -__value);
   __ipc->pmem[__ipc->id] += __value;
 
   ret = sem_post(__ipc->mtx);
   if (-1 == ret)
     return -1;
 
-  assert(IPC_ELIGIBLE != (__ipc->flags[__ipc->id]&IPC_ELIGIBLE));
+  ASSERT(IPC_ELIGIBLE != (__ipc->flags[__ipc->id]&IPC_ELIGIBLE));
 
   return 0;
 }

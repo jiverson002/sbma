@@ -28,6 +28,13 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #define __CONFIG_H__ 1
 
 
+#ifndef _GNU_SOURCE
+# define _GNU_SOURCE
+#endif
+
+
+#include <stdlib.h>    /* abort */
+#include <string.h>    /* basename */
 #include <sys/types.h> /* ssize_t */
 
 
@@ -117,6 +124,21 @@ static __thread pthread_mutexattr_t attr;
 # define LOCK_FREE(LOCK) 0
 # define LOCK_GET(LOCK)  0
 # define LOCK_LET(LOCK)  0
+#endif
+
+
+/****************************************************************************/
+/*! Assert function. */
+/****************************************************************************/
+#ifndef NDEBUG
+# define ASSERT(COND)                                                       \
+do {                                                                        \
+  if (0 == (COND)) {                                                        \
+    fprintf(stderr, "[%5d] assertion failed: %s:%d: %s\n", (int)getpid(),   \
+      basename(__FILE__), __LINE__, #COND);                                 \
+    abort();                                                                \
+  }                                                                         \
+} while (0)
 #endif
 
 

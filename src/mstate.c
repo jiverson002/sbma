@@ -188,7 +188,7 @@ __ooc_mtouch__(void * const __addr, size_t const __len)
       break;
     }
     else {
-      assert(IPC_ELIGIBLE != (vmm.ipc.flags[vmm.ipc.id]&IPC_ELIGIBLE));
+      ASSERT(IPC_ELIGIBLE != (vmm.ipc.flags[vmm.ipc.id]&IPC_ELIGIBLE));
 
       ret = __ipc_madmit__(&(vmm.ipc), l_pages);
       if (-1 == ret) {
@@ -266,7 +266,7 @@ __ooc_mtouchall__(void)
         break;
       }
       else {
-        assert(IPC_ELIGIBLE != (vmm.ipc.flags[vmm.ipc.id]&IPC_ELIGIBLE));
+        ASSERT(IPC_ELIGIBLE != (vmm.ipc.flags[vmm.ipc.id]&IPC_ELIGIBLE));
 
         ret = __ipc_madmit__(&(vmm.ipc), retval);
         if (-1 == ret) {
