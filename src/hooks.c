@@ -367,6 +367,39 @@ libc_sem_timedwait(sem_t * const sem, struct timespec const * const ts)
 
 
 /****************************************************************************/
+/*! Hook: libc mq_send */
+/****************************************************************************/
+extern ssize_t
+libc_mq_send(mqd_t const mqdes, char const * const msg_ptr,
+             size_t const msg_len, unsigned const msg_prio)
+{
+  static int (*_libc_mq_send)(mqd_t, char const *, size_t, unsigned)=NULL;
+
+  HOOK_INIT(mq_send);
+
+  return _libc_mq_send(mqdes, msg_ptr, msg_len, msg_prio);
+}
+
+
+/****************************************************************************/
+/*! Hook: libc mq_timedsend */
+/****************************************************************************/
+extern ssize_t
+libc_mq_timedsend(mqd_t const mqdes, char const * const msg_ptr,
+                  size_t const msg_len, unsigned const msg_prio,
+                  struct timespec const * const abs_timeout)
+{
+  static int (*_libc_mq_timedsend)(mqd_t, char const *, size_t, unsigned,\
+    struct timespec const *)=NULL;
+
+  HOOK_INIT(mq_timedsend);
+
+  return _libc_mq_timedsend(mqdes, msg_ptr, msg_len, msg_prio,\
+    abs_timeout);
+}
+
+
+/****************************************************************************/
 /*! Hook: libc mq_receive */
 /****************************************************************************/
 extern ssize_t
@@ -759,6 +792,151 @@ sem_timedwait(sem_t * const sem, struct timespec const * const ts)
 
   for (;;) {
     ret = libc_sem_timedwait(sem, ts);
+    if (-1 == ret) {
+      if (EINTR == errno) {
+        errno = 0;
+      }
+      else {
+        (void)sbma_eligible(0);
+        return -1;
+      }
+    }
+    else {
+      break;
+    }
+  }
+
+  ret = sbma_eligible(0);
+  if (-1 == ret)
+    return -1;
+
+  return 0;
+}
+
+
+/****************************************************************************/
+/*! Hook: mq_send */
+/****************************************************************************/
+extern int
+mq_send(mqd_t const mqdes, char const * const msg_ptr, size_t const msg_len,
+        unsigned const msg_prio)
+{
+  int ret;
+  struct mq_attr oldattr, newattr;
+
+  /* get current mq attributes */
+  ret = mq_getattr(mqdes, &oldattr);
+  if (-1 == ret)
+    return -1;
+
+  /* set mq as non-blocking to test for message */
+  if (O_NONBLOCK != (oldattr.mq_flags&O_NONBLOCK)) {
+    memcpy(&newattr, &oldattr, sizeof(struct mq_attr));
+    newattr.mq_flags = O_NONBLOCK;
+    ret = mq_setattr(mqdes, &newattr, &oldattr);
+    if (-1 == ret)
+      return -1;
+  }
+
+  /* check if message can be received */
+  ret = libc_mq_send(mqdes, msg_ptr, msg_len, msg_prio);
+  if (-1 == ret) {
+    if (EAGAIN == errno)
+      errno = 0;
+    else
+      return -1;
+  }
+  else {
+    return 0;
+  }
+
+  /* reset mq attributes if necessary */
+  if (O_NONBLOCK != (oldattr.mq_flags&O_NONBLOCK)) {
+    ret = mq_setattr(mqdes, &oldattr, NULL);
+    if (-1 == ret)
+      return -1;
+  }
+
+  /* set as eligible and make possibly blocking library call */
+  ret = sbma_eligible(IPC_ELIGIBLE);
+  if (-1 == ret)
+    return -1;
+
+  for (;;) {
+    ret = libc_mq_send(mqdes, msg_ptr, msg_len, msg_prio);
+    if (-1 == ret) {
+      if (EINTR == errno) {
+        errno = 0;
+      }
+      else {
+        (void)sbma_eligible(0);
+        return -1;
+      }
+    }
+    else {
+      break;
+    }
+  }
+
+  ret = sbma_eligible(0);
+  if (-1 == ret)
+    return -1;
+
+  return 0;
+}
+
+
+/****************************************************************************/
+/*! Hook: mq_timedsend */
+/****************************************************************************/
+extern int
+mq_timedsend(mqd_t const mqdes, char const * const msg_ptr,
+             size_t const msg_len, unsigned const msg_prio,
+             struct timespec const * const abs_timeout)
+{
+  int ret;
+  struct mq_attr oldattr, newattr;
+
+  /* get current mq attributes */
+  ret = mq_getattr(mqdes, &oldattr);
+  if (-1 == ret)
+    return -1;
+
+  /* set mq as non-blocking to test for message */
+  if (O_NONBLOCK != (oldattr.mq_flags&O_NONBLOCK)) {
+    memcpy(&newattr, &oldattr, sizeof(struct mq_attr));
+    newattr.mq_flags = O_NONBLOCK;
+    ret = mq_setattr(mqdes, &newattr, &oldattr);
+    if (-1 == ret)
+      return -1;
+  }
+
+  /* check if message can be received */
+  ret = libc_mq_send(mqdes, msg_ptr, msg_len, msg_prio);
+  if (-1 == ret) {
+    if (EAGAIN == errno)
+      errno = 0;
+    else
+      return -1;
+  }
+  else {
+    return 0;
+  }
+
+  /* reset mq attributes if necessary */
+  if (O_NONBLOCK != (oldattr.mq_flags&O_NONBLOCK)) {
+    ret = mq_setattr(mqdes, &oldattr, NULL);
+    if (-1 == ret)
+      return -1;
+  }
+
+  /* set as eligible and make possibly blocking library call */
+  ret = sbma_eligible(IPC_ELIGIBLE);
+  if (-1 == ret)
+    return -1;
+
+  for (;;) {
+    ret = libc_mq_timedsend(mqdes, msg_ptr, msg_len, msg_prio, abs_timeout);
     if (-1 == ret) {
       if (EINTR == errno) {
         errno = 0;
