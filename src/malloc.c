@@ -46,6 +46,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "config.h"
 #include "ipc.h"
 #include "mmu.h"
+#include "sbma.h"
 #include "vmm.h"
 
 
@@ -81,7 +82,9 @@ __ooc_malloc__(size_t const __size)
 
   /* check memory file to see if there is enough free memory to complete this
    * allocation. */
+#if SBMA_MINOR < 2
   if (VMM_LZYWR == (vmm.opts&VMM_LZYWR)) {
+#endif
     ASSERT(IPC_ELIGIBLE != (vmm.ipc.flags[vmm.ipc.id]&IPC_ELIGIBLE));
     for (;;) {
       ret = __ipc_madmit__(&(vmm.ipc),\
@@ -96,7 +99,9 @@ __ooc_malloc__(size_t const __size)
         break;
       }
     }
+#if SBMA_MINOR < 2
   }
+#endif
 
   /* allocate memory */
   addr = (uintptr_t)mmap(NULL, (s_pages+n_pages+f_pages)*page_size,
@@ -208,12 +213,16 @@ __ooc_free__(void * const __ptr)
     return -1;
 
   /* update memory file */
+#if SBMA_MINOR < 2
   if (VMM_LZYWR == (vmm.opts&VMM_LZYWR)) {
+#endif
     ret = __ipc_mevict__(&(vmm.ipc),\
       -__vmm_to_sys__(s_pages+l_pages+f_pages));
     if (-1 == ret)
       return -1;
+#if SBMA_MINOR < 2
   }
+#endif
 
   /* track number of syspages currently loaded and allocated */
   __vmm_track__(curpages, -__vmm_to_sys__(s_pages+l_pages+f_pages));
@@ -284,12 +293,16 @@ __ooc_realloc__(void * const __ptr, size_t const __size)
       return NULL;
 
     /* update memory file */
+#if SBMA_MINOR < 2
     if (VMM_LZYWR == (vmm.opts&VMM_LZYWR)) {
+#endif
       ret = __ipc_mevict__(&(vmm.ipc),\
         -__vmm_to_sys__((on_pages-nn_pages)+(of_pages-nf_pages)));
       if (-1 == ret)
         return NULL;
+#if SBMA_MINOR < 2
     }
+#endif
 
     /* track number of syspages currently loaded and allocated */
     __vmm_track__(curpages,\
@@ -300,7 +313,9 @@ __ooc_realloc__(void * const __ptr, size_t const __size)
   else {
     /* check memory file to see if there is enough free memory to complete
      * this allocation. */
+#if SBMA_MINOR < 2
     if (VMM_LZYWR == (vmm.opts&VMM_LZYWR)) {
+#endif
       ASSERT(IPC_ELIGIBLE != (vmm.ipc.flags[vmm.ipc.id]&IPC_ELIGIBLE));
       for (;;) {
         ret = __ipc_madmit__(&(vmm.ipc),\
@@ -315,7 +330,9 @@ __ooc_realloc__(void * const __ptr, size_t const __size)
           break;
         }
       }
+#if SBMA_MINOR < 2
     }
+#endif
 
     /* resize allocation */
 #if 1

@@ -81,9 +81,6 @@ do {\
     sizeof(int))
 
 
-//#define ver_0_2_x
-
-
 /****************************************************************************/
 /*!
  * Inter-process communication process status bits:
@@ -402,7 +399,7 @@ __ipc_madmit__(struct ipc * const __ipc, size_t const __value)
   if (-1 == ret)
     return -1;
 
-#ifdef ver_0_2_x
+#if SBMA_MINOR >= 2
   if (smem < 0) {
     /* mark myself as eligible and blocked in madmit */
     flags[__ipc->id] |= IPC_ELIGIBLE;

@@ -184,25 +184,25 @@ __ooc_mtouch__(void * const __addr, size_t const __len)
       return -1;
     }
 
+#if SBMA_MINOR < 2
     if (VMM_LZYWR != (vmm.opts&VMM_LZYWR)) {
       break;
     }
-    else {
-      ASSERT(IPC_ELIGIBLE != (vmm.ipc.flags[vmm.ipc.id]&IPC_ELIGIBLE));
+#endif
+    ASSERT(IPC_ELIGIBLE != (vmm.ipc.flags[vmm.ipc.id]&IPC_ELIGIBLE));
 
-      ret = __ipc_madmit__(&(vmm.ipc), l_pages);
-      if (-1 == ret) {
-        if (EAGAIN == errno) {
-          errno = 0;
-        }
-        else {
-          (void)LOCK_LET(&(ate->lock));
-          return -1;
-        }
+    ret = __ipc_madmit__(&(vmm.ipc), l_pages);
+    if (-1 == ret) {
+      if (EAGAIN == errno) {
+        errno = 0;
       }
       else {
-        break;
+        (void)LOCK_LET(&(ate->lock));
+        return -1;
       }
+    }
+    else {
+      break;
     }
   }
 
@@ -260,26 +260,26 @@ __ooc_mtouchall__(void)
         return -1;
       }
 
+#if SBMA_MINOR < 2
       if (VMM_LZYWR != (vmm.opts&VMM_LZYWR)) {
         break;
       }
-      else {
-        ASSERT(IPC_ELIGIBLE != (vmm.ipc.flags[vmm.ipc.id]&IPC_ELIGIBLE));
+#endif
+      ASSERT(IPC_ELIGIBLE != (vmm.ipc.flags[vmm.ipc.id]&IPC_ELIGIBLE));
 
-        ret = __ipc_madmit__(&(vmm.ipc), retval);
-        if (-1 == ret) {
-          if (EAGAIN == errno) {
-            errno = 0;
-          }
-          else {
-            (void)LOCK_LET(&(ate->lock));
-            (void)LOCK_LET(&(vmm.lock));
-            return -1;
-          }
+      ret = __ipc_madmit__(&(vmm.ipc), retval);
+      if (-1 == ret) {
+        if (EAGAIN == errno) {
+          errno = 0;
         }
         else {
-          break;
+          (void)LOCK_LET(&(ate->lock));
+          (void)LOCK_LET(&(vmm.lock));
+          return -1;
         }
+      }
+      else {
+        break;
       }
     }
 
@@ -473,11 +473,15 @@ __ooc_mevict__(void * const __addr, size_t const __len)
   }
 
   /* update memory file */
+#if SBMA_MINOR < 2
   if (VMM_LZYWR == (vmm.opts&VMM_LZYWR)) {
+#endif
     ret = __ipc_mevict__(&(vmm.ipc), -l_pages);
     if (-1 == ret)
       return -1;
+#if SBMA_MINOR < 2
   }
+#endif
 
   /* track number of syspages currently loaded, number of syspages written to
    * disk, and high water mark for syspages loaded */
@@ -556,11 +560,15 @@ __ooc_mevictall__(void)
     return -1;
 
   /* update memory file */
+#if SBMA_MINOR < 2
   if (VMM_LZYWR == (vmm.opts&VMM_LZYWR)) {
+#endif
     ret = __ipc_mevict__(&(vmm.ipc), -l_pages);
     if (-1 == ret)
       return -1;
+#if SBMA_MINOR < 2
   }
+#endif
 
   /* track number of syspages currently loaded, number of syspages written to
    * disk, and high water mark for syspages loaded */

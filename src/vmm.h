@@ -520,25 +520,26 @@ __vmm_sigsegv__(int const sig, siginfo_t * const si, void * const ctx)
        * On the other hand, it requires the acquisition of a mutex for every
        * read fault. */
 
+#if SBMA_MINOR < 2
       if (VMM_LZYWR != (vmm.opts&VMM_LZYWR)) {
         break;
       }
-      else {
-        ASSERT(IPC_ELIGIBLE != (vmm.ipc.flags[vmm.ipc.id]&IPC_ELIGIBLE));
+#endif
 
-        ret = __ipc_madmit__(&(vmm.ipc), __vmm_to_sys__(l_pages));
-        if (-1 == ret) {
-          if (EAGAIN == errno) {
-            errno = 0;
-          }
-          else {
-            (void)LOCK_LET(&(ate->lock));
-            ASSERT(0);
-          }
+      ASSERT(IPC_ELIGIBLE != (vmm.ipc.flags[vmm.ipc.id]&IPC_ELIGIBLE));
+
+      ret = __ipc_madmit__(&(vmm.ipc), __vmm_to_sys__(l_pages));
+      if (-1 == ret) {
+        if (EAGAIN == errno) {
+          errno = 0;
         }
         else {
-          break;
+          (void)LOCK_LET(&(ate->lock));
+          ASSERT(0);
         }
+      }
+      else {
+        break;
       }
     }
 
