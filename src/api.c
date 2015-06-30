@@ -67,7 +67,8 @@ ssize_t __ooc_mclearall__(void);
 ssize_t __ooc_mevict__(void * const __addr, size_t const __len);
 ssize_t __ooc_mevictall__(void);
 int     __ooc_mexist__(void const * const __addr);
-int             __ooc_eligible__(int const __eligible);
+int     __ooc_eligible__(int const __eligible);
+int     __ooc_is_eligible__(void);
 
 #ifdef __cplusplus
 }
@@ -140,8 +141,10 @@ SBMA_destroy(void)
 /* mextra.c */
 API(sbma, int,             mallopt, (int const a, int const b), (a, b))
 API(sbma, struct mallinfo, mallinfo, (void), ())
-/* TODO: should not expose a SBMA_remap version, only sbma_remap */
+/* TODO: should not expose a SBMA_eligible version, only sbma_eligible */
 API(sbma, int,             eligible, (int const a), (a))
+/* TODO: should not expose a SBMA_is_eligible version, only sbma_is_eligible */
+API(sbma, int,             is_eligible, (void), ())
 
 /* mstate.c */
 API(sbma, ssize_t, mtouch,    (void * const a, size_t const b), (a, b))

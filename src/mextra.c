@@ -121,3 +121,16 @@ __ooc_eligible__(int const __eligible)
 
   return __ipc_eligible__(&(vmm.ipc), __eligible);
 }
+
+
+/****************************************************************************/
+/*! Modify the eligibility of a process for ipc memory tracking */
+/****************************************************************************/
+extern int
+__ooc_is_eligible__(void)
+{
+  if (0 == vmm.init)
+    return 0;
+
+  return __ipc_is_eligible__(&(vmm.ipc));
+}

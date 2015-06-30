@@ -602,26 +602,32 @@ __vmm_sigipc__(int const sig, siginfo_t * const si, void * const ctx)
   ASSERT(SIGIPC <= SIGRTMAX);
   ASSERT(SIGIPC == sig);
 
-  /* change my eligibility to ineligible - must be before any potential
-   * waiting, since SIGIPC could be raised again then. */
-  vmm.ipc.flags[vmm.ipc.id] &= ~IPC_ELIGIBLE;
+  /* TODO: is it possible / what happens if the process receives a SIGIPC
+   * while in this function? */
 
-  /* evict all memory */
-  ret = __ooc_mevictall_int__(&l_pages, &numwr);
-  ASSERT(-1 != ret);
+  /* Only honor the SIGIPC if my status is still eligible */
+  if (IPC_ELIGIBLE == (vmm.ipc.flags[vmm.ipc.id]&IPC_ELIGIBLE)) {
+    /* change my eligibility to ineligible - must be before any potential
+     * waiting, since SIGIPC could be raised again then. */
+    vmm.ipc.flags[vmm.ipc.id] &= ~IPC_ELIGIBLE;
 
-  /* update ipc memory statistics */
-  *(vmm.ipc.smem)          += l_pages;
-  vmm.ipc.pmem[vmm.ipc.id] -= l_pages;
+    /* evict all memory */
+    ret = __ooc_mevictall_int__(&l_pages, &numwr);
+    ASSERT(-1 != ret);
+
+    /* update ipc memory statistics */
+    *(vmm.ipc.smem)          += l_pages;
+    vmm.ipc.pmem[vmm.ipc.id] -= l_pages;
+
+    /* track number of syspages currently loaded, number of syspages written
+     * to disk, and high water mark for syspages loaded */
+    __vmm_track__(curpages, -l_pages);
+    __vmm_track__(numwr, numwr);
+  }
 
   /* signal to the waiting process that the memory has been released */
   ret = sem_post(vmm.ipc.trn1);
   ASSERT(-1 != ret);
-
-  /* track number of syspages currently loaded, number of syspages written to
-   * disk, and high water mark for syspages loaded */
-  __vmm_track__(curpages, -l_pages);
-  __vmm_track__(numwr, numwr);
 }
 
 

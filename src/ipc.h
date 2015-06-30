@@ -277,32 +277,22 @@ __ipc_destroy__(struct ipc * const __ipc)
 static inline int
 __ipc_eligible__(struct ipc * const __ipc, int const __eligible)
 {
-  int ret, i;
-
-  /* Wait for mutex, retrying if interrupted by a signal */
-  for (;;) {
-    ret = libc_sem_wait(__ipc->mtx);
-    if (-1 == ret) {
-      if (EINTR == errno)
-        errno = 0;
-      else
-        return -1;
-    }
-    else {
-      break;
-    }
-  }
-
   if (IPC_ELIGIBLE == (__eligible&IPC_ELIGIBLE))
     __ipc->flags[__ipc->id] |= IPC_ELIGIBLE;
   else
     __ipc->flags[__ipc->id] &= ~IPC_ELIGIBLE;
 
-  ret = sem_post(__ipc->mtx);
-  if (-1 == ret)
-    return -1;
-
   return 0;
+}
+
+
+/****************************************************************************/
+/*! Check elibibility for eviction for the process. */
+/****************************************************************************/
+static inline int
+__ipc_is_eligible__(struct ipc * const __ipc)
+{
+  return (IPC_ELIGIBLE == (__ipc->flags[__ipc->id]&IPC_ELIGIBLE));
 }
 
 
@@ -341,11 +331,6 @@ __ipc_madmit__(struct ipc * const __ipc, size_t const __value)
   ASSERT(IPC_ELIGIBLE != (__ipc->flags[__ipc->id]&IPC_ELIGIBLE));
 
   HNDLINTR(libc_sem_wait(__ipc->mtx));
-  //ret = libc_sem_wait(__ipc->mtx);
-  //if (-1 == ret) {
-  //  ASSERT(EINTR != errno);
-  //  return -1;
-  //}
 
   smem  = *__ipc->smem-__value;
   pmem  = __ipc->pmem;
@@ -361,6 +346,7 @@ __ipc_madmit__(struct ipc * const __ipc, size_t const __value)
         continue;
 
       if (IPC_ELIGIBLE == (flags[i]&IPC_ELIGIBLE)) {
+        /*if (pmem[__ipc->id] >= pmem[i] && pmem[i] > mxmem) {*/
         if (pmem[i] > mxmem) {
           ii = i;
           mxmem = pmem[i];
@@ -439,11 +425,6 @@ __ipc_mevict__(struct ipc * const __ipc, ssize_t const __value)
   ASSERT(IPC_ELIGIBLE != (__ipc->flags[__ipc->id]&IPC_ELIGIBLE));
 
   HNDLINTR(libc_sem_wait(__ipc->mtx));
-  //ret = libc_sem_wait(__ipc->mtx);
-  //if (-1 == ret) {
-  //  ASSERT(EINTR != errno);
-  //  return -1;
-  //}
 
   ASSERT(__ipc->pmem[__ipc->id] >= -__value);
 
