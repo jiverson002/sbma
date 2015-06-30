@@ -81,7 +81,20 @@ do {\
     sizeof(int))
 
 
-#define TEST
+//#define ver_0_2_x
+
+
+/****************************************************************************/
+/*!
+ * Inter-process communication process status bits:
+ *
+ *   bit 0 ==    0: ineligible           1: eligible for ipc memory eviction
+ */
+/****************************************************************************/
+enum ipc_code
+{
+  IPC_ELIGIBLE = 1 << 0
+};
 
 
 /****************************************************************************/
@@ -389,11 +402,8 @@ __ipc_madmit__(struct ipc * const __ipc, size_t const __value)
   if (-1 == ret)
     return -1;
 
-#ifdef TEST
+#ifdef ver_0_2_x
   if (smem < 0) {
-    //printf("[%5d] %s:%d (%zd,%zu,%zd)\n", (int)getpid(), basename(__FILE__),
-    //  __LINE__, *__ipc->smem, __value, smem);
-
     /* mark myself as eligible and blocked in madmit */
     flags[__ipc->id] |= IPC_ELIGIBLE;
 

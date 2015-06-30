@@ -94,6 +94,7 @@ __ooc_mtouch_int__(struct ate * const __ate, void * const __addr,
 }
 
 
+#if 0
 extern void
 __ooc_check__(char const * const file, int const line)
 {
@@ -157,6 +158,7 @@ __ooc_check__(char const * const file, int const line)
     printf("[%5d] %s:%d\n", (int)getpid(), basename(file), line);*/
   fflush(stdout);
 }
+#endif
 
 
 /****************************************************************************/
@@ -168,8 +170,6 @@ __ooc_mtouch__(void * const __addr, size_t const __len)
   int ret;
   ssize_t l_pages, numrd;
   struct ate * ate;
-
-  //__ooc_check__(__FILE__, __LINE__);
 
   ate = __mmu_lookup_ate__(&(vmm.mmu), __addr);
   if (NULL == ate)
@@ -222,8 +222,6 @@ __ooc_mtouch__(void * const __addr, size_t const __len)
   __vmm_track__(numrd, numrd);
   __vmm_track__(maxpages,\
     vmm.curpages>vmm.maxpages?vmm.curpages-vmm.maxpages:0);
-
-  //__ooc_check__(__FILE__, __LINE__);
 
   return l_pages;
 }
@@ -326,8 +324,6 @@ __ooc_mtouchall__(void)
   __vmm_track__(numrd, numrd);
   __vmm_track__(maxpages,\
     vmm.curpages>vmm.maxpages?vmm.curpages-vmm.maxpages:0);
-
-  //__ooc_check__(__FILE__, __LINE__);
 
   return l_pages;
 }
@@ -478,8 +474,6 @@ __ooc_mevict__(void * const __addr, size_t const __len)
 
   /* update memory file */
   if (VMM_LZYWR == (vmm.opts&VMM_LZYWR)) {
-    //printf("[%5d] %s:%d <%zu,%zu>\n", (int)getpid(), basename(__FILE__),
-    //  __LINE__, vmm.curpages, vmm.ipc.pmem[vmm.ipc.id]);
     ret = __ipc_mevict__(&(vmm.ipc), -l_pages);
     if (-1 == ret)
       return -1;
@@ -487,12 +481,8 @@ __ooc_mevict__(void * const __addr, size_t const __len)
 
   /* track number of syspages currently loaded, number of syspages written to
    * disk, and high water mark for syspages loaded */
-  if (l_pages > vmm.curpages)
-    printf("[%5d] %s:%d\n", (int)getpid(), basename(__FILE__), __LINE__);
   __vmm_track__(curpages, -l_pages);
   __vmm_track__(numwr, numwr);
-
-  //__ooc_check__(__FILE__, __LINE__);
 
   return l_pages;
 }
@@ -567,8 +557,6 @@ __ooc_mevictall__(void)
 
   /* update memory file */
   if (VMM_LZYWR == (vmm.opts&VMM_LZYWR)) {
-    //printf("[%5d] %s:%d <%zu,%zu>\n", (int)getpid(), basename(__FILE__),
-    //  __LINE__, vmm.curpages, vmm.ipc.pmem[vmm.ipc.id]);
     ret = __ipc_mevict__(&(vmm.ipc), -l_pages);
     if (-1 == ret)
       return -1;
@@ -576,12 +564,8 @@ __ooc_mevictall__(void)
 
   /* track number of syspages currently loaded, number of syspages written to
    * disk, and high water mark for syspages loaded */
-  if (l_pages > vmm.curpages)
-    printf("[%5d] %s:%d\n", (int)getpid(), basename(__FILE__), __LINE__);
   __vmm_track__(curpages, -l_pages);
   __vmm_track__(numwr, numwr);
-
-  //__ooc_check__(__FILE__, __LINE__);
 
   return l_pages;
 }

@@ -94,6 +94,7 @@ API(KL,   void *, malloc,  (size_t const a), (a))
 API(KL,   void *, calloc,  (size_t const a, size_t const b), (a, b))
 API(KL,   void *, realloc, (void * const a, size_t const b), (a, b))
 API(KL,   int,    free,    (void * const a), (a))
+/* TODO: should not expose a SBMA_remap version, only sbma_remap */
 API(sbma, int,    remap,   (void * const a, void * const b), (a, b))
 
 /* mcntrl.c */
@@ -139,6 +140,7 @@ SBMA_destroy(void)
 /* mextra.c */
 API(sbma, int,             mallopt, (int const a, int const b), (a, b))
 API(sbma, struct mallinfo, mallinfo, (void), ())
+/* TODO: should not expose a SBMA_remap version, only sbma_remap */
 API(sbma, int,             eligible, (int const a), (a))
 
 /* mstate.c */

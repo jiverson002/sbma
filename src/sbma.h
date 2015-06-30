@@ -72,26 +72,11 @@ enum SBMA_vmm_opt_code
 };
 
 
-/****************************************************************************/
-/*!
- * Virtual memory manager process eligibility bits:
- *
- *   bit 0 ==    0: ineligible           1: eligible for ipc memory eviction
- */
-/****************************************************************************/
-enum SBMA_ipc_code
-{
-  IPC_ELIGIBLE = 1 << 0
-};
-
-
 /* malloc.c */
 void * SBMA_malloc(size_t const size);
 void * SBMA_calloc(size_t const num, size_t const size);
 int    SBMA_free(void * const ptr);
 void * SBMA_realloc(void * const ptr, size_t const size);
-int    SBMA_remap(void * const nbase, void * const obase, size_t const size,
-                  size_t const off);
 
 /* mcntrl.c */
 int SBMA_init(char const * const fstem, size_t const page_size,
@@ -101,7 +86,6 @@ int SBMA_destroy(void);
 /* mextra.c */
 int             SBMA_mallopt(int const param, int const value);
 struct mallinfo SBMA_mallinfo(void);
-int             SBMA_eligible(int const eligible);
 
 /* mstate.c */
 ssize_t SBMA_mtouch(void * const ptr, size_t const size);

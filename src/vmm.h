@@ -501,8 +501,6 @@ __vmm_sigsegv__(int const sig, siginfo_t * const si, void * const ctx)
   ate = __mmu_lookup_ate__(&(vmm.mmu), (void*)addr);
   ASSERT(NULL != ate);
 
-  //printf("[%5d] SIGSEGV %p\n", (int)getpid(), si->si_addr);
-
   ip    = (addr-ate->base)/page_size;
   flags = ate->flags;
 
@@ -603,8 +601,6 @@ __vmm_sigipc__(int const sig, siginfo_t * const si, void * const ctx)
   ASSERT(SIGIPC <= SIGRTMAX);
   ASSERT(SIGIPC == sig);
 
-  //printf("[%5d] SIGIPC\n", (int)getpid());
-
   /* change my eligibility to ineligible - must be before any potential
    * waiting, since SIGIPC could be raised again then. */
   vmm.ipc.flags[vmm.ipc.id] &= ~IPC_ELIGIBLE;
@@ -636,6 +632,9 @@ __vmm_init__(struct vmm * const __vmm, size_t const __page_size,
              char const * const __fstem, int const __n_procs,
              size_t const __max_mem, int const __opts)
 {
+  if (1 == __vmm->init)
+    return 0;
+
   /* set page size */
   __vmm->page_size = __page_size;
 
@@ -697,6 +696,9 @@ __vmm_init__(struct vmm * const __vmm, size_t const __page_size,
 static inline int
 __vmm_destroy__(struct vmm * const __vmm)
 {
+  if (0 == vmm.init)
+    return 0;
+
   vmm.init = 0;
 
   /* reset signal handler for SIGSEGV */

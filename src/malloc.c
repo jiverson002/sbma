@@ -67,9 +67,6 @@ __ooc_malloc__(size_t const __size)
   struct ate * ate;
   char fname[FILENAME_MAX];
 
-  //printf("[%5d] %s:%d\n", (int)getpid(), basename(__FILE__), __LINE__);
-  //__ipc_print__(&(vmm.ipc));
-
   /* shortcut */
   if (0 == __size)
     return NULL;
@@ -82,7 +79,6 @@ __ooc_malloc__(size_t const __size)
   n_pages   = 1+((__size-1)/page_size);
   f_pages   = 1+((n_pages*sizeof(uint8_t)-1)/page_size);
 
-  //printf("[%5d] %s:%d\n", (int)getpid(), basename(__FILE__), __LINE__);
   /* check memory file to see if there is enough free memory to complete this
    * allocation. */
   if (VMM_LZYWR == (vmm.opts&VMM_LZYWR)) {
@@ -101,7 +97,6 @@ __ooc_malloc__(size_t const __size)
       }
     }
   }
-  //printf("[%5d] %s:%d\n", (int)getpid(), basename(__FILE__), __LINE__);
 
   /* allocate memory */
   addr = (uintptr_t)mmap(NULL, (s_pages+n_pages+f_pages)*page_size,
@@ -138,28 +133,22 @@ __ooc_malloc__(size_t const __size)
   ate->l_pages = n_pages;
   ate->base    = addr+(s_pages*page_size);
   ate->flags   = (uint8_t*)(addr+((s_pages+n_pages)*page_size));
-  //printf("[%5d] %s:%d\n", (int)getpid(), basename(__FILE__), __LINE__);
 
   /* initialize ate lock */
   ret = LOCK_INIT(&(ate->lock));
   if (-1 == ret)
     return NULL;
-  //printf("[%5d] %s:%d\n", (int)getpid(), basename(__FILE__), __LINE__);
 
   /* insert ate into mmu */
   ret = __mmu_insert_ate__(&(vmm.mmu), ate);
   if (-1 == ret)
     return NULL;
-  //printf("[%5d] %s:%d\n", (int)getpid(), basename(__FILE__), __LINE__);
 
-  //__ipc_print__(&(vmm.ipc));
   /* track number of syspages currently loaded, currently allocated, and high
    * water mark number of syspages */
   __vmm_track__(curpages, __vmm_to_sys__(s_pages+n_pages+f_pages));
   __vmm_track__(numpages, __vmm_to_sys__(s_pages+n_pages+f_pages));
   __vmm_track__(maxpages, vmm.curpages>vmm.maxpages?vmm.curpages-vmm.maxpages:0);
-  //__ipc_print__(&(vmm.ipc));
-  /*printf("[%5d] %s:%d\n", (int)getpid(), basename(__FILE__), __LINE__);*/
 
   return (void*)ate->base;
 }
@@ -220,27 +209,16 @@ __ooc_free__(void * const __ptr)
 
   /* update memory file */
   if (VMM_LZYWR == (vmm.opts&VMM_LZYWR)) {
-    //printf("[%5d] %s:%d <%zu,%zu>\n", (int)getpid(), basename(__FILE__),
-    //  __LINE__, vmm.curpages, vmm.ipc.pmem[vmm.ipc.id]);
     ret = __ipc_mevict__(&(vmm.ipc),\
       -__vmm_to_sys__(s_pages+l_pages+f_pages));
-    if (-1 == ret) {
-      if (EAGAIN == errno) {
-        printf("[%5d] %s:%d (%zu,%zu)\n", (int)getpid(), basename(__FILE__),
-          __LINE__, l_pages, ate->l_pages);
-      }
+    if (-1 == ret)
       return -1;
-    }
   }
 
   /* track number of syspages currently loaded and allocated */
-  if (__vmm_to_sys__(s_pages+l_pages+f_pages) > vmm.curpages)
-    printf("[%5d] %s:%d\n", (int)getpid(), basename(__FILE__), __LINE__);
   __vmm_track__(curpages, -__vmm_to_sys__(s_pages+l_pages+f_pages));
   __vmm_track__(numpages, -__vmm_to_sys__(s_pages+n_pages+f_pages));
 
-  //printf("[%5d] %s:%d <%zu,%zu>\n", (int)getpid(), basename(__FILE__),
-  //  __LINE__, vmm.curpages, vmm.ipc.pmem[vmm.ipc.id]);
   return 0;
 }
 
@@ -307,8 +285,6 @@ __ooc_realloc__(void * const __ptr, size_t const __size)
 
     /* update memory file */
     if (VMM_LZYWR == (vmm.opts&VMM_LZYWR)) {
-      //printf("[%5d] %s:%d <%zu,%zu>\n", (int)getpid(), basename(__FILE__),
-      //  __LINE__, vmm.curpages, vmm.ipc.pmem[vmm.ipc.id]);
       ret = __ipc_mevict__(&(vmm.ipc),\
         -__vmm_to_sys__((on_pages-nn_pages)+(of_pages-nf_pages)));
       if (-1 == ret)
@@ -316,8 +292,6 @@ __ooc_realloc__(void * const __ptr, size_t const __size)
     }
 
     /* track number of syspages currently loaded and allocated */
-    if (__vmm_to_sys__((ol_pages-ate->l_pages)+(of_pages-nf_pages)) > vmm.curpages)
-      printf("[%5d] %s:%d\n", (int)getpid(), basename(__FILE__), __LINE__);
     __vmm_track__(curpages,\
       -__vmm_to_sys__((ol_pages-ate->l_pages)+(of_pages-nf_pages)));
     __vmm_track__(numpages,\
