@@ -369,7 +369,7 @@ libc_sem_timedwait(sem_t * const sem, struct timespec const * const ts)
 /****************************************************************************/
 /*! Hook: libc mq_send */
 /****************************************************************************/
-extern ssize_t
+extern int
 libc_mq_send(mqd_t const mqdes, char const * const msg_ptr,
              size_t const msg_len, unsigned const msg_prio)
 {
@@ -384,7 +384,7 @@ libc_mq_send(mqd_t const mqdes, char const * const msg_ptr,
 /****************************************************************************/
 /*! Hook: libc mq_timedsend */
 /****************************************************************************/
-extern ssize_t
+extern int
 libc_mq_timedsend(mqd_t const mqdes, char const * const msg_ptr,
                   size_t const msg_len, unsigned const msg_prio,
                   struct timespec const * const abs_timeout)
@@ -394,8 +394,7 @@ libc_mq_timedsend(mqd_t const mqdes, char const * const msg_ptr,
 
   HOOK_INIT(mq_timedsend);
 
-  return _libc_mq_timedsend(mqdes, msg_ptr, msg_len, msg_prio,\
-    abs_timeout);
+  return _libc_mq_timedsend(mqdes, msg_ptr, msg_len, msg_prio, abs_timeout);
 }
 
 
