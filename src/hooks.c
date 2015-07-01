@@ -541,32 +541,12 @@ mallinfo(void)
 extern int
 stat(char const * path, struct stat * buf)
 {
-  int ret, retval, is_eligible;
-
-  is_eligible = sbma_is_eligible();
-
-  /* remove eligibility */
-  if (1 == is_eligible) {
-    ret = sbma_eligible(0);
-    if (-1 == ret)
-      return -1;
-  }
-
   if (1 == SBMA_mexist(path))
     (void)SBMA_mtouch((void*)path, strlen(path));
   if (1 == SBMA_mexist(buf))
     (void)SBMA_mtouch((void*)buf, sizeof(struct stat));
 
-  retval = libc_stat(path, buf);
-
-  /* reset eligibility */
-  if (1 == is_eligible) {
-    ret = sbma_eligible(IPC_ELIGIBLE);
-    if (-1 == ret)
-      return -1;
-  }
-
-  return retval;
+  return libc_stat(path, buf);
 }
 
 
@@ -576,32 +556,12 @@ stat(char const * path, struct stat * buf)
 extern int
 __xstat(int ver, const char * path, struct stat * buf)
 {
-  int ret, retval, is_eligible;
-
-  is_eligible = sbma_is_eligible();
-
-  /* remove eligibility */
-  if (1 == is_eligible) {
-    ret = sbma_eligible(0);
-    if (-1 == ret)
-      return -1;
-  }
-
   if (1 == SBMA_mexist(path))
     (void)SBMA_mtouch((void*)path, strlen(path));
   if (1 == SBMA_mexist(buf))
     (void)SBMA_mtouch((void*)buf, sizeof(struct stat));
 
-  retval = libc___xstat(ver, path, buf);
-
-  /* reset eligibility */
-  if (1 == is_eligible) {
-    ret = sbma_eligible(IPC_ELIGIBLE);
-    if (-1 == ret)
-      return -1;
-  }
-
-  return retval;
+  return libc___xstat(ver, path, buf);
 }
 
 
@@ -628,18 +588,8 @@ __xstat64(int ver, const char * path, struct stat64 * buf)
 extern int
 open(char const * path, int flags, ...)
 {
-  int ret, retval, is_eligible;
   va_list list;
   mode_t mode=0;
-
-  is_eligible = sbma_is_eligible();
-
-  /* remove eligibility */
-  if (1 == is_eligible) {
-    ret = sbma_eligible(0);
-    if (-1 == ret)
-      return -1;
-  }
 
   if (1 == SBMA_mexist(path))
     (void)SBMA_mtouch((void*)path, strlen(path));
@@ -649,16 +599,7 @@ open(char const * path, int flags, ...)
     mode = va_arg(list, mode_t);
   }
 
-  retval = libc_open(path, flags, mode);
-
-  /* reset eligibility */
-  if (1 == is_eligible) {
-    ret = sbma_eligible(IPC_ELIGIBLE);
-    if (-1 == ret)
-      return -1;
-  }
-
-  return retval;
+  return libc_open(path, flags, mode);
 }
 
 
@@ -668,18 +609,6 @@ open(char const * path, int flags, ...)
 extern ssize_t
 read(int const fd, void * const buf, size_t const count)
 {
-  int ret, is_eligible;
-  ssize_t retval;
-
-  is_eligible = sbma_is_eligible();
-
-  /* remove eligibility */
-  if (1 == is_eligible) {
-    ret = sbma_eligible(0);
-    if (-1 == ret)
-      return -1;
-  }
-
   /* NOTE: Consider the following execution sequence. During the call to
    * memset, the first n pages of buf are loaded, then the process must wait
    * because the system cannot support any additional memory. While waiting,
@@ -700,16 +629,7 @@ read(int const fd, void * const buf, size_t const count)
     memset(buf, 0, count);
   }
 
-  retval = libc_read(fd, buf, count);
-
-  /* reset eligibility */
-  if (1 == is_eligible) {
-    ret = sbma_eligible(IPC_ELIGIBLE);
-    if (-1 == ret)
-      return -1;
-  }
-
-  return retval;
+  return libc_read(fd, buf, count);
 }
 
 
@@ -719,31 +639,10 @@ read(int const fd, void * const buf, size_t const count)
 extern ssize_t
 write(int const fd, void const * const buf, size_t const count)
 {
-  int ret, is_eligible;
-  ssize_t retval;
-
-  is_eligible = sbma_is_eligible();
-
-  /* remove eligibility */
-  if (1 == is_eligible) {
-    ret = sbma_eligible(0);
-    if (-1 == ret)
-      return -1;
-  }
-
   if (1 == SBMA_mexist(buf))
     (void)SBMA_mtouch((void*)buf, count);
 
-  retval = libc_write(fd, buf, count);
-
-  /* reset eligibility */
-  if (1 == is_eligible) {
-    ret = sbma_eligible(IPC_ELIGIBLE);
-    if (-1 == ret)
-      return -1;
-  }
-
-  return retval;
+  return libc_write(fd, buf, count);
 }
 
 
@@ -754,18 +653,6 @@ extern size_t
 fread(void * const buf, size_t const size, size_t const num,
       FILE * const stream)
 {
-  int ret, is_eligible;
-  size_t retval;
-
-  is_eligible = sbma_is_eligible();
-
-  /* remove eligibility */
-  if (1 == is_eligible) {
-    ret = sbma_eligible(0);
-    if (-1 == ret)
-      return -1;
-  }
-
   if (1 == SBMA_mexist(buf)) {
     /* NOTE: For an explaination of why memset() must be used instead of
      * SBMA_mtouch(), see discussion in read(). */
@@ -773,16 +660,7 @@ fread(void * const buf, size_t const size, size_t const num,
     memset(buf, 0, size*num);
   }
 
-  retval = libc_fread(buf, size, num, stream);
-
-  /* reset eligibility */
-  if (1 == is_eligible) {
-    ret = sbma_eligible(IPC_ELIGIBLE);
-    if (-1 == ret)
-      return -1;
-  }
-
-  return retval;
+  return libc_fread(buf, size, num, stream);
 }
 
 
@@ -793,31 +671,10 @@ extern size_t
 fwrite(void const * const buf, size_t const size, size_t const num,
        FILE * const stream)
 {
-  int ret, is_eligible;
-  size_t retval;
-
-  is_eligible = sbma_is_eligible();
-
-  /* remove eligibility */
-  if (1 == is_eligible) {
-    ret = sbma_eligible(0);
-    if (-1 == ret)
-      return -1;
-  }
-
   if (1 == SBMA_mexist(buf))
     (void)SBMA_mtouch((void*)buf, size);
 
-  retval = libc_fwrite(buf, size, num, stream);
-
-  /* reset eligibility */
-  if (1 == is_eligible) {
-    ret = sbma_eligible(IPC_ELIGIBLE);
-    if (-1 == ret)
-      return -1;
-  }
-
-  return retval;
+  return libc_fwrite(buf, size, num, stream);
 }
 
 
@@ -827,24 +684,8 @@ fwrite(void const * const buf, size_t const size, size_t const num,
 extern int
 mlock(void const * const addr, size_t const len)
 {
-  int ret, retval, is_eligible;
-
-  is_eligible = sbma_is_eligible();
-
-  /* remove eligibility */
-  if (1 == is_eligible) {
-    ret = sbma_eligible(0);
-    if (-1 == ret)
-      return -1;
-  }
-
   (void)SBMA_mtouch((void*)addr, len);
-
-  retval = libc_mlock(addr, len);
-
-  /* do not reset eligibility */
-
-  return retval;
+  return libc_mlock(addr, len);
 }
 
 
@@ -854,24 +695,8 @@ mlock(void const * const addr, size_t const len)
 extern int
 mlockall(int flags)
 {
-  int ret, reval, is_eligible;
-
-  is_eligible = sbma_is_eligible();
-
-  /* remove eligibility */
-  if (1 == is_eligible) {
-    ret = sbma_eligible(0);
-    if (-1 == ret)
-      return -1;
-  }
-
   (void)SBMA_mtouchall();
-
-  retval = libc_mlockall(flags);
-
-  /* do not reset eligibility */
-
-  return retval;
+  return libc_mlockall(flags);
 }
 
 
@@ -899,8 +724,10 @@ sem_wait(sem_t * const sem)
 
   is_eligible = sbma_is_eligible();
 
-  /* try to wait before blocking */
+  /* add eligibility */
   if (0 == is_eligible) {
+    /* try to wait before blocking */
+#if 0
     for (;;) {
       ret = sem_trywait(sem);
       if (-1 == ret) {
@@ -916,11 +743,11 @@ sem_wait(sem_t * const sem)
         }
       }
       else {
-        return ret;
+        return 0;
       }
     }
+#endif
 
-    /* add eligibility */
     ret = sbma_eligible(IPC_ELIGIBLE);
     if (-1 == ret)
       return -1;
@@ -964,8 +791,10 @@ sem_timedwait(sem_t * const sem, struct timespec const * const ts)
 
   is_eligible = sbma_is_eligible();
 
-  /* try to wait before blocking */
+  /* add eligibility */
   if (0 == is_eligible) {
+    /* try to wait before blocking */
+#if 0
     for (;;) {
       ret = sem_trywait(sem);
       if (-1 == ret) {
@@ -981,11 +810,11 @@ sem_timedwait(sem_t * const sem, struct timespec const * const ts)
         }
       }
       else {
-        return ret;
+        return 0;
       }
     }
+#endif
 
-    /* add eligibility */
     ret = sbma_eligible(IPC_ELIGIBLE);
     if (-1 == ret)
       return -1;
@@ -1031,8 +860,9 @@ mq_send(mqd_t const mqdes, char const * const msg_ptr, size_t const msg_len,
 
   is_eligible = sbma_is_eligible();
 
-  /* try to send before blocking */
+  /* add eligibility */
   if (0 == is_eligible) {
+    /* try to send before blocking */
 #if 0
     /* get current mq attributes */
     ret = mq_getattr(mqdes, &oldattr);
@@ -1076,7 +906,6 @@ mq_send(mqd_t const mqdes, char const * const msg_ptr, size_t const msg_len,
     }
 #endif
 
-    /* add eligibility */
     ret = sbma_eligible(IPC_ELIGIBLE);
     if (-1 == ret)
       return -1;
@@ -1123,8 +952,9 @@ mq_timedsend(mqd_t const mqdes, char const * const msg_ptr,
 
   is_eligible = sbma_is_eligible();
 
-  /* try to send before blocking */
+  /* add eligibility */
   if (0 == is_eligible) {
+    /* try to send before blocking */
 #if 0
     /* get current mq attributes */
     ret = mq_getattr(mqdes, &oldattr);
@@ -1168,7 +998,6 @@ mq_timedsend(mqd_t const mqdes, char const * const msg_ptr,
     }
 #endif
 
-    /* add eligibility */
     ret = sbma_eligible(IPC_ELIGIBLE);
     if (-1 == ret)
       return -1;
@@ -1215,8 +1044,9 @@ mq_receive(mqd_t const mqdes, char * const msg_ptr, size_t const msg_len,
 
   is_eligible = sbma_is_eligible();
 
-  /* try to receive before blocking */
+  /* add eligibility */
   if (0 == is_eligible) {
+    /* try to receive before blocking */
 #if 0
     /* get current mq attributes */
     ret = mq_getattr(mqdes, &oldattr);
@@ -1260,7 +1090,6 @@ mq_receive(mqd_t const mqdes, char * const msg_ptr, size_t const msg_len,
     }
 #endif
 
-    /* add eligibility */
     ret = sbma_eligible(IPC_ELIGIBLE);
     if (-1 == ret)
       return -1;
@@ -1308,8 +1137,9 @@ mq_timedreceive(mqd_t const mqdes, char * const msg_ptr, size_t const msg_len,
 
   is_eligible = sbma_is_eligible();
 
-  /* try to receive before blocking */
+  /* add eligibility */
   if (0 == is_eligible) {
+    /* try to receive before blocking */
 #if 0
     /* get current mq attributes */
     ret = mq_getattr(mqdes, &oldattr);
@@ -1353,7 +1183,6 @@ mq_timedreceive(mqd_t const mqdes, char * const msg_ptr, size_t const msg_len,
     }
 #endif
 
-    /* add eligibility */
     ret = sbma_eligible(IPC_ELIGIBLE);
     if (-1 == ret)
       return -1;
