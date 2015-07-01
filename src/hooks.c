@@ -899,27 +899,34 @@ sem_wait(sem_t * const sem)
 
   is_eligible = sbma_is_eligible();
 
-  /* try to wait before becoming eligible */
-#if 0
+  /* try to wait before blocking */
   if (0 == is_eligible) {
-    ret = sem_trywait(sem);
-    if (-1 == ret) {
-      if (EAGAIN == errno)
-        errno = 0;
-      else
-        return -1;
+    for (;;) {
+      ret = sem_trywait(sem);
+      if (-1 == ret) {
+        if (EAGAIN == errno) {
+          errno = 0;
+          break;
+        }
+        else if (EINTR == errno) {
+          errno = 0;
+        }
+        else {
+          return -1;
+        }
+      }
+      else {
+        return ret;
+      }
     }
-    else {
-      return ret;
-    }
+
+    /* add eligibility */
+    ret = sbma_eligible(IPC_ELIGIBLE);
+    if (-1 == ret)
+      return -1;
   }
-#endif
 
-  /* add eligibility */
-  ret = sbma_eligible(IPC_ELIGIBLE);
-  if (-1 == ret)
-    return -1;
-
+  /* perform blocking wait */
   for (;;) {
     ret = libc_sem_wait(sem);
     if (-1 == ret) {
@@ -937,9 +944,11 @@ sem_wait(sem_t * const sem)
   }
 
   /* reset eligibility */
-  ret = sbma_eligible((0 == is_eligible) ? 0 : IPC_ELIGIBLE);
-  if (-1 == ret)
-    return -1;
+  if (0 == is_eligible) {
+    ret = sbma_eligible(0);
+    if (-1 == ret)
+      return -1;
+  }
 
   return 0;
 }
@@ -955,27 +964,34 @@ sem_timedwait(sem_t * const sem, struct timespec const * const ts)
 
   is_eligible = sbma_is_eligible();
 
-#if 0
-  /* try to wait before becoming eligible */
+  /* try to wait before blocking */
   if (0 == is_eligible) {
-    ret = sem_trywait(sem);
-    if (-1 == ret) {
-      if (EAGAIN == errno)
-        errno = 0;
-      else
-        return -1;
+    for (;;) {
+      ret = sem_trywait(sem);
+      if (-1 == ret) {
+        if (EAGAIN == errno) {
+          errno = 0;
+          break;
+        }
+        else if (EINTR == errno) {
+          errno = 0;
+        }
+        else {
+          return -1;
+        }
+      }
+      else {
+        return ret;
+      }
     }
-    else {
-      return ret;
-    }
+
+    /* add eligibility */
+    ret = sbma_eligible(IPC_ELIGIBLE);
+    if (-1 == ret)
+      return -1;
   }
-#endif
 
-  /* add eligibility */
-  ret = sbma_eligible(IPC_ELIGIBLE);
-  if (-1 == ret)
-    return -1;
-
+  /* perform blocking wait */
   for (;;) {
     ret = libc_sem_timedwait(sem, ts);
     if (-1 == ret) {
@@ -993,9 +1009,11 @@ sem_timedwait(sem_t * const sem, struct timespec const * const ts)
   }
 
   /* reset eligibility */
-  ret = sbma_eligible((0 == is_eligible) ? 0 : IPC_ELIGIBLE);
-  if (-1 == ret)
-    return -1;
+  if (0 == is_eligible) {
+    ret = sbma_eligible(0);
+    if (-1 == ret)
+      return -1;
+  }
 
   return 0;
 }
@@ -1013,8 +1031,9 @@ mq_send(mqd_t const mqdes, char const * const msg_ptr, size_t const msg_len,
 
   is_eligible = sbma_is_eligible();
 
-#if 0
+  /* try to send before blocking */
   if (0 == is_eligible) {
+#if 0
     /* get current mq attributes */
     ret = mq_getattr(mqdes, &oldattr);
     if (-1 == ret)
@@ -1055,14 +1074,15 @@ mq_send(mqd_t const mqdes, char const * const msg_ptr, size_t const msg_len,
       if (-1 == ret)
         return -1;
     }
-  }
 #endif
 
-  /* add eligibility */
-  ret = sbma_eligible(IPC_ELIGIBLE);
-  if (-1 == ret)
-    return -1;
+    /* add eligibility */
+    ret = sbma_eligible(IPC_ELIGIBLE);
+    if (-1 == ret)
+      return -1;
+  }
 
+  /* perform blocking send */
   for (;;) {
     ret = libc_mq_send(mqdes, msg_ptr, msg_len, msg_prio);
     if (-1 == ret) {
@@ -1080,9 +1100,11 @@ mq_send(mqd_t const mqdes, char const * const msg_ptr, size_t const msg_len,
   }
 
   /* reset eligibility */
-  ret = sbma_eligible((0 == is_eligible) ? 0 : IPC_ELIGIBLE);
-  if (-1 == ret)
-    return -1;
+  if (0 == is_eligible) {
+    ret = sbma_eligible(0);
+    if (-1 == ret)
+      return -1;
+  }
 
   return 0;
 }
@@ -1101,8 +1123,9 @@ mq_timedsend(mqd_t const mqdes, char const * const msg_ptr,
 
   is_eligible = sbma_is_eligible();
 
-#if 0
+  /* try to send before blocking */
   if (0 == is_eligible) {
+#if 0
     /* get current mq attributes */
     ret = mq_getattr(mqdes, &oldattr);
     if (-1 == ret)
@@ -1143,14 +1166,15 @@ mq_timedsend(mqd_t const mqdes, char const * const msg_ptr,
       if (-1 == ret)
         return -1;
     }
-  }
 #endif
 
-  /* add eligibility */
-  ret = sbma_eligible(IPC_ELIGIBLE);
-  if (-1 == ret)
-    return -1;
+    /* add eligibility */
+    ret = sbma_eligible(IPC_ELIGIBLE);
+    if (-1 == ret)
+      return -1;
+  }
 
+  /* perform block send */
   for (;;) {
     ret = libc_mq_timedsend(mqdes, msg_ptr, msg_len, msg_prio, abs_timeout);
     if (-1 == ret) {
@@ -1168,9 +1192,11 @@ mq_timedsend(mqd_t const mqdes, char const * const msg_ptr,
   }
 
   /* reset eligibility */
-  ret = sbma_eligible((0 == is_eligible) ? 0 : IPC_ELIGIBLE);
-  if (-1 == ret)
-    return -1;
+  if (0 == is_eligible) {
+    ret = sbma_eligible(0);
+    if (-1 == ret)
+      return -1;
+  }
 
   return 0;
 }
@@ -1189,8 +1215,9 @@ mq_receive(mqd_t const mqdes, char * const msg_ptr, size_t const msg_len,
 
   is_eligible = sbma_is_eligible();
 
-#if 0
+  /* try to receive before blocking */
   if (0 == is_eligible) {
+#if 0
     /* get current mq attributes */
     ret = mq_getattr(mqdes, &oldattr);
     if (-1 == ret)
@@ -1231,14 +1258,15 @@ mq_receive(mqd_t const mqdes, char * const msg_ptr, size_t const msg_len,
       if (-1 == ret)
         return -1;
     }
-  }
 #endif
 
-  /* add eligibility */
-  ret = sbma_eligible(IPC_ELIGIBLE);
-  if (-1 == ret)
-    return -1;
+    /* add eligibility */
+    ret = sbma_eligible(IPC_ELIGIBLE);
+    if (-1 == ret)
+      return -1;
+  }
 
+  /* perform blocking receive */
   for (;;) {
     retval = libc_mq_receive(mqdes, msg_ptr, msg_len, msg_prio);
     if (-1 == retval) {
@@ -1256,9 +1284,11 @@ mq_receive(mqd_t const mqdes, char * const msg_ptr, size_t const msg_len,
   }
 
   /* reset eligibility */
-  ret = sbma_eligible((0 == is_eligible) ? 0 : IPC_ELIGIBLE);
-  if (-1 == ret)
-    return -1;
+  if (0 == is_eligible) {
+    ret = sbma_eligible(0);
+    if (-1 == ret)
+      return -1;
+  }
 
   return retval;
 }
@@ -1278,8 +1308,9 @@ mq_timedreceive(mqd_t const mqdes, char * const msg_ptr, size_t const msg_len,
 
   is_eligible = sbma_is_eligible();
 
-#if 0
+  /* try to receive before blocking */
   if (0 == is_eligible) {
+#if 0
     /* get current mq attributes */
     ret = mq_getattr(mqdes, &oldattr);
     if (-1 == ret)
@@ -1320,14 +1351,15 @@ mq_timedreceive(mqd_t const mqdes, char * const msg_ptr, size_t const msg_len,
       if (-1 == ret)
         return -1;
     }
-  }
 #endif
 
-  /* add eligibility */
-  ret = sbma_eligible(IPC_ELIGIBLE);
-  if (-1 == ret)
-    return -1;
+    /* add eligibility */
+    ret = sbma_eligible(IPC_ELIGIBLE);
+    if (-1 == ret)
+      return -1;
+  }
 
+  /* perform blocking receive */
   for (;;) {
     retval = libc_mq_timedreceive(mqdes, msg_ptr, msg_len, msg_prio,\
       abs_timeout);
@@ -1346,9 +1378,11 @@ mq_timedreceive(mqd_t const mqdes, char * const msg_ptr, size_t const msg_len,
   }
 
   /* reset eligibility */
-  ret = sbma_eligible((0 == is_eligible) ? 0 : IPC_ELIGIBLE);
-  if (-1 == ret)
-    return -1;
+  if (0 == is_eligible) {
+    ret = sbma_eligible(0);
+    if (-1 == ret)
+      return -1;
+  }
 
   return retval;
 }
