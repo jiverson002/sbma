@@ -220,12 +220,12 @@ do {                                                                        \
 void * __sbma_malloc(size_t const size);
 void * __sbma_realloc(void * const ptr, size_t const size);
 int    __sbma_free(void * const ptr);
-int    __sbma_remap(void * const nptr, void * const ptr, size_t const num,
-                    size_t const off);
+//int    __sbma_remap(void * const nptr, void * const ptr, size_t const num,
+//                    size_t const off);
 # define SYS_ALLOC_FAIL NULL
 # define CALL_SYS_ALLOC(P,S)       ((P)=__sbma_malloc(S))
 # define CALL_SYS_REALLOC(N,O,S,F) ((N)=__sbma_realloc(O,F))
-# define CALL_SYS_REMAP(N,O,S,F)   __sbma_remap(N,O,S,F)
+//# define CALL_SYS_REMAP(N,O,S,F)   __sbma_remap(N,O,S,F)
 # define CALL_SYS_FREE(P,S)        __sbma_free(P)
 # define CALL_SYS_BZERO(P,S)
 #endif

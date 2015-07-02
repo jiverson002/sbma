@@ -78,7 +78,7 @@ __sbma_malloc(size_t const __size)
 
   /* check memory file to see if there is enough free memory to complete this
    * allocation. */
-#if SBMA_MINOR < 2
+#if SBMA_VERSION < 200
   if (VMM_LZYWR == (vmm.opts&VMM_LZYWR)) {
 #endif
     ASSERT(IPC_ELIGIBLE != (vmm.ipc.flags[vmm.ipc.id]&IPC_ELIGIBLE));
@@ -95,7 +95,7 @@ __sbma_malloc(size_t const __size)
         break;
       }
     }
-#if SBMA_MINOR < 2
+#if SBMA_VERSION < 200
   }
 #endif
 
@@ -213,13 +213,13 @@ __sbma_free(void * const __ptr)
     return -1;
 
   /* update memory file */
-#if SBMA_MINOR < 2
+#if SBMA_VERSION < 200
   if (VMM_LZYWR == (vmm.opts&VMM_LZYWR)) {
 #endif
     ret = __ipc_mevict(&(vmm.ipc), -VMM_TO_SYS(s_pages+l_pages+f_pages));
     if (-1 == ret)
       return -1;
-#if SBMA_MINOR < 2
+#if SBMA_VERSION < 200
   }
 #endif
 
@@ -294,14 +294,14 @@ __sbma_realloc(void * const __ptr, size_t const __size)
       return NULL;
 
     /* update memory file */
-#if SBMA_MINOR < 2
+#if SBMA_VERSION < 200
     if (VMM_LZYWR == (vmm.opts&VMM_LZYWR)) {
 #endif
       ret = __ipc_mevict(&(vmm.ipc),\
         -VMM_TO_SYS((on_pages-nn_pages)+(of_pages-nf_pages)));
       if (-1 == ret)
         return NULL;
-#if SBMA_MINOR < 2
+#if SBMA_VERSION < 200
     }
 #endif
 
@@ -314,7 +314,7 @@ __sbma_realloc(void * const __ptr, size_t const __size)
   else {
     /* check memory file to see if there is enough free memory to complete
      * this allocation. */
-#if SBMA_MINOR < 2
+#if SBMA_VERSION < 200
     if (VMM_LZYWR == (vmm.opts&VMM_LZYWR)) {
 #endif
       ASSERT(IPC_ELIGIBLE != (vmm.ipc.flags[vmm.ipc.id]&IPC_ELIGIBLE));
@@ -331,7 +331,7 @@ __sbma_realloc(void * const __ptr, size_t const __size)
           break;
         }
       }
-#if SBMA_MINOR < 2
+#if SBMA_VERSION < 200
     }
 #endif
 
@@ -416,6 +416,13 @@ SBMA_EXPORT(internal, void *
 __sbma_realloc(void * const __ptr, size_t const __size));
 
 
+#if SBMA_VERSION < 200
+/* NOTE: For now, __sbma_remap is disabled in versions >= 0.2.0. The reason
+ * for this is that it works by assuming that memory protections are
+ * completely contained within this function. Unfortunately, due to the
+ * removal of the nrunning assumption at v0.2.0, this no longer holds. It is
+ * possible that during the __sbma_mtouch or memcpy call, memory may be
+ * evicted. */
 /****************************************************************************/
 /*! Remap an address range to a new address. */
 /****************************************************************************/
@@ -450,6 +457,14 @@ __sbma_remap(void * const __nbase, void * const __obase, size_t const __size,
    * operation and end is a ceil operation. */
   beg = ((uintptr_t)nptr-nate->base)/page_size;
   end = 1+(((uintptr_t)nptr+__size-nate->base-1)/page_size);
+
+  /* TODO: there is a performance issue here in version >= 0.2.0 due to the
+   * following. since the process may become eligible during the call to
+   * __sbma_mtouch, the new memory could be evicted. then during the memcpy,
+   * when loading the two different allocations, it is possible that the
+   * process will load one then evict, then load the other, then evict. This
+   * will lead to a huge performance decrease. There should be some way to
+   * load both with a single 'mtouch' like call. */
 
   /* load old memory */
   ret = __sbma_mtouch(optr, __size);
@@ -507,3 +522,4 @@ __sbma_remap(void * const __nbase, void * const __obase, size_t const __size,
 SBMA_EXPORT(internal, int
 __sbma_remap(void * const __nbase, void * const __obase, size_t const __size,
              size_t const __off));
+#endif

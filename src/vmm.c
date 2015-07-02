@@ -167,7 +167,7 @@ __vmm_sigsegv(int const sig, siginfo_t * const si, void * const ctx)
        * On the other hand, it requires the acquisition of a mutex for every
        * read fault. */
 
-#if SBMA_MINOR < 2
+#if SBMA_VERSION < 200
       if (VMM_LZYWR != (vmm.opts&VMM_LZYWR)) {
         break;
       }

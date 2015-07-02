@@ -34,6 +34,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <sys/types.h> /* ssize_t */
 #include "config.h"
 #include "klmalloc.h"
+#include "sbma.h"
 
 
 /****************************************************************************/
@@ -94,7 +95,9 @@ API(KL,     void *, malloc,  (size_t const a), (a))
 API(KL,     void *, calloc,  (size_t const a, size_t const b), (a, b))
 API(KL,     void *, realloc, (void * const a, size_t const b), (a, b))
 API(KL,     int,    free,    (void * const a), (a))
+#if SBMA_VERSION < 200
 API(__sbma, int,    remap,   (void * const a, void * const b), (a, b))
+#endif
 
 /* mcntrl.c */
 SBMA_EXTERN int

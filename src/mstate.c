@@ -233,7 +233,7 @@ __sbma_mtouch(void * const __addr, size_t const __len)
       return -1;
     }
 
-#if SBMA_MINOR < 2
+#if SBMA_VERSION < 200
     if (VMM_LZYWR != (vmm.opts&VMM_LZYWR)) {
       break;
     }
@@ -311,7 +311,7 @@ __sbma_mtouchall(void)
         return -1;
       }
 
-#if SBMA_MINOR < 2
+#if SBMA_VERSION < 200
       if (VMM_LZYWR != (vmm.opts&VMM_LZYWR)) {
         break;
       }
@@ -478,13 +478,13 @@ __sbma_mevict(void * const __addr, size_t const __len)
   }
 
   /* update memory file */
-#if SBMA_MINOR < 2
+#if SBMA_VERSION < 200
   if (VMM_LZYWR == (vmm.opts&VMM_LZYWR)) {
 #endif
     ret = __ipc_mevict(&(vmm.ipc), -l_pages);
     if (-1 == ret)
       return -1;
-#if SBMA_MINOR < 2
+#if SBMA_VERSION < 200
   }
 #endif
 
@@ -569,13 +569,13 @@ __sbma_mevictall(void)
     return -1;
 
   /* update memory file */
-#if SBMA_MINOR < 2
+#if SBMA_VERSION < 200
   if (VMM_LZYWR == (vmm.opts&VMM_LZYWR)) {
 #endif
     ret = __ipc_mevict(&(vmm.ipc), -l_pages);
     if (-1 == ret)
       return -1;
-#if SBMA_MINOR < 2
+#if SBMA_VERSION < 200
   }
 #endif
 

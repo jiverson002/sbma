@@ -338,7 +338,7 @@ __ipc_madmit(struct ipc * const __ipc, size_t const __value)
   if (-1 == ret)
     return -1;
 
-#if SBMA_MINOR >= 2
+#if SBMA_VERSION >= 200
   if (smem < 0) {
     /* mark myself as eligible and blocked in madmit */
     flags[__ipc->id] |= IPC_ELIGIBLE;

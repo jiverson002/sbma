@@ -31,10 +31,11 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <sys/types.h> /* ssize_t */
 
 
-#define SBMA_MAJOR 0
-#define SBMA_MINOR 2
-#define SBMA_PATCH 0
-#define SBMA_RCAND 0
+#define SBMA_MAJOR   0
+#define SBMA_MINOR   2
+#define SBMA_PATCH   1
+#define SBMA_RCAND   0
+#define SBMA_VERSION (SBMA_MAJOR*10000+SBMA_MINOR*100+SBMA_PATCH)
 
 
 #define SBMA_DEFAULT_PAGE_SIZE (1<<14)
