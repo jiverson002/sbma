@@ -275,6 +275,8 @@ __vmm_sigipc(int const sig, siginfo_t * const si, void * const ctx)
   /* signal to the waiting process that the memory has been released */
   ret = sem_post(vmm.ipc.trn1);
   ASSERT(-1 != ret);
+
+  VMM_TRACK(numipc, 1);
 }
 
 
@@ -590,6 +592,7 @@ __vmm_init(struct vmm * const __vmm, size_t const __page_size,
   __vmm->opts = __opts;
 
   /* initialize statistics */
+  __vmm->numipc   = 0;
   __vmm->numrf    = 0;
   __vmm->numwf    = 0;
   __vmm->numrd    = 0;

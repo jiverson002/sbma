@@ -33,6 +33,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <stddef.h>    /* NULL, size_t */
 #include <sys/types.h> /* ssize_t */
 #include "config.h"
+#include "ipc.h"
 #include "mmu.h"
 #include "sbma.h"
 #include "thread.h"
@@ -545,6 +546,9 @@ __sbma_mevictall_int(size_t * const __l_pages, size_t * const __numwr)
   ret = LOCK_LET(&(vmm.lock));
   if (-1 == ret)
     return -1;
+
+  /* mark the process as unpopulated */
+  vmm.ipc.flags[vmm.ipc.id] &= ~IPC_POPULATED;
 
   *__l_pages = l_pages;
   *__numwr   = numwr;

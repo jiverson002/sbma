@@ -46,6 +46,8 @@ struct vmm
 
   size_t page_size;             /*!< bytes per page */
 
+  size_t numipc;                /*!< total number of SIGIPC received */
+
   size_t numrf;                 /*!< total number of read segfaults */
   size_t numwf;                 /*!< total number of write segfaults */
   size_t numrd;                 /*!< total number of pages read */

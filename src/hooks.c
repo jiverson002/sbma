@@ -791,26 +791,16 @@ sem_wait(sem_t * const sem)
   /* add eligibility */
   if (0 == is_eligible) {
     /* try to wait before blocking */
-#if 0
-    for (;;) {
-      ret = sem_trywait(sem);
-      if (-1 == ret) {
-        if (EAGAIN == errno) {
-          errno = 0;
-          break;
-        }
-        else if (EINTR == errno) {
-          errno = 0;
-        }
-        else {
-          return -1;
-        }
-      }
-      else {
-        return 0;
-      }
+    ret = sem_trywait(sem);
+    if (-1 == ret) {
+      if (EAGAIN == errno)
+        errno = 0;
+      else
+        return -1;
     }
-#endif
+    else {
+      return 0;
+    }
 
     ret = __sbma_eligible(IPC_ELIGIBLE);
     if (-1 == ret)
@@ -818,20 +808,11 @@ sem_wait(sem_t * const sem)
   }
 
   /* perform blocking wait */
-  for (;;) {
-    ret = libc_sem_wait(sem);
-    if (-1 == ret) {
-      if (EINTR == errno) {
-        errno = 0;
-      }
-      else {
-        (void)__sbma_eligible((0 == is_eligible) ? 0 : IPC_ELIGIBLE);
-        return -1;
-      }
-    }
-    else {
-      break;
-    }
+  ret = libc_sem_wait(sem);
+  if (-1 == ret) {
+    if (0 != __sbma_is_eligible() && 0 == is_eligible)
+      (void)__sbma_eligible(0);
+    return -1;
   }
 
   /* reset eligibility */
@@ -860,26 +841,16 @@ sem_timedwait(sem_t * const sem, struct timespec const * const ts)
   /* add eligibility */
   if (0 == is_eligible) {
     /* try to wait before blocking */
-#if 0
-    for (;;) {
-      ret = sem_trywait(sem);
-      if (-1 == ret) {
-        if (EAGAIN == errno) {
-          errno = 0;
-          break;
-        }
-        else if (EINTR == errno) {
-          errno = 0;
-        }
-        else {
-          return -1;
-        }
-      }
-      else {
-        return 0;
-      }
+    ret = sem_trywait(sem);
+    if (-1 == ret) {
+      if (EAGAIN == errno)
+        errno = 0;
+      else
+        return -1;
     }
-#endif
+    else {
+      return 0;
+    }
 
     ret = __sbma_eligible(IPC_ELIGIBLE);
     if (-1 == ret)
@@ -887,20 +858,11 @@ sem_timedwait(sem_t * const sem, struct timespec const * const ts)
   }
 
   /* perform blocking wait */
-  for (;;) {
-    ret = libc_sem_timedwait(sem, ts);
-    if (-1 == ret) {
-      if (EINTR == errno) {
-        errno = 0;
-      }
-      else {
-        (void)__sbma_eligible((0 == is_eligible) ? 0 : IPC_ELIGIBLE);
-        return -1;
-      }
-    }
-    else {
-      break;
-    }
+  ret = libc_sem_timedwait(sem, ts);
+  if (-1 == ret) {
+    if (0 != __sbma_is_eligible() && 0 == is_eligible)
+      (void)__sbma_eligible(0);
+    return -1;
   }
 
   /* reset eligibility */
@@ -947,23 +909,15 @@ mq_send(mqd_t const mqdes, char const * const msg_ptr, size_t const msg_len,
     }
 
     /* check if message can be received */
-    for (;;) {
-      ret = libc_mq_send(mqdes, msg_ptr, msg_len, msg_prio);
-      if (-1 == ret) {
-        if (EAGAIN == errno) {
-          errno = 0;
-          break;
-        }
-        else if (EINTR == errno) {
-          errno = 0;
-        }
-        else {
-          return -1;
-        }
-      }
-      else {
-        return 0;
-      }
+    ret = libc_mq_send(mqdes, msg_ptr, msg_len, msg_prio);
+    if (-1 == ret) {
+      if (EAGAIN == errno)
+        errno = 0;
+      else
+        return -1;
+    }
+    else {
+      return 0;
     }
 
     /* reset mq attributes if necessary */
@@ -980,20 +934,11 @@ mq_send(mqd_t const mqdes, char const * const msg_ptr, size_t const msg_len,
   }
 
   /* perform blocking send */
-  for (;;) {
-    ret = libc_mq_send(mqdes, msg_ptr, msg_len, msg_prio);
-    if (-1 == ret) {
-      if (EINTR == errno) {
-        errno = 0;
-      }
-      else {
-        (void)__sbma_eligible((0 == is_eligible) ? 0 : IPC_ELIGIBLE);
-        return -1;
-      }
-    }
-    else {
-      break;
-    }
+  ret = libc_mq_send(mqdes, msg_ptr, msg_len, msg_prio);
+  if (-1 == ret) {
+    if (0 != __sbma_is_eligible() && 0 == is_eligible)
+      (void)__sbma_eligible(0);
+    return -1;
   }
 
   /* reset eligibility */
@@ -1042,23 +987,15 @@ mq_timedsend(mqd_t const mqdes, char const * const msg_ptr,
     }
 
     /* check if message can be received */
-    for (;;) {
-      ret = libc_mq_send(mqdes, msg_ptr, msg_len, msg_prio);
-      if (-1 == ret) {
-        if (EAGAIN == errno) {
-          errno = 0;
-          break;
-        }
-        else if (EINTR == errno) {
-          errno = 0;
-        }
-        else {
-          return -1;
-        }
-      }
-      else {
-        return 0;
-      }
+    ret = libc_mq_send(mqdes, msg_ptr, msg_len, msg_prio);
+    if (-1 == ret) {
+      if (EAGAIN == errno)
+        errno = 0;
+      else
+        return -1;
+    }
+    else {
+      return 0;
     }
 
     /* reset mq attributes if necessary */
@@ -1075,20 +1012,11 @@ mq_timedsend(mqd_t const mqdes, char const * const msg_ptr,
   }
 
   /* perform block send */
-  for (;;) {
-    ret = libc_mq_timedsend(mqdes, msg_ptr, msg_len, msg_prio, abs_timeout);
-    if (-1 == ret) {
-      if (EINTR == errno) {
-        errno = 0;
-      }
-      else {
-        (void)__sbma_eligible((0 == is_eligible) ? 0 : IPC_ELIGIBLE);
-        return -1;
-      }
-    }
-    else {
-      break;
-    }
+  ret = libc_mq_timedsend(mqdes, msg_ptr, msg_len, msg_prio, abs_timeout);
+  if (-1 == ret) {
+    if (0 != __sbma_is_eligible() && 0 == is_eligible)
+      (void)__sbma_eligible(0);
+    return -1;
   }
 
   /* reset eligibility */
@@ -1138,23 +1066,15 @@ mq_receive(mqd_t const mqdes, char * const msg_ptr, size_t const msg_len,
     }
 
     /* check if message can be received */
-    for (;;) {
-      retval = libc_mq_receive(mqdes, msg_ptr, msg_len, msg_prio);
-      if (-1 == retval) {
-        if (EAGAIN == errno) {
-          errno = 0;
-          break;
-        }
-        else if (EINTR == errno) {
-          errno = 0;
-        }
-        else {
-          return -1;
-        }
-      }
-      else {
-        return retval;
-      }
+    retval = libc_mq_receive(mqdes, msg_ptr, msg_len, msg_prio);
+    if (-1 == retval) {
+      if (EAGAIN == errno)
+        errno = 0;
+      else
+        return -1;
+    }
+    else {
+      return retval;
     }
 
     /* reset mq attributes if necessary */
@@ -1171,20 +1091,11 @@ mq_receive(mqd_t const mqdes, char * const msg_ptr, size_t const msg_len,
   }
 
   /* perform blocking receive */
-  for (;;) {
-    retval = libc_mq_receive(mqdes, msg_ptr, msg_len, msg_prio);
-    if (-1 == retval) {
-      if (EINTR == errno) {
-        errno = 0;
-      }
-      else {
-        (void)__sbma_eligible((0 == is_eligible) ? 0 : IPC_ELIGIBLE);
-        return -1;
-      }
-    }
-    else {
-      break;
-    }
+  retval = libc_mq_receive(mqdes, msg_ptr, msg_len, msg_prio);
+  if (-1 == retval) {
+    if (0 != __sbma_is_eligible() && 0 == is_eligible)
+      (void)__sbma_eligible(0);
+    return -1;
   }
 
   /* reset eligibility */
@@ -1234,23 +1145,15 @@ mq_timedreceive(mqd_t const mqdes, char * const msg_ptr, size_t const msg_len,
     }
 
     /* check if message can be received */
-    for (;;) {
-      retval = libc_mq_receive(mqdes, msg_ptr, msg_len, msg_prio);
-      if (-1 == retval) {
-        if (EAGAIN == errno) {
-          errno = 0;
-          break;
-        }
-        else if (EINTR == errno) {
-          errno = 0;
-        }
-        else {
-          return -1;
-        }
-      }
-      else {
-        return retval;
-      }
+    retval = libc_mq_receive(mqdes, msg_ptr, msg_len, msg_prio);
+    if (-1 == retval) {
+      if (EAGAIN == errno)
+        errno = 0;
+      else
+        return -1;
+    }
+    else {
+      return retval;
     }
 
     /* reset mq attributes if necessary */
@@ -1267,21 +1170,12 @@ mq_timedreceive(mqd_t const mqdes, char * const msg_ptr, size_t const msg_len,
   }
 
   /* perform blocking receive */
-  for (;;) {
-    retval = libc_mq_timedreceive(mqdes, msg_ptr, msg_len, msg_prio,\
-      abs_timeout);
-    if (-1 == retval) {
-      if (EINTR == errno) {
-        errno = 0;
-      }
-      else {
-        (void)__sbma_eligible((0 == is_eligible) ? 0 : IPC_ELIGIBLE);
-        return -1;
-      }
-    }
-    else {
-      break;
-    }
+  retval = libc_mq_timedreceive(mqdes, msg_ptr, msg_len, msg_prio,\
+    abs_timeout);
+  if (-1 == retval) {
+    if (0 != __sbma_is_eligible() && 0 == is_eligible)
+      (void)__sbma_eligible(0);
+    return -1;
   }
 
   /* reset eligibility */

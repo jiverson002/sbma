@@ -298,7 +298,7 @@ __ipc_madmit(struct ipc * const __ipc, size_t const __value)
       if (i == __ipc->id)
         continue;
 
-      if (IPC_ELIGIBLE == (flags[i]&IPC_ELIGIBLE)) {
+      if ((IPC_POPULATED|IPC_ELIGIBLE) == (flags[i]&(IPC_POPULATED|IPC_ELIGIBLE))) {
         /*if (pmem[__ipc->id] >= pmem[i] && pmem[i] > mxmem) {*/
         if (pmem[i] > mxmem) {
           ii = i;
@@ -359,6 +359,8 @@ __ipc_madmit(struct ipc * const __ipc, size_t const __value)
 
   ASSERT(IPC_ELIGIBLE != (__ipc->flags[__ipc->id]&IPC_ELIGIBLE));
   ASSERT(smem >= 0);
+
+  __ipc->flags[__ipc->id] |= IPC_POPULATED;
 
   return smem;
 }

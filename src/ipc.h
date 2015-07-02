@@ -41,12 +41,14 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 /*!
  * Inter-process communication process status bits:
  *
- *   bit 0 ==    0: ineligible           1: eligible for ipc memory eviction
+ *   bit 0 ==    0: ineligible           1: has some memory loaded
+ *   bit 1 ==    0: ineligible           1: eligible for ipc memory eviction
  */
 /****************************************************************************/
 enum ipc_code
 {
-  IPC_ELIGIBLE = 1 << 0
+  IPC_POPULATED = 1 << 0,
+  IPC_ELIGIBLE  = 1 << 1
 };
 
 
@@ -89,6 +91,20 @@ __ipc_init(struct ipc * const __ipc, int const __n_procs,
 /****************************************************************************/
 int
 __ipc_destroy(struct ipc * const __ipc);
+
+
+/****************************************************************************/
+/*! Change populated status for the process. */
+/****************************************************************************/
+int
+__ipc_populated(struct ipc * const __ipc, int const __eligible);
+
+
+/****************************************************************************/
+/*! Check populated status for the process. */
+/****************************************************************************/
+int
+__ipc_is_populated(struct ipc * const __ipc);
 
 
 /****************************************************************************/
