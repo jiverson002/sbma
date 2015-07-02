@@ -578,8 +578,8 @@ __vmm_swap_x(struct ate * const __ate, size_t const __beg,
 
 
 SBMA_EXTERN int
-__vmm_init(struct vmm * const __vmm, size_t const __page_size,
-           char const * const __fstem, int const __n_procs,
+__vmm_init(struct vmm * const __vmm, char const * const __fstem,
+           int const __uniq, size_t const __page_size, int const __n_procs,
            size_t const __max_mem, int const __opts)
 {
   if (1 == __vmm->init)
@@ -626,7 +626,7 @@ __vmm_init(struct vmm * const __vmm, size_t const __page_size,
     return -1;
 
   /* initialize ipc */
-  if (-1 == __ipc_init(&(__vmm->ipc), __n_procs, __max_mem))
+  if (-1 == __ipc_init(&(__vmm->ipc), __uniq, __n_procs, __max_mem))
     return -1;
 
   /* initialize vmm lock */
@@ -640,8 +640,8 @@ __vmm_init(struct vmm * const __vmm, size_t const __page_size,
   return 0;
 }
 SBMA_EXPORT(internal, int
-__vmm_init(struct vmm * const __vmm, size_t const __page_size,
-           char const * const __fstem, int const __n_procs,
+__vmm_init(struct vmm * const __vmm, char const * const __fstem,
+           int const __uniq, size_t const __page_size, int const __n_procs,
            size_t const __max_mem, int const __opts));
 
 

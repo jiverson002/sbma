@@ -52,9 +52,9 @@ int    __sbma_free(void * const __ptr);
 int    __sbma_remap(void * const __nptr, void * const __ptr);
 
 /* mcntrl.c */
-int __sbma_init(char const * const __fstem, size_t const __page_size,
-                int const __n_procs, size_t const __max_mem,
-                int const __opts);
+int __sbma_init(char const * const __fstem, int const __uniq,
+                size_t const __page_size, int const __n_procs,
+                size_t const __max_mem, int const __opts);
 int __sbma_destroy(void);
 
 /* mextra.c */
@@ -101,11 +101,11 @@ API(__sbma, int,    remap,   (void * const a, void * const b), (a, b))
 
 /* mcntrl.c */
 SBMA_EXTERN int
-SBMA_init(char const * const a, size_t const b, int const c, size_t const d,
-          int const e)
+SBMA_init(char const * const a, int const b, size_t const c, int const d,
+          size_t const e, int const f)
 {
   /* init the sbma subsystem */
-  if (-1 == __sbma_init(a, b, c, d, e))
+  if (-1 == __sbma_init(a, b, c, d, e, f))
     return -1;
 
   /* enable the klmalloc subsystem */

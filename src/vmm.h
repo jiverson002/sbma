@@ -132,8 +132,8 @@ __vmm_swap_x(struct ate * const __ate, size_t const __beg,
 /*! Initializes the sbmalloc subsystem. */
 /****************************************************************************/
 int
-__vmm_init(struct vmm * const __vmm, size_t const __page_size,
-           char const * const __fstem, int const __n_procs,
+__vmm_init(struct vmm * const __vmm, char const * const __fstem,
+           int const __uniq, size_t const __page_size, int const __n_procs,
            size_t const __max_mem, int const __opts);
 
 

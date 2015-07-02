@@ -46,14 +46,6 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "sbma.h"
 
 
-#define IPC_SHM  "/shm-bdmpi-sbma-ipc"
-#define IPC_MTX  "/sem-bdmpi-sbma-ipc-mtx"
-#define IPC_CNT  "/sem-bdmpi-sbma-ipc-cnt"
-#define IPC_TRN1 "/sem-bdmpi-sbma-ipc-trn1"
-#define IPC_TRN2 "/sem-bdmpi-sbma-ipc-trn2"
-#define IPC_SID  "/sem-bdmpi-sbma-ipc-sid"
-
-
 #define HNDLINTR(CMND)\
 do {\
   for (;;) {\
@@ -77,37 +69,50 @@ do {\
 
 
 SBMA_EXTERN int
-__ipc_init(struct ipc * const __ipc, int const __n_procs,
+__ipc_init(struct ipc * const __ipc, int const __uniq, int const __n_procs,
            size_t const __max_mem)
 {
   int ret, shm_fd, id;
   void * shm;
   sem_t * mtx, * cnt, * trn1, * trn2, * sid;
   int * idp;
+  char fname[FILENAME_MAX];
 
   /* initialize semaphores */
-  mtx = sem_open(IPC_MTX, O_RDWR|O_CREAT, S_IRUSR|S_IWUSR, 1);
+  if (0 > snprintf(fname, FILENAME_MAX, "/ipc-mtx-%d", __uniq))
+    return -1;
+  mtx = sem_open(fname, O_RDWR|O_CREAT, S_IRUSR|S_IWUSR, 1);
   if (SEM_FAILED == mtx)
     return -1;
-  cnt = sem_open(IPC_CNT, O_RDWR|O_CREAT, S_IRUSR|S_IWUSR, 0);
+  if (0 > snprintf(fname, FILENAME_MAX, "/ipc-cnt-%d", __uniq))
+    return -1;
+  cnt = sem_open(fname, O_RDWR|O_CREAT, S_IRUSR|S_IWUSR, 0);
   if (SEM_FAILED == cnt)
     return -1;
-  trn1 = sem_open(IPC_TRN1, O_RDWR|O_CREAT, S_IRUSR|S_IWUSR, 0);
+  if (0 > snprintf(fname, FILENAME_MAX, "/ipc-trn1-%d", __uniq))
+    return -1;
+  trn1 = sem_open(fname, O_RDWR|O_CREAT, S_IRUSR|S_IWUSR, 0);
   if (SEM_FAILED == trn1)
     return -1;
-  trn2 = sem_open(IPC_TRN2, O_RDWR|O_CREAT, S_IRUSR|S_IWUSR, 1);
+  if (0 > snprintf(fname, FILENAME_MAX, "/ipc-trn2-%d", __uniq))
+    return -1;
+  trn2 = sem_open(fname, O_RDWR|O_CREAT, S_IRUSR|S_IWUSR, 1);
   if (SEM_FAILED == trn2)
     return -1;
-  sid = sem_open(IPC_SID, O_RDWR|O_CREAT, S_IRUSR|S_IWUSR, 1);
+  if (0 > snprintf(fname, FILENAME_MAX, "/ipc-sid-%d", __uniq))
+    return -1;
+  sid = sem_open(fname, O_RDWR|O_CREAT, S_IRUSR|S_IWUSR, 1);
   if (SEM_FAILED == sid)
     return -1;
 
   /* try to create a new shared memory region -- if i create, then i should
    * also truncate it, if i dont create, then try and just open it. */
-  shm_fd = shm_open(IPC_SHM, O_RDWR|O_CREAT|O_EXCL, S_IRUSR|S_IWUSR);
+  if (0 > snprintf(fname, FILENAME_MAX, "/ipc-shm-%d", __uniq))
+    return -1;
+  shm_fd = shm_open(fname, O_RDWR|O_CREAT|O_EXCL, S_IRUSR|S_IWUSR);
   if (-1 == shm_fd) {
     if (EEXIST == errno) {
-      shm_fd = shm_open(IPC_SHM, O_RDWR, S_IRUSR|S_IWUSR);
+      shm_fd = shm_open(fname, O_RDWR, S_IRUSR|S_IWUSR);
       if (-1 == shm_fd)
         return -1;
     }
@@ -153,7 +158,9 @@ __ipc_init(struct ipc * const __ipc, int const __n_procs,
   ret = sem_close(sid);
   if (-1 == ret)
     return -1;
-  ret = sem_unlink(IPC_SID);
+  if (0 > snprintf(fname, FILENAME_MAX, "/ipc-sid-%d", __uniq))
+    return -1;
+  ret = sem_unlink(fname);
   if (-1 == ret && ENOENT != errno)
     return -1;
 
@@ -163,6 +170,7 @@ __ipc_init(struct ipc * const __ipc, int const __n_procs,
   /* setup ipc struct */
   __ipc->id      = id;
   __ipc->n_procs = __n_procs;
+  __ipc->uniq    = __uniq;
   __ipc->shm     = shm;
   __ipc->mtx     = mtx;
   __ipc->cnt     = cnt;
@@ -179,7 +187,7 @@ __ipc_init(struct ipc * const __ipc, int const __n_procs,
   return 0;
 }
 SBMA_EXPORT(internal, int
-__ipc_init(struct ipc * const __ipc, int const __n_procs,
+__ipc_init(struct ipc * const __ipc, int const __uniq, int const __n_procs,
            size_t const __max_mem));
 
 
@@ -187,40 +195,51 @@ SBMA_EXTERN int
 __ipc_destroy(struct ipc * const __ipc)
 {
   int ret;
+  char fname[FILENAME_MAX];
 
   ret = munmap(__ipc->shm, IPC_LEN(__ipc->n_procs));
   if (-1 == ret)
     return -1;
 
-  ret = shm_unlink(IPC_SHM);
+  if (0 > snprintf(fname, FILENAME_MAX, "/ipc-shm-%d", __ipc->uniq))
+    return -1;
+  ret = shm_unlink(fname);
   if (-1 == ret && ENOENT != errno)
     return -1;
 
+  if (0 > snprintf(fname, FILENAME_MAX, "/ipc-mtx-%d", __ipc->uniq))
+    return -1;
   ret = sem_close(__ipc->mtx);
   if (-1 == ret)
     return -1;
-  ret = sem_unlink(IPC_MTX);
+  ret = sem_unlink(fname);
   if (-1 == ret && ENOENT != errno)
     return -1;
 
+  if (0 > snprintf(fname, FILENAME_MAX, "/ipc-cnt-%d", __ipc->uniq))
+    return -1;
   ret = sem_close(__ipc->cnt);
   if (-1 == ret)
     return -1;
-  ret = sem_unlink(IPC_CNT);
+  ret = sem_unlink(fname);
   if (-1 == ret && ENOENT != errno)
     return -1;
 
+  if (0 > snprintf(fname, FILENAME_MAX, "/ipc-trn1-%d", __ipc->uniq))
+    return -1;
   ret = sem_close(__ipc->trn1);
   if (-1 == ret)
     return -1;
-  ret = sem_unlink(IPC_TRN1);
+  ret = sem_unlink(fname);
   if (-1 == ret && ENOENT != errno)
     return -1;
 
+  if (0 > snprintf(fname, FILENAME_MAX, "/ipc-trn2-%d", __ipc->uniq))
+    return -1;
   ret = sem_close(__ipc->trn2);
   if (-1 == ret)
     return -1;
-  ret = sem_unlink(IPC_TRN2);
+  ret = sem_unlink(fname);
   if (-1 == ret && ENOENT != errno)
     return -1;
 

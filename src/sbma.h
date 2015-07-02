@@ -80,8 +80,9 @@ int    SBMA_free(void * const ptr);
 void * SBMA_realloc(void * const ptr, size_t const size);
 
 /* mcntrl.c */
-int SBMA_init(char const * const fstem, size_t const page_size,
-              int const n_procs, size_t const max_mem, int const opts);
+int SBMA_init(char const * const fstem, int const uniq,
+              size_t const page_size, int const n_procs, size_t const max_mem,
+              int const opts);
 int SBMA_destroy(void);
 
 /* mextra.c */

@@ -60,6 +60,8 @@ struct ipc
   int id;        /*!< ipc id of process amoung the n_procs */
   int n_procs;   /*!< number of processes in coordination */
 
+  int uniq;      /*!< unique identifier for shared mem and semaphores */
+
   sem_t * mtx;   /*!< critical section semaphores */
   sem_t * cnt;   /*!< ... */
   sem_t * trn1;  /*!< ... */
@@ -82,7 +84,7 @@ extern "C" {
 /*! Initialize the interprocess environment. */
 /****************************************************************************/
 int
-__ipc_init(struct ipc * const __ipc, int const __n_procs,
+__ipc_init(struct ipc * const __ipc, int const __uniq, int const __n_procs,
            size_t const __max_mem);
 
 

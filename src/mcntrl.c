@@ -53,15 +53,16 @@ struct vmm vmm={.init=0};
 /*! Initialize the sbma environment. */
 /****************************************************************************/
 SBMA_EXTERN int
-__sbma_init(char const * const __fstem, size_t const __page_size,
-            int const __n_procs, size_t const __max_mem, int const __opts)
+__sbma_init(char const * const __fstem, int const __uniq,
+            size_t const __page_size, int const __n_procs,
+            size_t const __max_mem, int const __opts)
 {
   /* acquire init lock */
   if (-1 == LOCK_GET(&init_lock))
     return -1;
 
-  if (-1 == __vmm_init(&vmm, __page_size, __fstem, __n_procs, __max_mem,
-      __opts))
+  if (-1 == __vmm_init(&vmm, __fstem, __uniq, __page_size, __n_procs,\
+      __max_mem, __opts))
   {
     (void)LOCK_LET(&init_lock);
     return -1;
@@ -74,8 +75,9 @@ __sbma_init(char const * const __fstem, size_t const __page_size,
   return 0;
 }
 SBMA_EXPORT(internal, int
-__sbma_init(char const * const __fstem, size_t const __page_size,
-            int const __n_procs, size_t const __max_mem, int const __opts));
+__sbma_init(char const * const __fstem, int const __uniq,
+            size_t const __page_size, int const __n_procs,
+            size_t const __max_mem, int const __opts));
 
 
 /****************************************************************************/
