@@ -29,31 +29,16 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #endif
 
 
-#ifdef NDEBUG
-# undef NDEBUG
-#endif
-
-
-#include <fcntl.h>     /* O_RDWR, O_CREAT, O_EXCL */
-#include <stdint.h>    /* uint8_t, uintptr_t */
-#include <stddef.h>    /* NULL, size_t */
-#include <stdio.h>     /* FILENAME_MAX */
-#include <string.h>    /* memcpy */
-#include <sys/mman.h>  /* mmap, mremap, munmap, madvise, mprotect */
-#include <sys/stat.h>  /* S_IRUSR, S_IWUSR */
-#include <sys/types.h> /* truncate */
-#include <unistd.h>    /* truncate */
+#include <stddef.h> /* size_t */
 #include "config.h"
+#include "thread.h"
 #include "vmm.h"
-
-#include "klmalloc.h"
 
 
 /****************************************************************************/
 /*! Initialization variables. */
 /****************************************************************************/
-static int init=0;
-#ifdef USE_PTHREAD
+#ifdef USE_THREAD
 static pthread_mutex_t init_lock=PTHREAD_MUTEX_INITIALIZER;
 #endif
 
@@ -65,17 +50,17 @@ struct vmm vmm={.init=0};
 
 
 /****************************************************************************/
-/*! Initialize the ooc environment. */
+/*! Initialize the sbma environment. */
 /****************************************************************************/
-extern int
-__ooc_init__(char const * const __fstem, size_t const __page_size,
-             int const __n_procs, size_t const __max_mem, int const __opts)
+SBMA_EXTERN int
+__sbma_init(char const * const __fstem, size_t const __page_size,
+            int const __n_procs, size_t const __max_mem, int const __opts)
 {
   /* acquire init lock */
   if (-1 == LOCK_GET(&init_lock))
     return -1;
 
-  if (-1 == __vmm_init__(&vmm, __page_size, __fstem, __n_procs, __max_mem,
+  if (-1 == __vmm_init(&vmm, __page_size, __fstem, __n_procs, __max_mem,
       __opts))
   {
     (void)LOCK_LET(&init_lock);
@@ -88,19 +73,22 @@ __ooc_init__(char const * const __fstem, size_t const __page_size,
 
   return 0;
 }
+SBMA_EXPORT(internal, int
+__sbma_init(char const * const __fstem, size_t const __page_size,
+            int const __n_procs, size_t const __max_mem, int const __opts));
 
 
 /****************************************************************************/
-/*! Destroy the ooc environment. */
+/*! Destroy the sbma environment. */
 /****************************************************************************/
-extern int
-__ooc_destroy__(void)
+SBMA_EXTERN int
+__sbma_destroy(void)
 {
   /* acquire init lock */
   if (-1 == LOCK_GET(&init_lock))
     return -1;
 
-  if (-1 == __vmm_destroy__(&vmm)) {
+  if (-1 == __vmm_destroy(&vmm)) {
     (void)LOCK_LET(&init_lock);
     return -1;
   }
@@ -111,3 +99,5 @@ __ooc_destroy__(void)
 
   return 0;
 }
+SBMA_EXPORT(internal, int
+__sbma_destroy(void));

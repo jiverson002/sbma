@@ -28,14 +28,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #define __MMU_H__ 1
 
 
-#ifdef NDEBUG
-# undef NDEBUG
-#endif
-
-
 #include <stdint.h> /* uint8_t, uintptr_t */
-#include <stddef.h> /* NULL */
-#include "config.h"
 
 
 /****************************************************************************/
@@ -66,7 +59,7 @@ struct ate
   uint8_t * flags;      /*!< status flags for pages */
   struct ate * prev;    /*!< doubly linked list pointer */
   struct ate * next;    /*!< doubly linked list pointer */
-#ifdef USE_PTHREAD
+#ifdef USE_THREAD
   pthread_mutex_t lock; /*!< mutex guarding struct */
 #endif
 };
@@ -79,137 +72,53 @@ struct mmu
 {
   size_t page_size;     /*!< page size */
   struct ate * a_tbl;   /*!< mmu allocation table */
-#ifdef USE_PTHREAD
+#ifdef USE_THREAD
   pthread_mutex_t lock; /*!< mutex guarding struct */
 #endif
 };
 
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /****************************************************************************/
 /*! Initialize the memory management unit. */
 /****************************************************************************/
-static inline int
-__mmu_init__(struct mmu * const __mmu, size_t const __page_size)
-{
-  /* clear pointer */
-  __mmu->a_tbl = NULL;
-
-  /* set mmu page size */
-  __mmu->page_size = __page_size;
-
-  /* initialize mmu lock */
-  if (-1 == LOCK_INIT(&(__mmu->lock)))
-    return -1;
-
-  return 0;
-}
+int
+__mmu_init(struct mmu * const __mmu, size_t const __page_size);
 
 
 /****************************************************************************/
 /*! Destroy the memory management unit. */
 /****************************************************************************/
-static inline int
-__mmu_destroy__(struct mmu * const __mmu)
-{
-  /* destroy mmu lock */
-  if (-1 == LOCK_FREE(&(__mmu->lock)))
-    return -1;
-
-  return 0;
-
-  if (NULL == __mmu) {}
-}
+int
+__mmu_destroy(struct mmu * const __mmu);
 
 
 /****************************************************************************/
 /*! Insert __ate into __mmu. */
 /****************************************************************************/
-static inline int
-__mmu_insert_ate__(struct mmu * const __mmu, struct ate * const __ate)
-{
-  /* acquire lock */
-  if (-1 == LOCK_GET(&(__mmu->lock)))
-    return -1;
-
-  /* insert at beginning of doubly linked list */
-  if (NULL == __mmu->a_tbl) {
-    __mmu->a_tbl = __ate;
-    __ate->prev  = NULL;
-    __ate->next  = NULL;
-  }
-  else {
-    __ate->prev        = __mmu->a_tbl->prev;
-    __ate->next        = __mmu->a_tbl;
-    __mmu->a_tbl->prev = __ate;
-    __mmu->a_tbl       = __ate;
-  }
-
-  /* release lock */
-  if (-1 == LOCK_LET(&(__mmu->lock)))
-    return -1;
-
-  return 0;
-}
+int
+__mmu_insert_ate(struct mmu * const __mmu, struct ate * const __ate);
 
 
 /****************************************************************************/
 /*! Invalidate __ate. */
 /****************************************************************************/
-static inline int
-__mmu_invalidate_ate__(struct mmu * const __mmu, struct ate * const __ate)
-{
-  if (-1 == LOCK_GET(&(__mmu->lock)))
-    return -1;
-
-  /* remove from doubly linked list */
-  if (NULL == __ate->prev)
-    __mmu->a_tbl = __ate->next;
-  else
-    __ate->prev->next = __ate->next;
-  if (NULL != __ate->next)
-    __ate->next->prev = __ate->prev;
-
-  if (-1 == LOCK_LET(&(__mmu->lock)))
-    return -1;
-
-  return 0;
-}
+int
+__mmu_invalidate_ate(struct mmu * const __mmu, struct ate * const __ate);
 
 
 /****************************************************************************/
 /*! Find the ate, if one exists, that contains __addr. */
 /****************************************************************************/
-static inline struct ate *
-__mmu_lookup_ate__(struct mmu * const __mmu, void const * const __addr)
-{
-  size_t len;
-  void * addr;
-  struct ate * ate;
+struct ate *
+__mmu_lookup_ate(struct mmu * const __mmu, void const * const __addr);
 
-  /* acquire lock */
-  if (-1 == LOCK_GET(&(__mmu->lock)))
-    return (struct ate*)-1;
-
-  /* search doubly linked list for a ate which contains __addr */
-  for (ate=__mmu->a_tbl; NULL!=ate; ate=ate->next) {
-    len  = ate->n_pages*__mmu->page_size;
-    addr = (void*)ate->base;
-    if (addr <= __addr && __addr < (void*)((uintptr_t)addr+len))
-      break;
-  }
-
-  /* lock ate */
-  if (NULL != ate && -1 == LOCK_GET(&(ate->lock))) {
-    (void)LOCK_LET(&(__mmu->lock));
-    return (struct ate*)-1;
-  }
-
-  /* release lock */
-  if (-1 == LOCK_LET(&(__mmu->lock)))
-    return (struct ate*)-1;
-
-  return ate;
+#ifdef __cplusplus
 }
+#endif
 
 
 #endif

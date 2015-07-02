@@ -29,38 +29,34 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #endif
 
 
-#ifdef NDEBUG
-# undef NDEBUG
-#endif
-
-
-#include <fcntl.h>     /* O_RDWR, O_CREAT, O_EXCL */
+#include <fcntl.h>     /* O_WRONLY, O_CREAT, O_EXCL */
 #include <stdint.h>    /* uint8_t, uintptr_t */
 #include <stddef.h>    /* NULL, size_t */
 #include <stdio.h>     /* FILENAME_MAX */
 #include <string.h>    /* memcpy */
 #include <sys/mman.h>  /* mmap, mremap, munmap, madvise, mprotect */
 #include <sys/stat.h>  /* S_IRUSR, S_IWUSR */
-#include <sys/types.h> /* truncate */
-#include <unistd.h>    /* truncate */
+#include <sys/types.h> /* truncate, ftruncate */
+#include <unistd.h>    /* truncate, ftruncate */
 #include "config.h"
 #include "ipc.h"
 #include "mmu.h"
 #include "sbma.h"
+#include "thread.h"
 #include "vmm.h"
 
 
 /****************************************************************************/
 /*! mtouch function prototype. */
 /****************************************************************************/
-extern ssize_t __ooc_mtouch__(void * const __addr, size_t const __len);
+SBMA_EXTERN ssize_t __sbma_mtouch(void * const __addr, size_t const __len);
 
 
 /****************************************************************************/
 /*! Allocate memory via anonymous mmap. */
 /****************************************************************************/
-extern void *
-__ooc_malloc__(size_t const __size)
+SBMA_EXTERN void *
+__sbma_malloc(size_t const __size)
 {
   int ret, fd;
   size_t page_size, s_pages, n_pages, f_pages;
@@ -87,8 +83,8 @@ __ooc_malloc__(size_t const __size)
 #endif
     ASSERT(IPC_ELIGIBLE != (vmm.ipc.flags[vmm.ipc.id]&IPC_ELIGIBLE));
     for (;;) {
-      ret = __ipc_madmit__(&(vmm.ipc),\
-        __vmm_to_sys__(s_pages+n_pages+f_pages));
+      ret = __ipc_madmit(&(vmm.ipc),\
+        VMM_TO_SYS(s_pages+n_pages+f_pages));
       if (-1 == ret) {
         if (EAGAIN == errno)
           errno = 0;
@@ -145,35 +141,39 @@ __ooc_malloc__(size_t const __size)
     return NULL;
 
   /* insert ate into mmu */
-  ret = __mmu_insert_ate__(&(vmm.mmu), ate);
+  ret = __mmu_insert_ate(&(vmm.mmu), ate);
   if (-1 == ret)
     return NULL;
 
   /* track number of syspages currently loaded, currently allocated, and high
    * water mark number of syspages */
-  __vmm_track__(curpages, __vmm_to_sys__(s_pages+n_pages+f_pages));
-  __vmm_track__(numpages, __vmm_to_sys__(s_pages+n_pages+f_pages));
-  __vmm_track__(maxpages, vmm.curpages>vmm.maxpages?vmm.curpages-vmm.maxpages:0);
+  VMM_TRACK(curpages, VMM_TO_SYS(s_pages+n_pages+f_pages));
+  VMM_TRACK(numpages, VMM_TO_SYS(s_pages+n_pages+f_pages));
+  VMM_TRACK(maxpages, vmm.curpages>vmm.maxpages?vmm.curpages-vmm.maxpages:0);
 
   return (void*)ate->base;
 }
+SBMA_EXPORT(internal, void *
+__sbma_malloc(size_t const __size));
 
 
 /****************************************************************************/
 /*! Function for API consistency, adds no additional functionality. */
 /****************************************************************************/
-extern void *
-__ooc_calloc__(size_t const __num, size_t const __size)
+SBMA_EXTERN void *
+__sbma_calloc(size_t const __num, size_t const __size)
 {
-  return __ooc_malloc__(__num*__size);
+  return __sbma_malloc(__num*__size);
 }
+SBMA_EXPORT(internal, void *
+__sbma_calloc(size_t const __num, size_t const __size));
 
 
 /****************************************************************************/
 /*! Frees the memory associated with an anonymous mmap. */
 /****************************************************************************/
-extern int
-__ooc_free__(void * const __ptr)
+SBMA_EXTERN int
+__sbma_free(void * const __ptr)
 {
   int ret;
   size_t page_size, s_pages, n_pages, f_pages, l_pages;
@@ -198,7 +198,7 @@ __ooc_free__(void * const __ptr)
     return -1;
 
   /* invalidate ate */
-  ret = __mmu_invalidate_ate__(&(vmm.mmu), ate);
+  ret = __mmu_invalidate_ate(&(vmm.mmu), ate);
   if (-1 == ret)
     return -1;
 
@@ -216,8 +216,7 @@ __ooc_free__(void * const __ptr)
 #if SBMA_MINOR < 2
   if (VMM_LZYWR == (vmm.opts&VMM_LZYWR)) {
 #endif
-    ret = __ipc_mevict__(&(vmm.ipc),\
-      -__vmm_to_sys__(s_pages+l_pages+f_pages));
+    ret = __ipc_mevict(&(vmm.ipc), -VMM_TO_SYS(s_pages+l_pages+f_pages));
     if (-1 == ret)
       return -1;
 #if SBMA_MINOR < 2
@@ -225,18 +224,20 @@ __ooc_free__(void * const __ptr)
 #endif
 
   /* track number of syspages currently loaded and allocated */
-  __vmm_track__(curpages, -__vmm_to_sys__(s_pages+l_pages+f_pages));
-  __vmm_track__(numpages, -__vmm_to_sys__(s_pages+n_pages+f_pages));
+  VMM_TRACK(curpages, -VMM_TO_SYS(s_pages+l_pages+f_pages));
+  VMM_TRACK(numpages, -VMM_TO_SYS(s_pages+n_pages+f_pages));
 
   return 0;
 }
+SBMA_EXPORT(internal, int
+__sbma_free(void * const __ptr));
 
 
 /****************************************************************************/
 /*! Re-allocate memory via anonymous mmap. */
 /****************************************************************************/
-extern void *
-__ooc_realloc__(void * const __ptr, size_t const __size)
+SBMA_EXTERN void *
+__sbma_realloc(void * const __ptr, size_t const __size)
 {
   int ret;
   size_t i, page_size, s_pages, on_pages, of_pages, ol_pages;
@@ -296,8 +297,8 @@ __ooc_realloc__(void * const __ptr, size_t const __size)
 #if SBMA_MINOR < 2
     if (VMM_LZYWR == (vmm.opts&VMM_LZYWR)) {
 #endif
-      ret = __ipc_mevict__(&(vmm.ipc),\
-        -__vmm_to_sys__((on_pages-nn_pages)+(of_pages-nf_pages)));
+      ret = __ipc_mevict(&(vmm.ipc),\
+        -VMM_TO_SYS((on_pages-nn_pages)+(of_pages-nf_pages)));
       if (-1 == ret)
         return NULL;
 #if SBMA_MINOR < 2
@@ -305,10 +306,10 @@ __ooc_realloc__(void * const __ptr, size_t const __size)
 #endif
 
     /* track number of syspages currently loaded and allocated */
-    __vmm_track__(curpages,\
-      -__vmm_to_sys__((ol_pages-ate->l_pages)+(of_pages-nf_pages)));
-    __vmm_track__(numpages,\
-      -__vmm_to_sys__((on_pages-nn_pages)+(of_pages-nf_pages)));
+    VMM_TRACK(curpages,\
+      -VMM_TO_SYS((ol_pages-ate->l_pages)+(of_pages-nf_pages)));
+    VMM_TRACK(numpages,\
+      -VMM_TO_SYS((on_pages-nn_pages)+(of_pages-nf_pages)));
   }
   else {
     /* check memory file to see if there is enough free memory to complete
@@ -318,8 +319,8 @@ __ooc_realloc__(void * const __ptr, size_t const __size)
 #endif
       ASSERT(IPC_ELIGIBLE != (vmm.ipc.flags[vmm.ipc.id]&IPC_ELIGIBLE));
       for (;;) {
-        ret = __ipc_madmit__(&(vmm.ipc),\
-          __vmm_to_sys__((nn_pages-on_pages)+(nf_pages-of_pages)));
+        ret = __ipc_madmit(&(vmm.ipc),\
+          VMM_TO_SYS((nn_pages-on_pages)+(nf_pages-of_pages)));
         if (-1 == ret) {
           if (EAGAIN == errno)
             errno = 0;
@@ -383,12 +384,12 @@ __ooc_realloc__(void * const __ptr, size_t const __size)
       ate = (struct ate*)naddr;
 
       /* remove old ate from mmu */
-      ret = __mmu_invalidate_ate__(&(vmm.mmu), ate);
+      ret = __mmu_invalidate_ate(&(vmm.mmu), ate);
       if (-1 == ret)
         return NULL;
 
       /* insert new ate into mmu */
-      ret = __mmu_insert_ate__(&(vmm.mmu), ate);
+      ret = __mmu_insert_ate(&(vmm.mmu), ate);
       if (-1 == ret)
         return NULL;
     }
@@ -403,24 +404,24 @@ __ooc_realloc__(void * const __ptr, size_t const __size)
 
     /* track number of syspages currently loaded, currently allocated, and
      * high water mark number of syspages */
-    __vmm_track__(curpages,\
-      __vmm_to_sys__((nn_pages-on_pages)+(nf_pages-of_pages)));
-    __vmm_track__(numpages,\
-      __vmm_to_sys__((nn_pages-on_pages)+(nf_pages-of_pages)));
-    __vmm_track__(maxpages,\
+    VMM_TRACK(curpages, VMM_TO_SYS((nn_pages-on_pages)+(nf_pages-of_pages)));
+    VMM_TRACK(numpages, VMM_TO_SYS((nn_pages-on_pages)+(nf_pages-of_pages)));
+    VMM_TRACK(maxpages,\
       vmm.curpages>vmm.maxpages?vmm.curpages-vmm.maxpages:0);
   }
 
   return (void*)ate->base;
 }
+SBMA_EXPORT(internal, void *
+__sbma_realloc(void * const __ptr, size_t const __size));
 
 
 /****************************************************************************/
 /*! Remap an address range to a new address. */
 /****************************************************************************/
-extern int
-__ooc_remap__(void * const __nbase, void * const __obase, size_t const __size,
-              size_t const __off)
+SBMA_EXTERN int
+__sbma_remap(void * const __nbase, void * const __obase, size_t const __size,
+             size_t const __off)
 {
   int ret;
   size_t i, page_size, s_pages, beg, end;
@@ -451,7 +452,7 @@ __ooc_remap__(void * const __nbase, void * const __obase, size_t const __size,
   end = 1+(((uintptr_t)nptr+__size-nate->base-1)/page_size);
 
   /* load old memory */
-  ret = __ooc_mtouch__(optr, __size);
+  ret = __sbma_mtouch(optr, __size);
   if (-1 == ret)
     return -1;
 
@@ -503,3 +504,6 @@ __ooc_remap__(void * const __nbase, void * const __obase, size_t const __size,
 
   return 0;
 }
+SBMA_EXPORT(internal, int
+__sbma_remap(void * const __nbase, void * const __obase, size_t const __size,
+             size_t const __off));

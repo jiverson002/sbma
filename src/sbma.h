@@ -42,10 +42,6 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #define SBMA_DEFAULT_OPTS      0
 
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 /****************************************************************************/
 /*! Mallopt parameters. */
 /****************************************************************************/
@@ -71,6 +67,10 @@ enum SBMA_vmm_opt_code
   VMM_GHOST = 1 << 2
 };
 
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 /* malloc.c */
 void * SBMA_malloc(size_t const size);

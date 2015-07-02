@@ -36,102 +36,27 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <stdlib.h>    /* abort */
 #include <string.h>    /* basename */
 #include <sys/types.h> /* ssize_t */
-
-
-/* BDMPI requires pthread support */
-#ifdef _BDMPI
-# ifndef USE_PTHREAD
-#   define USE_PTHREAD
-# endif
-#endif
+#include "thread.h"
 
 
 /****************************************************************************/
-/*! Pthread configurations. */
+/*! Function attributes. */
 /****************************************************************************/
-#ifdef USE_PTHREAD
-# include <errno.h>       /* errno library */
-# include <mqueue.h>
-# include <pthread.h>     /* pthread library */
-# include <semaphore.h>   /* semaphore library */
-# include <stdio.h>       /* printf */
-# include <string.h>      /* strerror */
-# include <sys/syscall.h> /* SYS_gettid */
-# include <time.h>        /* CLOCK_REALTIME, struct timespec, clock_gettime */
-# include <unistd.h>      /* syscall */
-
-# define DEADLOCK 0   /* 0: no deadlock diagnostics, */
-                      /* 1: deadlock diagnostics */
-
-# if defined(DEADLOCK) && DEADLOCK > 0
-#   define DL_PRINTF(...) printf(__VA_ARGS__), fflush(stdout)
-# else
-#   define DL_PRINTF(...) (void)0
-# endif
-
-static __thread int retval;
-static __thread struct timespec ts;
-static __thread pthread_mutexattr_t attr;
-
-# define LOCK_INIT(LOCK)                                                    \
-  /* The locks must be of recursive type in-order for the multi-threaded
-   * code to work.  This is because a process might receive a SIGIPC while
-   * handling a SIGSEGV. */                                                 \
-(                                                                           \
-  ((0 != (retval=pthread_mutexattr_init(&attr))) ||                         \
-   (0 != (retval=pthread_mutexattr_settype(&attr,                           \
-    PTHREAD_MUTEX_RECURSIVE))) ||                                           \
-   (0 != (retval=pthread_mutex_init(LOCK, &attr))))                         \
-    ? (DL_PRINTF("Mutex init failed@%s:%d [retval %d %s]\n", __func__,      \
-       __LINE__, retval, strerror(retval)), -1)                             \
-    : 0                                                                     \
-)
-# define LOCK_FREE(LOCK) pthread_mutex_destroy(LOCK)
-# define _LOCK_GET(LOCK)                                                    \
-(                                                                           \
-  (0 != (retval=pthread_mutex_lock(LOCK)))                                  \
-    ? (DL_PRINTF("Mutex lock failed@%s:%d [retval: %d %s]\n", __func__,     \
-      __LINE__, retval, strerror(retval)), -1)                              \
-    : (DL_PRINTF("[%5d] mtx get %s:%d %s (%p)\n", (int)syscall(SYS_gettid), \
-        __func__, __LINE__, #LOCK, (void*)(LOCK)), 0)                       \
-)
-# define LOCK_GET(LOCK)                                                     \
-(                                                                           \
-  (0 != clock_gettime(CLOCK_REALTIME, &ts))                                 \
-    ? (DL_PRINTF("Clock get time failed [errno: %d %s]\n", errno,           \
-        strerror(errno)), -1)                                               \
-    : (ts.tv_sec += 10,                                                     \
-      (0 != (retval=pthread_mutex_timedlock(LOCK, &ts)))                    \
-        ? (ETIMEDOUT == retval)                                             \
-          ? (DL_PRINTF("[%5d] Mutex lock timed-out %s:%d %s (%p)\n",        \
-              (int)syscall(SYS_gettid), __func__, __LINE__, #LOCK,          \
-              (void*)(LOCK)), _LOCK_GET(LOCK))                              \
-          : (DL_PRINTF("Mutex lock failed [retval: %d %s]\n", retval,       \
-              strerror(retval)), -1)                                        \
-        : (DL_PRINTF("[%5d] mtx get %s:%d %s (%p)\n",                       \
-            (int)syscall(SYS_gettid), __func__, __LINE__, #LOCK,            \
-            (void*)(LOCK)), 0))                                             \
-)
-# define LOCK_LET(LOCK)                                                     \
-(                                                                           \
-  (0 != (retval=pthread_mutex_unlock(LOCK)))                                \
-    ? (DL_PRINTF("Mutex unlock failed@%s:%d [retval: %d %s]\n", __func__,   \
-      __LINE__, retval, strerror(retval)), -1)                              \
-    : (DL_PRINTF("[%5d] mtx let %s:%d %s (%p)\n", (int)syscall(SYS_gettid), \
-        __func__, __LINE__, #LOCK, (void*)(LOCK)), 0)                       \
-)
-#else
-# define LOCK_INIT(LOCK) 0
-# define LOCK_FREE(LOCK) 0
-# define LOCK_GET(LOCK)  0
-# define LOCK_LET(LOCK)  0
+/* If we're not using GNU C, omit __attribute__ */
+#ifndef __GNUC__
+#  define  __attribute__(x)
 #endif
+
+#define SBMA_EXTERN extern
+#define SBMA_STATIC static
+#define SBMA_EXPORT(__VISIBILITY, __DECL)\
+  SBMA_EXTERN __DECL __attribute__((__visibility__(#__VISIBILITY)))
 
 
 /****************************************************************************/
 /*! Assert function. */
 /****************************************************************************/
-#ifndef NDEBUG
+//#ifndef NDEBUG
 # define ASSERT(COND)                                                       \
 do {                                                                        \
   if (0 == (COND)) {                                                        \
@@ -140,7 +65,9 @@ do {                                                                        \
     abort();                                                                \
   }                                                                         \
 } while (0)
-#endif
+//#else
+//# define ASSERT(COND)
+//#endif
 
 
 /****************************************************************************/
@@ -154,9 +81,11 @@ extern int     libc_open(char const *, int, ...);
 extern ssize_t libc_read(int const, void * const, size_t const);
 extern ssize_t libc_write(int const, void const * const, size_t const);
 extern int     libc_mlock(void const * const, size_t const);
+#ifdef USE_THREAD
 extern int     libc_sem_wait(sem_t * const sem);
 extern int     libc_sem_timedwait(sem_t * const sem,
                                   struct timespec const * const ts);
+#endif
 
 #ifdef __cplusplus
 }

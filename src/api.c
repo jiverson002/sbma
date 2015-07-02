@@ -24,14 +24,15 @@ OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
-#define _GNU_SOURCE
-#include <string.h>
-#include <unistd.h>
+#ifndef _GNU_SOURCE
+# define _GNU_SOURCE
+#endif
+
 
 #include <malloc.h>    /* struct mallinfo */
 #include <stddef.h>    /* size_t */
 #include <sys/types.h> /* ssize_t */
-
+#include "config.h"
 #include "klmalloc.h"
 
 
@@ -43,32 +44,32 @@ extern "C" {
 #endif
 
 /* malloc.c */
-void * __ooc_malloc__(size_t const __size);
-void * __ooc_calloc__(size_t const __num, size_t const __size);
-void * __ooc_realloc__(void * const __ptr, size_t const __size);
-int    __ooc_free__(void * const __ptr);
-int    __ooc_remap__(void * const __nptr, void * const __ptr);
+void * __sbma_malloc(size_t const __size);
+void * __sbma_calloc(size_t const __num, size_t const __size);
+void * __sbma_realloc(void * const __ptr, size_t const __size);
+int    __sbma_free(void * const __ptr);
+int    __sbma_remap(void * const __nptr, void * const __ptr);
 
 /* mcntrl.c */
-int    __ooc_init__(char const * const __fstem, size_t const __page_size,
-                    int const __n_procs, size_t const __max_mem,
-                    int const __opts);
-int    __ooc_destroy__(void);
+int __sbma_init(char const * const __fstem, size_t const __page_size,
+                int const __n_procs, size_t const __max_mem,
+                int const __opts);
+int __sbma_destroy(void);
 
 /* mextra.c */
-int             __ooc_mallopt__(int const __param, int const __value);
-struct mallinfo __ooc_mallinfo__(void);
+int             __sbma_mallopt(int const __param, int const __value);
+struct mallinfo __sbma_mallinfo(void);
 
 /* mstate.c */
-ssize_t __ooc_mtouch__(void * const __addr, size_t const __len);
-ssize_t __ooc_mtouchall__(void);
-ssize_t __ooc_mclear__(void * const __addr, size_t const __len);
-ssize_t __ooc_mclearall__(void);
-ssize_t __ooc_mevict__(void * const __addr, size_t const __len);
-ssize_t __ooc_mevictall__(void);
-int     __ooc_mexist__(void const * const __addr);
-int     __ooc_eligible__(int const __eligible);
-int     __ooc_is_eligible__(void);
+ssize_t __sbma_mtouch(void * const __addr, size_t const __len);
+ssize_t __sbma_mtouchall(void);
+ssize_t __sbma_mclear(void * const __addr, size_t const __len);
+ssize_t __sbma_mclearall(void);
+ssize_t __sbma_mevict(void * const __addr, size_t const __len);
+ssize_t __sbma_mevictall(void);
+int     __sbma_mexist(void const * const __addr);
+int     __sbma_eligible(int const __eligible);
+int     __sbma_is_eligible(void);
 
 #ifdef __cplusplus
 }
@@ -79,38 +80,29 @@ int     __ooc_is_eligible__(void);
 /*! API creator macro. */
 /****************************************************************************/
 #define API(__PFX, __RETTYPE, __FUNC, __PPARAMS, __PARAMS)\
-  extern __RETTYPE sbma_ ## __FUNC __PPARAMS {\
-    return __ooc_ ## __FUNC ## __ __PARAMS;\
-  }\
-  extern __RETTYPE SBMA_ ## __FUNC __PPARAMS {\
+  SBMA_EXTERN __RETTYPE SBMA_ ## __FUNC __PPARAMS {\
     return __PFX ## _ ## __FUNC __PARAMS;\
-  }
+  }\
+  SBMA_EXPORT(default, __RETTYPE SBMA_ ## __FUNC __PPARAMS);
 
 
 /****************************************************************************/
 /*! API */
 /****************************************************************************/
 /* malloc.c */
-API(KL,   void *, malloc,  (size_t const a), (a))
-API(KL,   void *, calloc,  (size_t const a, size_t const b), (a, b))
-API(KL,   void *, realloc, (void * const a, size_t const b), (a, b))
-API(KL,   int,    free,    (void * const a), (a))
-/* TODO: should not expose a SBMA_remap version, only sbma_remap */
-API(sbma, int,    remap,   (void * const a, void * const b), (a, b))
+API(KL,     void *, malloc,  (size_t const a), (a))
+API(KL,     void *, calloc,  (size_t const a, size_t const b), (a, b))
+API(KL,     void *, realloc, (void * const a, size_t const b), (a, b))
+API(KL,     int,    free,    (void * const a), (a))
+API(__sbma, int,    remap,   (void * const a, void * const b), (a, b))
 
 /* mcntrl.c */
-extern int
-sbma_init(char const * const a, size_t const b, int const c, size_t const d,
-          int const e)
-{
-  return __ooc_init__(a, b, c, d, e);
-}
-extern int
+SBMA_EXTERN int
 SBMA_init(char const * const a, size_t const b, int const c, size_t const d,
           int const e)
 {
   /* init the sbma subsystem */
-  if (-1 == sbma_init(a, b, c, d, e))
+  if (-1 == __sbma_init(a, b, c, d, e))
     return -1;
 
   /* enable the klmalloc subsystem */
@@ -119,12 +111,7 @@ SBMA_init(char const * const a, size_t const b, int const c, size_t const d,
 
   return 0;
 }
-extern int
-sbma_destroy(void)
-{
-  return __ooc_destroy__();
-}
-extern int
+SBMA_EXTERN int
 SBMA_destroy(void)
 {
   /* disable the klmalloc subsystem */
@@ -132,25 +119,23 @@ SBMA_destroy(void)
     return -1;
 
   /* destroy the sbma subsystem */
-  if (-1 == sbma_destroy())
+  if (-1 == __sbma_destroy())
     return -1;
 
   return 0;
 }
 
 /* mextra.c */
-API(sbma, int,             mallopt, (int const a, int const b), (a, b))
-API(sbma, struct mallinfo, mallinfo, (void), ())
-/* TODO: should not expose a SBMA_eligible version, only sbma_eligible */
-API(sbma, int,             eligible, (int const a), (a))
-/* TODO: should not expose a SBMA_is_eligible version, only sbma_is_eligible */
-API(sbma, int,             is_eligible, (void), ())
+API(__sbma, int,             mallopt, (int const a, int const b), (a, b))
+API(__sbma, struct mallinfo, mallinfo, (void), ())
+API(__sbma, int,             eligible, (int const a), (a))
+API(__sbma, int,             is_eligible, (void), ())
 
 /* mstate.c */
-API(sbma, ssize_t, mtouch,    (void * const a, size_t const b), (a, b))
-API(sbma, ssize_t, mtouchall, (void), ())
-API(sbma, ssize_t, mclear,    (void * const a, size_t const b), (a, b))
-API(sbma, ssize_t, mclearall, (void), ())
-API(sbma, ssize_t, mevict,    (void * const a, size_t const b), (a, b))
-API(sbma, ssize_t, mevictall, (void), ())
-API(sbma, int,     mexist,    (void const * const a), (a))
+API(__sbma, ssize_t, mtouch,    (void * const a, size_t const b), (a, b))
+API(__sbma, ssize_t, mtouchall, (void), ())
+API(__sbma, ssize_t, mclear,    (void * const a, size_t const b), (a, b))
+API(__sbma, ssize_t, mclearall, (void), ())
+API(__sbma, ssize_t, mevict,    (void * const a, size_t const b), (a, b))
+API(__sbma, ssize_t, mevictall, (void), ())
+API(__sbma, int,     mexist,    (void const * const a), (a))

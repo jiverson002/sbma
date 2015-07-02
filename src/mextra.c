@@ -29,24 +29,20 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #endif
 
 
-#ifdef NDEBUG
-# undef NDEBUG
-#endif
-
-
 #include <malloc.h> /* struct mallinfo */
 #include <string.h> /* memset */
 #include "config.h"
-#include "sbma.h"
 #include "ipc.h"
+#include "sbma.h"
+#include "thread.h"
 #include "vmm.h"
 
 
 /****************************************************************************/
 /*! Set parameters for the sbmalloc subsystem. */
 /****************************************************************************/
-extern int
-__ooc_mallopt__(int const __param, int const __value)
+SBMA_EXTERN int
+__sbma_mallopt(int const __param, int const __value)
 {
   int ret;
 
@@ -69,13 +65,15 @@ __ooc_mallopt__(int const __param, int const __value)
 
   return 0;
 }
+SBMA_EXPORT(internal, int
+__sbma_mallopt(int const __param, int const __value));
 
 
 /****************************************************************************/
 /*! Return some memory statistics */
 /****************************************************************************/
-extern struct mallinfo
-__ooc_mallinfo__(void)
+SBMA_EXTERN struct mallinfo
+__sbma_mallinfo(void)
 {
   int ret;
   struct mallinfo mi;
@@ -83,7 +81,7 @@ __ooc_mallinfo__(void)
   memset(&mi, 0, sizeof(struct mallinfo));
 
   /* Not checking the return value here is a hack which allows this function
-   * to be called even after __vmm_destroy__() has been called. */
+   * to be called even after __vmm_destroy() has been called. */
   /*ret = LOCK_GET(&(vmm.lock));
   if (-1 == ret)
     return mi;*/
@@ -100,7 +98,7 @@ __ooc_mallinfo__(void)
   mi.keepcost = vmm.numpages; /* syspages allocated */
 
   /* Not checking the return value here is a hack which allows this function
-   * to be called even after __vmm_destroy__() has been called. */
+   * to be called even after __vmm_destroy() has been called. */
   /*ret = LOCK_LET(&(vmm.lock));
   if (-1 == ret)
     return mi;*/
@@ -108,29 +106,35 @@ __ooc_mallinfo__(void)
 
   return mi;
 }
+SBMA_EXPORT(internal, struct mallinfo
+__sbma_mallinfo(void));
 
 
 /****************************************************************************/
 /*! Modify the eligibility of a process for ipc memory tracking */
 /****************************************************************************/
-extern int
-__ooc_eligible__(int const __eligible)
+SBMA_EXTERN int
+__sbma_eligible(int const __eligible)
 {
   if (0 == vmm.init)
     return 0;
 
-  return __ipc_eligible__(&(vmm.ipc), __eligible);
+  return __ipc_eligible(&(vmm.ipc), __eligible);
 }
+SBMA_EXPORT(internal, int
+__sbma_eligible(int const __eligible));
 
 
 /****************************************************************************/
 /*! Modify the eligibility of a process for ipc memory tracking */
 /****************************************************************************/
-extern int
-__ooc_is_eligible__(void)
+SBMA_EXTERN int
+__sbma_is_eligible(void)
 {
   if (0 == vmm.init)
     return 0;
 
-  return __ipc_is_eligible__(&(vmm.ipc));
+  return __ipc_is_eligible(&(vmm.ipc));
 }
+SBMA_EXPORT(internal, int
+__sbma_is_eligible(void));

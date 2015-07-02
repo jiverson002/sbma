@@ -29,11 +29,6 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #endif
 
 
-#ifdef NDEBUG
-# undef NDEBUG
-#endif
-
-
 /****************************************************************************/
 /* Need optimizations off or GCC will optimize away the temporary setting of
  * libc_calloc in the HOOK_INIT macro. */
@@ -52,7 +47,6 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <sys/stat.h>  /* stat, open */
 #include <sys/types.h> /* stat, open */
 #include <unistd.h>    /* ssize_t, stat */
-
 #include "config.h"
 #include "ipc.h"
 #include "sbma.h"
@@ -61,8 +55,16 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 /****************************************************************************/
 /* required function prototypes */
 /****************************************************************************/
-extern int sbma_eligible(int);
-extern int sbma_is_eligible(void);
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+int __sbma_eligible(int);
+int __sbma_is_eligible(void);
+
+#ifdef __cplusplus
+}
+#endif
 
 
 /****************************************************************************/
@@ -95,7 +97,7 @@ static char * internal_calloc_ptr=internal_calloc_mem;
  *  libc_calloc is populated using dlsym, this function will never be called
  *  again. */
 /****************************************************************************/
-static void *
+SBMA_STATIC void *
 internal_calloc(size_t const num, size_t const size)
 {
   char * nptr=NULL;
@@ -113,7 +115,7 @@ internal_calloc(size_t const num, size_t const size)
 /*************************************************************************/
 /*! Hook: libc malloc */
 /*************************************************************************/
-extern void *
+SBMA_EXTERN void *
 libc_malloc(size_t const size)
 {
   static void * (*_libc_malloc)(size_t)=NULL;
@@ -122,24 +124,28 @@ libc_malloc(size_t const size)
 
   return _libc_malloc(size);
 }
+SBMA_EXPORT(internal, void *
+libc_malloc(size_t const size));
 
 
 /*************************************************************************/
 /*! Hook: libc calloc */
 /*************************************************************************/
-extern void *
+SBMA_EXTERN void *
 libc_calloc(size_t const num, size_t const size)
 {
   HOOK_INIT(calloc);
 
   return _libc_calloc(num, size);
 }
+SBMA_EXPORT(internal, void *
+libc_calloc(size_t const num, size_t const size));
 
 
 /*************************************************************************/
 /*! Hook: libc realloc */
 /*************************************************************************/
-extern void *
+SBMA_EXTERN void *
 libc_realloc(void * const ptr, size_t const size)
 {
   static void * (*_libc_realloc)(void* const, size_t)=NULL;
@@ -148,12 +154,14 @@ libc_realloc(void * const ptr, size_t const size)
 
   return _libc_realloc(ptr, size);
 }
+SBMA_EXPORT(internal, void *
+libc_realloc(void * const ptr, size_t const size));
 
 
 /*************************************************************************/
 /*! Hook: libc free */
 /*************************************************************************/
-extern void
+SBMA_EXTERN void
 libc_free(void * const ptr)
 {
   static void * (*_libc_free)(void* const)=NULL;
@@ -162,12 +170,14 @@ libc_free(void * const ptr)
 
   _libc_free(ptr);
 }
+SBMA_EXPORT(internal, void
+libc_free(void * const ptr));
 
 
 /*************************************************************************/
 /*! Hook: libc stat */
 /*************************************************************************/
-extern int
+SBMA_EXTERN int
 libc_stat(char const * path, struct stat * buf)
 {
   static ssize_t (*_libc_stat)(char const*, struct stat*)=NULL;
@@ -176,12 +186,14 @@ libc_stat(char const * path, struct stat * buf)
 
   return _libc_stat(path, buf);
 }
+SBMA_EXPORT(internal, int
+libc_stat(char const * path, struct stat * buf));
 
 
 /*************************************************************************/
 /*! Hook: libc __xstat */
 /*************************************************************************/
-extern int
+SBMA_EXTERN int
 libc___xstat(int ver, char const * path, struct stat * buf)
 {
   static ssize_t (*_libc___xstat)(int, char const*, struct stat*)=NULL;
@@ -190,13 +202,15 @@ libc___xstat(int ver, char const * path, struct stat * buf)
 
   return _libc___xstat(ver, path, buf);
 }
+SBMA_EXPORT(internal, int
+libc___xstat(int ver, char const * path, struct stat * buf));
 
 
-#if 0
 /*************************************************************************/
 /*! Hook: libc __xstat64 */
 /*************************************************************************/
-extern int
+#if 0
+SBMA_EXTERN int
 #ifdef __USE_LARGEFILE64
 libc_xstat64(int ver, char const * path, struct stat64 * buf)
 #else
@@ -213,13 +227,20 @@ libc_xstat64(int ver, char const * path, struct stat * buf)
 
   return _libc_xstat64(ver, path, buf);
 }
+#ifdef __USE_LARGEFILE64
+SBMA_EXPORT(internal, int
+libc_xstat64(int ver, char const * path, struct stat64 * buf));
+#else
+SBMA_EXPORT(internal, int
+libc_xstat64(int ver, char const * path, struct stat * buf));
+#endif
 #endif
 
 
 /*************************************************************************/
 /*! Hook: libc open */
 /*************************************************************************/
-extern int
+SBMA_EXTERN int
 libc_open(char const * path, int flags, ...)
 {
   static ssize_t (*_libc_open)(char const*, int, ...)=NULL;
@@ -235,12 +256,14 @@ libc_open(char const * path, int flags, ...)
 
   return _libc_open(path, flags, mode);
 }
+SBMA_EXPORT(internal, int
+libc_open(char const * path, int flags, ...));
 
 
 /*************************************************************************/
 /*! Hook: libc read */
 /*************************************************************************/
-extern ssize_t
+SBMA_EXTERN ssize_t
 libc_read(int const fd, void * const buf, size_t const count)
 {
   static ssize_t (*_libc_read)(int, void*, size_t)=NULL;
@@ -249,12 +272,14 @@ libc_read(int const fd, void * const buf, size_t const count)
 
   return _libc_read(fd, buf, count);
 }
+SBMA_EXPORT(internal, ssize_t
+libc_read(int const fd, void * const buf, size_t const count));
 
 
 /*************************************************************************/
 /*! Hook: libc write */
 /*************************************************************************/
-extern ssize_t
+SBMA_EXTERN ssize_t
 libc_write(int const fd, void const * const buf, size_t const count)
 {
   static ssize_t (*_libc_write)(int, void const*, size_t)=NULL;
@@ -263,14 +288,16 @@ libc_write(int const fd, void const * const buf, size_t const count)
 
   return _libc_write(fd, buf, count);
 }
+SBMA_EXPORT(internal, ssize_t
+libc_write(int const fd, void const * const buf, size_t const count));
 
 
 /*************************************************************************/
 /*! Hook: libc fread */
 /*************************************************************************/
-extern size_t
+SBMA_EXTERN size_t
 libc_fread(void * const buf, size_t const size, size_t const num,
-      FILE * const stream)
+           FILE * const stream)
 {
   static size_t (*_libc_fread)(void*, size_t, size_t, FILE *)=NULL;
 
@@ -278,14 +305,17 @@ libc_fread(void * const buf, size_t const size, size_t const num,
 
   return _libc_fread(buf, size, num, stream);
 }
+SBMA_EXPORT(internal, size_t
+libc_fread(void * const buf, size_t const size, size_t const num,
+           FILE * const stream));
 
 
 /*************************************************************************/
 /*! Hook: libc fwrite */
 /*************************************************************************/
-extern size_t
+SBMA_EXTERN size_t
 libc_fwrite(void const * const buf, size_t const size, size_t const num,
-       FILE * const stream)
+            FILE * const stream)
 {
   static size_t (*_libc_fwrite)(void const*, size_t, size_t, FILE *)=NULL;
 
@@ -293,12 +323,15 @@ libc_fwrite(void const * const buf, size_t const size, size_t const num,
 
   return _libc_fwrite(buf, size, num, stream);
 }
+SBMA_EXPORT(internal, size_t
+libc_fwrite(void const * const buf, size_t const size, size_t const num,
+            FILE * const stream));
 
 
 /*************************************************************************/
 /*! Hook: libc mlock */
 /*************************************************************************/
-extern int
+SBMA_EXTERN int
 libc_mlock(void const * const addr, size_t const len)
 {
   static int (*_libc_mlock)(void const*, size_t)=NULL;
@@ -307,12 +340,14 @@ libc_mlock(void const * const addr, size_t const len)
 
   return _libc_mlock(addr, len);
 }
+SBMA_EXPORT(internal, int
+libc_mlock(void const * const addr, size_t const len));
 
 
 /*************************************************************************/
 /*! Hook: libc mlockall */
 /*************************************************************************/
-extern int
+SBMA_EXTERN int
 libc_mlockall(int flags)
 {
   static int (*_libc_mlockall)(int)=NULL;
@@ -321,12 +356,14 @@ libc_mlockall(int flags)
 
   return _libc_mlockall(flags);
 }
+SBMA_EXPORT(internal, int
+libc_mlockall(int flags));
 
 
 /****************************************************************************/
 /*! Hook: libc msync */
 /****************************************************************************/
-extern int
+SBMA_EXTERN int
 libc_msync(void * const addr, size_t const len, int const flags)
 {
   static int (*_libc_msync)(void*, size_t, int)=NULL;
@@ -335,13 +372,15 @@ libc_msync(void * const addr, size_t const len, int const flags)
 
   return _libc_msync(addr, len, flags);
 }
+SBMA_EXPORT(internal, int
+libc_msync(void * const addr, size_t const len, int const flags));
 
 
-#ifdef USE_PTHREAD
+#ifdef USE_THREAD
 /****************************************************************************/
 /*! Hook: libc sem_wait */
 /****************************************************************************/
-extern int
+SBMA_EXTERN int
 libc_sem_wait(sem_t * const sem)
 {
   static int (*_libc_sem_wait)(sem_t *)=NULL;
@@ -350,12 +389,14 @@ libc_sem_wait(sem_t * const sem)
 
   return _libc_sem_wait(sem);
 }
+SBMA_EXPORT(internal, int
+libc_sem_wait(sem_t * const sem));
 
 
 /****************************************************************************/
 /*! Hook: libc sem_timedwait */
 /****************************************************************************/
-extern int
+SBMA_EXTERN int
 libc_sem_timedwait(sem_t * const sem, struct timespec const * const ts)
 {
   static int (*_libc_sem_timedwait)(sem_t *, struct timespec const *)=NULL;
@@ -364,12 +405,14 @@ libc_sem_timedwait(sem_t * const sem, struct timespec const * const ts)
 
   return _libc_sem_timedwait(sem, ts);
 }
+SBMA_EXPORT(internal, int
+libc_sem_timedwait(sem_t * const sem, struct timespec const * const ts));
 
 
 /****************************************************************************/
 /*! Hook: libc mq_send */
 /****************************************************************************/
-extern int
+SBMA_EXTERN int
 libc_mq_send(mqd_t const mqdes, char const * const msg_ptr,
              size_t const msg_len, unsigned const msg_prio)
 {
@@ -379,12 +422,15 @@ libc_mq_send(mqd_t const mqdes, char const * const msg_ptr,
 
   return _libc_mq_send(mqdes, msg_ptr, msg_len, msg_prio);
 }
+SBMA_EXPORT(internal, int
+libc_mq_send(mqd_t const mqdes, char const * const msg_ptr,
+             size_t const msg_len, unsigned const msg_prio));
 
 
 /****************************************************************************/
 /*! Hook: libc mq_timedsend */
 /****************************************************************************/
-extern int
+SBMA_EXTERN int
 libc_mq_timedsend(mqd_t const mqdes, char const * const msg_ptr,
                   size_t const msg_len, unsigned const msg_prio,
                   struct timespec const * const abs_timeout)
@@ -396,12 +442,16 @@ libc_mq_timedsend(mqd_t const mqdes, char const * const msg_ptr,
 
   return _libc_mq_timedsend(mqdes, msg_ptr, msg_len, msg_prio, abs_timeout);
 }
+SBMA_EXPORT(internal, int
+libc_mq_timedsend(mqd_t const mqdes, char const * const msg_ptr,
+                  size_t const msg_len, unsigned const msg_prio,
+                  struct timespec const * const abs_timeout));
 
 
 /****************************************************************************/
 /*! Hook: libc mq_receive */
 /****************************************************************************/
-extern ssize_t
+SBMA_EXTERN ssize_t
 libc_mq_receive(mqd_t const mqdes, char * const msg_ptr, size_t const msg_len,
                 unsigned * const msg_prio)
 {
@@ -411,12 +461,15 @@ libc_mq_receive(mqd_t const mqdes, char * const msg_ptr, size_t const msg_len,
 
   return _libc_mq_receive(mqdes, msg_ptr, msg_len, msg_prio);
 }
+SBMA_EXPORT(internal, ssize_t
+libc_mq_receive(mqd_t const mqdes, char * const msg_ptr, size_t const msg_len,
+                unsigned * const msg_prio));
 
 
 /****************************************************************************/
 /*! Hook: libc mq_timedreceive */
 /****************************************************************************/
-extern ssize_t
+SBMA_EXTERN ssize_t
 libc_mq_timedreceive(mqd_t const mqdes, char * const msg_ptr,
                      size_t const msg_len, unsigned * const msg_prio,
                      struct timespec const * const abs_timeout)
@@ -429,38 +482,31 @@ libc_mq_timedreceive(mqd_t const mqdes, char * const msg_ptr,
   return _libc_mq_timedreceive(mqdes, msg_ptr, msg_len, msg_prio,\
     abs_timeout);
 }
+SBMA_EXPORT(internal, ssize_t
+libc_mq_timedreceive(mqd_t const mqdes, char * const msg_ptr,
+                     size_t const msg_len, unsigned * const msg_prio,
+                     struct timespec const * const abs_timeout));
 #endif
 
 
-//#define USE_LIBC
-/*************************************************************************/
+/****************************************************************************/
 /*! Hook: malloc */
-/*************************************************************************/
-extern void *
+/****************************************************************************/
+SBMA_EXTERN void *
 malloc(size_t const size)
 {
   HOOK_INIT(calloc);
 
-/*#ifdef USE_LIBC
-  void * ptr = libc_malloc(size);
-#else
-  void * ptr = SBMA_malloc(size);
-#endif
-  printf("m %p %zu\n", ptr, size);
-  return ptr;*/
-
-#ifdef USE_LIBC
-  return libc_malloc(size);
-#else
   return SBMA_malloc(size);
-#endif
 }
+SBMA_EXPORT(default, void *
+malloc(size_t const size));
 
 
 /*************************************************************************/
 /*! Hook: calloc */
 /*************************************************************************/
-extern void *
+SBMA_EXTERN void *
 calloc(size_t const num, size_t const size)
 {
   HOOK_INIT(calloc);
@@ -468,18 +514,16 @@ calloc(size_t const num, size_t const size)
   if (internal_calloc == _libc_calloc)
     return internal_calloc(num, size);
 
-#ifdef USE_LIBC
-  return libc_calloc(num, size);
-#else
   return SBMA_calloc(num, size);
-#endif
 }
+SBMA_EXPORT(default, void *
+calloc(size_t const num, size_t const size));
 
 
 /*************************************************************************/
 /*! Hook: realloc */
 /*************************************************************************/
-extern void *
+SBMA_EXTERN void *
 realloc(void * const ptr, size_t const size)
 {
   HOOK_INIT(calloc);
@@ -487,18 +531,16 @@ realloc(void * const ptr, size_t const size)
   if (NULL == ptr)
     return SBMA_malloc(size);
 
-#ifdef USE_LIBC
-  return libc_realloc(ptr, size);
-#else
   return SBMA_realloc(ptr, size);
-#endif
 }
+SBMA_EXPORT(default, void *
+realloc(void * const ptr, size_t const size));
 
 
 /*************************************************************************/
 /*! Hook: free */
 /*************************************************************************/
-extern void
+SBMA_EXTERN void
 free(void * const ptr)
 {
   HOOK_INIT(calloc);
@@ -513,32 +555,30 @@ free(void * const ptr)
     return;
   }
 
-  /*printf("f %p\n", ptr);*/
-
-#ifdef USE_LIBC
-  libc_free(ptr);
-#else
   SBMA_free(ptr);
-#endif
 }
+SBMA_EXPORT(default, void
+free(void * const ptr));
 
 
 /*************************************************************************/
 /*! Hook: mallinfo */
 /*************************************************************************/
-extern struct mallinfo
+SBMA_EXTERN struct mallinfo
 mallinfo(void)
 {
   HOOK_INIT(calloc);
 
   return SBMA_mallinfo();
 }
+SBMA_EXPORT(default, struct mallinfo
+mallinfo(void));
 
 
 /*************************************************************************/
 /*! Hook: stat */
 /*************************************************************************/
-extern int
+SBMA_EXTERN int
 stat(char const * path, struct stat * buf)
 {
   if (1 == SBMA_mexist(path))
@@ -548,12 +588,14 @@ stat(char const * path, struct stat * buf)
 
   return libc_stat(path, buf);
 }
+SBMA_EXPORT(default, int
+stat(char const * path, struct stat * buf));
 
 
 /*************************************************************************/
 /*! Hook: __xstat */
 /*************************************************************************/
-extern int
+SBMA_EXTERN int
 __xstat(int ver, const char * path, struct stat * buf)
 {
   if (1 == SBMA_mexist(path))
@@ -563,14 +605,16 @@ __xstat(int ver, const char * path, struct stat * buf)
 
   return libc___xstat(ver, path, buf);
 }
+SBMA_EXPORT(default, int
+__xstat(int ver, const char * path, struct stat * buf));
 
 
-#if 0
-# ifdef __USE_LARGEFILE64
 /*************************************************************************/
 /*! Hook: __xstat64 */
 /*************************************************************************/
-extern int
+#if 0
+#ifdef __USE_LARGEFILE64
+SBMA_EXTERN int
 __xstat64(int ver, const char * path, struct stat64 * buf)
 {
   if (1 == SBMA_mexist(path))
@@ -578,6 +622,8 @@ __xstat64(int ver, const char * path, struct stat64 * buf)
 
   return libc_xstat64(ver, path, buf);
 }
+SBMA_EXPORT(default, int
+__xstat64(int ver, const char * path, struct stat64 * buf));
 #endif
 #endif
 
@@ -585,7 +631,7 @@ __xstat64(int ver, const char * path, struct stat64 * buf)
 /*************************************************************************/
 /*! Hook: stat */
 /*************************************************************************/
-extern int
+SBMA_EXTERN int
 open(char const * path, int flags, ...)
 {
   va_list list;
@@ -601,12 +647,14 @@ open(char const * path, int flags, ...)
 
   return libc_open(path, flags, mode);
 }
+SBMA_EXPORT(default, int
+open(char const * path, int flags, ...));
 
 
 /*************************************************************************/
 /*! Hook: read */
 /*************************************************************************/
-extern ssize_t
+SBMA_EXTERN ssize_t
 read(int const fd, void * const buf, size_t const count)
 {
   /* NOTE: Consider the following execution sequence. During the call to
@@ -631,12 +679,14 @@ read(int const fd, void * const buf, size_t const count)
 
   return libc_read(fd, buf, count);
 }
+SBMA_EXPORT(default, ssize_t
+read(int const fd, void * const buf, size_t const count));
 
 
 /*************************************************************************/
 /*! Hook: write */
 /*************************************************************************/
-extern ssize_t
+SBMA_EXTERN ssize_t
 write(int const fd, void const * const buf, size_t const count)
 {
   if (1 == SBMA_mexist(buf))
@@ -644,12 +694,14 @@ write(int const fd, void const * const buf, size_t const count)
 
   return libc_write(fd, buf, count);
 }
+SBMA_EXPORT(default, ssize_t
+write(int const fd, void const * const buf, size_t const count));
 
 
 /*************************************************************************/
 /*! Hook: fread */
 /*************************************************************************/
-extern size_t
+SBMA_EXTERN size_t
 fread(void * const buf, size_t const size, size_t const num,
       FILE * const stream)
 {
@@ -662,12 +714,15 @@ fread(void * const buf, size_t const size, size_t const num,
 
   return libc_fread(buf, size, num, stream);
 }
+SBMA_EXPORT(default, size_t
+fread(void * const buf, size_t const size, size_t const num,
+      FILE * const stream));
 
 
 /*************************************************************************/
 /*! Hook: fwrite */
 /*************************************************************************/
-extern size_t
+SBMA_EXTERN size_t
 fwrite(void const * const buf, size_t const size, size_t const num,
        FILE * const stream)
 {
@@ -676,34 +731,41 @@ fwrite(void const * const buf, size_t const size, size_t const num,
 
   return libc_fwrite(buf, size, num, stream);
 }
+SBMA_EXPORT(default, size_t
+fwrite(void const * const buf, size_t const size, size_t const num,
+       FILE * const stream));
 
 
 /*************************************************************************/
 /*! Hook: mlock */
 /*************************************************************************/
-extern int
+SBMA_EXTERN int
 mlock(void const * const addr, size_t const len)
 {
   (void)SBMA_mtouch((void*)addr, len);
   return libc_mlock(addr, len);
 }
+SBMA_EXPORT(default, int
+mlock(void const * const addr, size_t const len));
 
 
 /*************************************************************************/
 /*! Hook: mlockall */
 /*************************************************************************/
-extern int
+SBMA_EXTERN int
 mlockall(int flags)
 {
   (void)SBMA_mtouchall();
   return libc_mlockall(flags);
 }
+SBMA_EXPORT(default, int
+mlockall(int flags));
 
 
 /****************************************************************************/
 /*! Hook: msync */
 /****************************************************************************/
-extern int
+SBMA_EXTERN int
 msync(void * const addr, size_t const len, int const flags)
 {
   if (0 == SBMA_mexist(addr))
@@ -711,18 +773,20 @@ msync(void * const addr, size_t const len, int const flags)
   else
     return SBMA_mevict(addr, len);
 }
+SBMA_EXPORT(default, int
+msync(void * const addr, size_t const len, int const flags));
 
 
-#ifdef USE_PTHREAD
+#ifdef USE_THREAD
 /****************************************************************************/
 /*! Hook: sem_wait */
 /****************************************************************************/
-extern int
+SBMA_EXTERN int
 sem_wait(sem_t * const sem)
 {
   int ret, is_eligible;
 
-  is_eligible = sbma_is_eligible();
+  is_eligible = __sbma_is_eligible();
 
   /* add eligibility */
   if (0 == is_eligible) {
@@ -748,7 +812,7 @@ sem_wait(sem_t * const sem)
     }
 #endif
 
-    ret = sbma_eligible(IPC_ELIGIBLE);
+    ret = __sbma_eligible(IPC_ELIGIBLE);
     if (-1 == ret)
       return -1;
   }
@@ -761,7 +825,7 @@ sem_wait(sem_t * const sem)
         errno = 0;
       }
       else {
-        (void)sbma_eligible((0 == is_eligible) ? 0 : IPC_ELIGIBLE);
+        (void)__sbma_eligible((0 == is_eligible) ? 0 : IPC_ELIGIBLE);
         return -1;
       }
     }
@@ -772,24 +836,26 @@ sem_wait(sem_t * const sem)
 
   /* reset eligibility */
   if (0 == is_eligible) {
-    ret = sbma_eligible(0);
+    ret = __sbma_eligible(0);
     if (-1 == ret)
       return -1;
   }
 
   return 0;
 }
+SBMA_EXPORT(default, int
+sem_wait(sem_t * const sem));
 
 
 /****************************************************************************/
 /*! Hook: sem_timedwait */
 /****************************************************************************/
-extern int
+SBMA_EXTERN int
 sem_timedwait(sem_t * const sem, struct timespec const * const ts)
 {
   int ret, is_eligible;
 
-  is_eligible = sbma_is_eligible();
+  is_eligible = __sbma_is_eligible();
 
   /* add eligibility */
   if (0 == is_eligible) {
@@ -815,7 +881,7 @@ sem_timedwait(sem_t * const sem, struct timespec const * const ts)
     }
 #endif
 
-    ret = sbma_eligible(IPC_ELIGIBLE);
+    ret = __sbma_eligible(IPC_ELIGIBLE);
     if (-1 == ret)
       return -1;
   }
@@ -828,7 +894,7 @@ sem_timedwait(sem_t * const sem, struct timespec const * const ts)
         errno = 0;
       }
       else {
-        (void)sbma_eligible((0 == is_eligible) ? 0 : IPC_ELIGIBLE);
+        (void)__sbma_eligible((0 == is_eligible) ? 0 : IPC_ELIGIBLE);
         return -1;
       }
     }
@@ -839,26 +905,28 @@ sem_timedwait(sem_t * const sem, struct timespec const * const ts)
 
   /* reset eligibility */
   if (0 == is_eligible) {
-    ret = sbma_eligible(0);
+    ret = __sbma_eligible(0);
     if (-1 == ret)
       return -1;
   }
 
   return 0;
 }
+SBMA_EXPORT(default, int
+sem_timedwait(sem_t * const sem, struct timespec const * const ts));
 
 
 /****************************************************************************/
 /*! Hook: mq_send */
 /****************************************************************************/
-extern int
+SBMA_EXTERN int
 mq_send(mqd_t const mqdes, char const * const msg_ptr, size_t const msg_len,
         unsigned const msg_prio)
 {
   int ret, is_eligible;
   struct mq_attr oldattr, newattr;
 
-  is_eligible = sbma_is_eligible();
+  is_eligible = __sbma_is_eligible();
 
   /* add eligibility */
   if (0 == is_eligible) {
@@ -906,7 +974,7 @@ mq_send(mqd_t const mqdes, char const * const msg_ptr, size_t const msg_len,
     }
 #endif
 
-    ret = sbma_eligible(IPC_ELIGIBLE);
+    ret = __sbma_eligible(IPC_ELIGIBLE);
     if (-1 == ret)
       return -1;
   }
@@ -919,7 +987,7 @@ mq_send(mqd_t const mqdes, char const * const msg_ptr, size_t const msg_len,
         errno = 0;
       }
       else {
-        (void)sbma_eligible((0 == is_eligible) ? 0 : IPC_ELIGIBLE);
+        (void)__sbma_eligible((0 == is_eligible) ? 0 : IPC_ELIGIBLE);
         return -1;
       }
     }
@@ -930,19 +998,22 @@ mq_send(mqd_t const mqdes, char const * const msg_ptr, size_t const msg_len,
 
   /* reset eligibility */
   if (0 == is_eligible) {
-    ret = sbma_eligible(0);
+    ret = __sbma_eligible(0);
     if (-1 == ret)
       return -1;
   }
 
   return 0;
 }
+SBMA_EXPORT(default, int
+mq_send(mqd_t const mqdes, char const * const msg_ptr, size_t const msg_len,
+        unsigned const msg_prio));
 
 
 /****************************************************************************/
 /*! Hook: mq_timedsend */
 /****************************************************************************/
-extern int
+SBMA_EXTERN int
 mq_timedsend(mqd_t const mqdes, char const * const msg_ptr,
              size_t const msg_len, unsigned const msg_prio,
              struct timespec const * const abs_timeout)
@@ -950,7 +1021,7 @@ mq_timedsend(mqd_t const mqdes, char const * const msg_ptr,
   int ret, is_eligible;
   struct mq_attr oldattr, newattr;
 
-  is_eligible = sbma_is_eligible();
+  is_eligible = __sbma_is_eligible();
 
   /* add eligibility */
   if (0 == is_eligible) {
@@ -998,7 +1069,7 @@ mq_timedsend(mqd_t const mqdes, char const * const msg_ptr,
     }
 #endif
 
-    ret = sbma_eligible(IPC_ELIGIBLE);
+    ret = __sbma_eligible(IPC_ELIGIBLE);
     if (-1 == ret)
       return -1;
   }
@@ -1011,7 +1082,7 @@ mq_timedsend(mqd_t const mqdes, char const * const msg_ptr,
         errno = 0;
       }
       else {
-        (void)sbma_eligible((0 == is_eligible) ? 0 : IPC_ELIGIBLE);
+        (void)__sbma_eligible((0 == is_eligible) ? 0 : IPC_ELIGIBLE);
         return -1;
       }
     }
@@ -1022,19 +1093,23 @@ mq_timedsend(mqd_t const mqdes, char const * const msg_ptr,
 
   /* reset eligibility */
   if (0 == is_eligible) {
-    ret = sbma_eligible(0);
+    ret = __sbma_eligible(0);
     if (-1 == ret)
       return -1;
   }
 
   return 0;
 }
+SBMA_EXPORT(default, int
+mq_timedsend(mqd_t const mqdes, char const * const msg_ptr,
+             size_t const msg_len, unsigned const msg_prio,
+             struct timespec const * const abs_timeout));
 
 
 /****************************************************************************/
 /*! Hook: mq_receive */
 /****************************************************************************/
-extern ssize_t
+SBMA_EXTERN ssize_t
 mq_receive(mqd_t const mqdes, char * const msg_ptr, size_t const msg_len,
            unsigned * const msg_prio)
 {
@@ -1042,7 +1117,7 @@ mq_receive(mqd_t const mqdes, char * const msg_ptr, size_t const msg_len,
   ssize_t retval;
   struct mq_attr oldattr, newattr;
 
-  is_eligible = sbma_is_eligible();
+  is_eligible = __sbma_is_eligible();
 
   /* add eligibility */
   if (0 == is_eligible) {
@@ -1090,7 +1165,7 @@ mq_receive(mqd_t const mqdes, char * const msg_ptr, size_t const msg_len,
     }
 #endif
 
-    ret = sbma_eligible(IPC_ELIGIBLE);
+    ret = __sbma_eligible(IPC_ELIGIBLE);
     if (-1 == ret)
       return -1;
   }
@@ -1103,7 +1178,7 @@ mq_receive(mqd_t const mqdes, char * const msg_ptr, size_t const msg_len,
         errno = 0;
       }
       else {
-        (void)sbma_eligible((0 == is_eligible) ? 0 : IPC_ELIGIBLE);
+        (void)__sbma_eligible((0 == is_eligible) ? 0 : IPC_ELIGIBLE);
         return -1;
       }
     }
@@ -1114,19 +1189,22 @@ mq_receive(mqd_t const mqdes, char * const msg_ptr, size_t const msg_len,
 
   /* reset eligibility */
   if (0 == is_eligible) {
-    ret = sbma_eligible(0);
+    ret = __sbma_eligible(0);
     if (-1 == ret)
       return -1;
   }
 
   return retval;
 }
+SBMA_EXPORT(default, ssize_t
+mq_receive(mqd_t const mqdes, char * const msg_ptr, size_t const msg_len,
+           unsigned * const msg_prio));
 
 
 /****************************************************************************/
 /*! Hook: mq_timedreceive */
 /****************************************************************************/
-extern ssize_t
+SBMA_EXTERN ssize_t
 mq_timedreceive(mqd_t const mqdes, char * const msg_ptr, size_t const msg_len,
                 unsigned * const msg_prio,
                 struct timespec const * const abs_timeout)
@@ -1135,7 +1213,7 @@ mq_timedreceive(mqd_t const mqdes, char * const msg_ptr, size_t const msg_len,
   ssize_t reval;
   struct mq_attr oldattr, newattr;
 
-  is_eligible = sbma_is_eligible();
+  is_eligible = __sbma_is_eligible();
 
   /* add eligibility */
   if (0 == is_eligible) {
@@ -1183,7 +1261,7 @@ mq_timedreceive(mqd_t const mqdes, char * const msg_ptr, size_t const msg_len,
     }
 #endif
 
-    ret = sbma_eligible(IPC_ELIGIBLE);
+    ret = __sbma_eligible(IPC_ELIGIBLE);
     if (-1 == ret)
       return -1;
   }
@@ -1197,7 +1275,7 @@ mq_timedreceive(mqd_t const mqdes, char * const msg_ptr, size_t const msg_len,
         errno = 0;
       }
       else {
-        (void)sbma_eligible((0 == is_eligible) ? 0 : IPC_ELIGIBLE);
+        (void)__sbma_eligible((0 == is_eligible) ? 0 : IPC_ELIGIBLE);
         return -1;
       }
     }
@@ -1208,13 +1286,17 @@ mq_timedreceive(mqd_t const mqdes, char * const msg_ptr, size_t const msg_len,
 
   /* reset eligibility */
   if (0 == is_eligible) {
-    ret = sbma_eligible(0);
+    ret = __sbma_eligible(0);
     if (-1 == ret)
       return -1;
   }
 
   return retval;
 }
+SBMA_EXPORT(default, ssize_t
+mq_timedreceive(mqd_t const mqdes, char * const msg_ptr, size_t const msg_len,
+                unsigned * const msg_prio,
+                struct timespec const * const abs_timeout));
 #endif
 
 
