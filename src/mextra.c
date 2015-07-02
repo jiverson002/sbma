@@ -33,8 +33,8 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <string.h> /* memset */
 #include "config.h"
 #include "ipc.h"
+#include "lock.h"
 #include "sbma.h"
-#include "thread.h"
 #include "vmm.h"
 
 
@@ -46,7 +46,7 @@ __sbma_mallopt(int const __param, int const __value)
 {
   int ret;
 
-  ret = LOCK_GET(&(vmm.lock));
+  ret = __lock_get(&(vmm.lock));
   if (-1 == ret)
     return -1;
 
@@ -59,7 +59,7 @@ __sbma_mallopt(int const __param, int const __value)
     return -1;
   }
 
-  ret = LOCK_LET(&(vmm.lock));
+  ret = __lock_let(&(vmm.lock));
   if (-1 == ret)
     return -1;
 
@@ -82,10 +82,10 @@ __sbma_mallinfo(void)
 
   /* Not checking the return value here is a hack which allows this function
    * to be called even after __vmm_destroy() has been called. */
-  /*ret = LOCK_GET(&(vmm.lock));
+  /*ret = __lock_get(&(vmm.lock));
   if (-1 == ret)
     return mi;*/
-  (void)LOCK_GET(&(vmm.lock));
+  (void)__lock_get(&(vmm.lock));
 
   mi.smblks  = vmm.numrf; /* read faults */
   mi.ordblks = vmm.numwf; /* write faults */
@@ -99,10 +99,10 @@ __sbma_mallinfo(void)
 
   /* Not checking the return value here is a hack which allows this function
    * to be called even after __vmm_destroy() has been called. */
-  /*ret = LOCK_LET(&(vmm.lock));
+  /*ret = __lock_let(&(vmm.lock));
   if (-1 == ret)
     return mi;*/
-  (void)LOCK_LET(&(vmm.lock));
+  (void)__lock_let(&(vmm.lock));
 
   return mi;
 }

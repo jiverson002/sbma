@@ -90,9 +90,9 @@ extern struct vmm vmm;
 /****************************************************************************/
 #define VMM_TRACK(__FIELD, __VAL)\
 do {\
-  if (0 == LOCK_GET(&(vmm.lock))) {\
+  if (0 == __lock_get(&(vmm.lock))) {\
     vmm.__FIELD += (__VAL);\
-    (void)LOCK_LET(&(vmm.lock));\
+    (void)__lock_let(&(vmm.lock));\
   }\
 } while (0)
 

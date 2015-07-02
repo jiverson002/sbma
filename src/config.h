@@ -33,10 +33,14 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #endif
 
 
-#include <stdlib.h>    /* abort */
-#include <string.h>    /* basename */
-#include <sys/types.h> /* ssize_t */
-#include "thread.h"
+#ifdef USE_THREAD
+# include <semaphore.h> /* semaphore libray */
+# include <time.h>      /* CLOCK_REALTIME, struct timespec, clock_gettime */
+#endif
+#include <stdio.h>      /* fprintf */
+#include <stdlib.h>     /* abort, stderr */
+#include <string.h>     /* basename */
+#include <sys/types.h>  /* ssize_t */
 
 
 /****************************************************************************/

@@ -29,6 +29,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #endif
 
 
+#include <errno.h>    /* errno library */
 #include <fcntl.h>    /* O_RDWR, O_CREAT, O_EXCL */
 #include <signal.h>   /* struct sigaction, siginfo_t, sigemptyset, sigaction */
 #include <stddef.h>   /* NULL, size_t */
@@ -39,9 +40,9 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <unistd.h>   /* sysconf */
 #include "config.h"
 #include "ipc.h"
+#include "lock.h"
 #include "mmu.h"
 #include "sbma.h"
-#include "thread.h"
 #include "vmm.h"
 
 
@@ -181,7 +182,7 @@ __vmm_sigsegv(int const sig, siginfo_t * const si, void * const ctx)
           errno = 0;
         }
         else {
-          (void)LOCK_LET(&(ate->lock));
+          (void)__lock_let(&(ate->lock));
           ASSERT(0);
         }
       }
@@ -201,7 +202,7 @@ __vmm_sigsegv(int const sig, siginfo_t * const si, void * const ctx)
     }
 
     /* release lock on alloction table entry */
-    ret = LOCK_LET(&(ate->lock));
+    ret = __lock_let(&(ate->lock));
     ASSERT(-1 != ret);
 
     /* track number of read faults, syspages read from disk, syspages
@@ -225,7 +226,7 @@ __vmm_sigsegv(int const sig, siginfo_t * const si, void * const ctx)
     ASSERT(-1 != ret);
 
     /* release lock on alloction table entry */
-    ret = LOCK_LET(&(ate->lock));
+    ret = __lock_let(&(ate->lock));
     ASSERT(-1 != ret);
 
     /* track number of write faults */
@@ -630,7 +631,7 @@ __vmm_init(struct vmm * const __vmm, char const * const __fstem,
     return -1;
 
   /* initialize vmm lock */
-  if (-1 == LOCK_INIT(&(__vmm->lock)))
+  if (-1 == __lock_init(&(__vmm->lock)))
     return -1;
 
   vmm.init = 1;
@@ -670,7 +671,7 @@ __vmm_destroy(struct vmm * const __vmm)
     return -1;
 
   /* destroy mmu lock */
-  if (-1 == LOCK_FREE(&(__vmm->lock)))
+  if (-1 == __lock_free(&(__vmm->lock)))
     return -1;
 
   return 0;

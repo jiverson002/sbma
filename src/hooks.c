@@ -38,8 +38,12 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 
 #include <dlfcn.h>     /* dlsym */
+#include <errno.h>     /* errno library */
 #include <fcntl.h>     /* open */
 #include <malloc.h>    /* struct mallinfo */
+#ifdef USE_THREAD
+# include <mqueue.h>   /* mq_*send, mq_*receive */
+#endif
 #include <stdarg.h>    /* stdarg library */
 #include <stddef.h>    /* size_t */
 #include <stdio.h>     /* FILE */
@@ -1121,7 +1125,7 @@ mq_timedreceive(mqd_t const mqdes, char * const msg_ptr, size_t const msg_len,
                 struct timespec const * const abs_timeout)
 {
   int ret, is_eligible;
-  ssize_t reval;
+  ssize_t retval;
   struct mq_attr oldattr, newattr;
 
   is_eligible = __sbma_is_eligible();

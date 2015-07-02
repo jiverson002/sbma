@@ -29,14 +29,16 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #endif
 
 
+#include <errno.h>     /* errno library */
 #include <stdint.h>    /* uint8_t, uintptr_t */
 #include <stddef.h>    /* NULL, size_t */
 #include <sys/types.h> /* ssize_t */
+#include <unistd.h>    /* syscall, _SC_PAGESIZE */
 #include "config.h"
 #include "ipc.h"
+#include "lock.h"
 #include "mmu.h"
 #include "sbma.h"
-#include "thread.h"
 #include "vmm.h"
 
 
@@ -52,7 +54,7 @@ __sbma_check(char const * const file, int const line)
   if (1 == FAILED)
     return;
 
-  ret = LOCK_GET(&(vmm.lock));
+  ret = __lock_get(&(vmm.lock));
   if (-1 == ret)
     printf("[%5d] %s:%d %s\n", (int)getpid(), basename(file), line,
       strerror(errno));
@@ -61,14 +63,14 @@ __sbma_check(char const * const file, int const line)
   s_pages   = 1+((sizeof(struct ate)-1)/page_size);
   l_pages = 0;
   for (ate=vmm.mmu.a_tbl; NULL!=ate; ate=ate->next) {
-    ret = LOCK_GET(&(ate->lock));
+    ret = __lock_get(&(ate->lock));
     if (-1 == ret)
       printf("[%5d] %s:%d %s\n", (int)getpid(), basename(file), line,
         strerror(errno));
     n_pages   = ate->n_pages;
     f_pages   = 1+((n_pages*sizeof(uint8_t)-1)/page_size);
     l_pages += (s_pages+ate->l_pages+f_pages);
-    ret = LOCK_LET(&(ate->lock));
+    ret = __lock_let(&(ate->lock));
     if (-1 == ret)
       printf("[%5d] %s:%d %s\n", (int)getpid(), basename(file), line,
         strerror(errno));
@@ -95,7 +97,7 @@ __sbma_check(char const * const file, int const line)
   if (l_pages == vmm.curpages && l_pages == vmm.ipc.pmem[vmm.ipc.id])
     printf("[%5d] %s:%d success\n", (int)getpid(), basename(file), line);
 
-  ret = LOCK_LET(&(vmm.lock));
+  ret = __lock_let(&(vmm.lock));
   if (-1 == ret)
     printf("[%5d] %s:%d %s\n", (int)getpid(), basename(file), line,
       strerror(errno));
@@ -230,7 +232,7 @@ __sbma_mtouch(void * const __addr, size_t const __len)
   for (;;) {
     l_pages = __sbma_mtouch_probe(ate, __addr, __len);
     if (-1 == l_pages) {
-      (void)LOCK_LET(&(ate->lock));
+      (void)__lock_let(&(ate->lock));
       return -1;
     }
 
@@ -247,7 +249,7 @@ __sbma_mtouch(void * const __addr, size_t const __len)
         errno = 0;
       }
       else {
-        (void)LOCK_LET(&(ate->lock));
+        (void)__lock_let(&(ate->lock));
         return -1;
       }
     }
@@ -258,11 +260,11 @@ __sbma_mtouch(void * const __addr, size_t const __len)
 
   numrd = __sbma_mtouch_int(ate, __addr, __len);
   if (-1 == numrd) {
-    (void)LOCK_LET(&(ate->lock));
+    (void)__lock_let(&(ate->lock));
     return -1;
   }
 
-  ret = LOCK_LET(&(ate->lock));
+  ret = __lock_let(&(ate->lock));
   if (-1 == ret)
     return -1;
 
@@ -290,14 +292,14 @@ __sbma_mtouchall(void)
   ssize_t retval;
   struct ate * ate;
 
-  ret = LOCK_GET(&(vmm.lock));
+  ret = __lock_get(&(vmm.lock));
   if (-1 == ret)
     return -1;
 
   for (ate=vmm.mmu.a_tbl; NULL!=ate; ate=ate->next) {
-    ret = LOCK_GET(&(ate->lock));
+    ret = __lock_get(&(ate->lock));
     if (-1 == ret) {
-      (void)LOCK_LET(&(vmm.lock));
+      (void)__lock_let(&(vmm.lock));
       return -1;
     }
 
@@ -307,8 +309,8 @@ __sbma_mtouchall(void)
       retval = __sbma_mtouch_probe(ate, (void*)ate->base,\
         ate->n_pages*vmm.page_size);
       if (-1 == retval) {
-        (void)LOCK_LET(&(ate->lock));
-        (void)LOCK_LET(&(vmm.lock));
+        (void)__lock_let(&(ate->lock));
+        (void)__lock_let(&(vmm.lock));
         return -1;
       }
 
@@ -325,8 +327,8 @@ __sbma_mtouchall(void)
           errno = 0;
         }
         else {
-          (void)LOCK_LET(&(ate->lock));
-          (void)LOCK_LET(&(vmm.lock));
+          (void)__lock_let(&(ate->lock));
+          (void)__lock_let(&(vmm.lock));
           return -1;
         }
       }
@@ -335,9 +337,9 @@ __sbma_mtouchall(void)
       }
     }
 
-    ret = LOCK_LET(&(ate->lock));
+    ret = __lock_let(&(ate->lock));
     if (-1 == ret) {
-      (void)LOCK_LET(&(vmm.lock));
+      (void)__lock_let(&(vmm.lock));
       return -1;
     }
 
@@ -345,27 +347,27 @@ __sbma_mtouchall(void)
   }
 
   for (ate=vmm.mmu.a_tbl; NULL!=ate; ate=ate->next) {
-    ret = LOCK_GET(&(ate->lock));
+    ret = __lock_get(&(ate->lock));
     if (-1 == ret) {
-      (void)LOCK_LET(&(vmm.lock));
+      (void)__lock_let(&(vmm.lock));
       return -1;
     }
     ret = __sbma_mtouch_int(ate, (void*)ate->base,\
       ate->n_pages*vmm.page_size);
     if (-1 == ret) {
-      (void)LOCK_LET(&(ate->lock));
-      (void)LOCK_LET(&(vmm.lock));
+      (void)__lock_let(&(ate->lock));
+      (void)__lock_let(&(vmm.lock));
       return -1;
     }
-    ret = LOCK_LET(&(ate->lock));
+    ret = __lock_let(&(ate->lock));
     if (-1 == ret) {
-      (void)LOCK_LET(&(vmm.lock));
+      (void)__lock_let(&(vmm.lock));
       return -1;
     }
     numrd += ret;
   }
 
-  ret = LOCK_LET(&(vmm.lock));
+  ret = __lock_let(&(vmm.lock));
   if (-1 == ret)
     return -1;
 
@@ -411,7 +413,7 @@ __sbma_mclear(void * const __addr, size_t const __len)
       return -1;
   }
 
-  ret = LOCK_LET(&(ate->lock));
+  ret = __lock_let(&(ate->lock));
   if (-1 == ret)
     return -1;
 
@@ -430,19 +432,19 @@ __sbma_mclearall(void)
   ssize_t ret;
   struct ate * ate;
 
-  ret = LOCK_GET(&(vmm.lock));
+  ret = __lock_get(&(vmm.lock));
   if (-1 == ret)
     return -1;
 
   for (ate=vmm.mmu.a_tbl; NULL!=ate; ate=ate->next) {
     ret = __sbma_mclear((void*)ate->base, ate->n_pages*vmm.page_size);
     if (-1 == ret) {
-      (void)LOCK_LET(&(vmm.lock));
+      (void)__lock_let(&(vmm.lock));
       return -1;
     }
   }
 
-  ret = LOCK_LET(&(vmm.lock));
+  ret = __lock_let(&(vmm.lock));
   if (-1 == ret)
     return -1;
 
@@ -468,13 +470,13 @@ __sbma_mevict(void * const __addr, size_t const __len)
 
   l_pages = __sbma_mevict_probe(ate, __addr, __len);
   if (-1 == l_pages) {
-    (void)LOCK_LET(&(ate->lock));
+    (void)__lock_let(&(ate->lock));
     return -1;
   }
 
   numwr = __sbma_mevict_int(ate, __addr, __len);
   if (-1 == numwr) {
-    (void)LOCK_LET(&(ate->lock));
+    (void)__lock_let(&(ate->lock));
     return -1;
   }
 
@@ -510,40 +512,40 @@ __sbma_mevictall_int(size_t * const __l_pages, size_t * const __numwr)
   ssize_t ret;
   struct ate * ate;
 
-  ret = LOCK_GET(&(vmm.lock));
+  ret = __lock_get(&(vmm.lock));
   if (-1 == ret)
     return -1;
 
   for (ate=vmm.mmu.a_tbl; NULL!=ate; ate=ate->next) {
-    ret = LOCK_GET(&(ate->lock));
+    ret = __lock_get(&(ate->lock));
     if (-1 == ret) {
-      (void)LOCK_LET(&(vmm.lock));
+      (void)__lock_let(&(vmm.lock));
       return -1;
     }
     ret = __sbma_mevict_probe(ate, (void*)ate->base,\
       ate->n_pages*vmm.page_size);
     if (-1 == ret) {
-      (void)LOCK_LET(&(ate->lock));
-      (void)LOCK_LET(&(vmm.lock));
+      (void)__lock_let(&(ate->lock));
+      (void)__lock_let(&(vmm.lock));
       return -1;
     }
     l_pages += ret;
     ret = __sbma_mevict_int(ate, (void*)ate->base,\
       ate->n_pages*vmm.page_size);
     if (-1 == ret) {
-      (void)LOCK_LET(&(ate->lock));
-      (void)LOCK_LET(&(vmm.lock));
+      (void)__lock_let(&(ate->lock));
+      (void)__lock_let(&(vmm.lock));
       return -1;
     }
     numwr += ret;
-    ret = LOCK_LET(&(ate->lock));
+    ret = __lock_let(&(ate->lock));
     if (-1 == ret) {
-      (void)LOCK_LET(&(vmm.lock));
+      (void)__lock_let(&(vmm.lock));
       return -1;
     }
   }
 
-  ret = LOCK_LET(&(vmm.lock));
+  ret = __lock_let(&(vmm.lock));
   if (-1 == ret)
     return -1;
 
@@ -607,7 +609,7 @@ __sbma_mexist(void const * const __addr)
   if (NULL == ate)
     return 0;
 
-  ret = LOCK_LET(&(ate->lock));
+  ret = __lock_let(&(ate->lock));
   if (-1 == ret)
     return -1;
 

@@ -24,82 +24,64 @@ OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
-#ifndef _GNU_SOURCE
-# define _GNU_SOURCE
-#endif
-
-
-#include <stddef.h> /* size_t */
-#include "config.h"
-#include "lock.h"
-#include "vmm.h"
+#ifndef __THREAD_H__
+#define __THREAD_H__ 1
 
 
 /****************************************************************************/
-/*! Initialization variables. */
+/*! Pthread configurations. */
 /****************************************************************************/
 #ifdef USE_THREAD
-static pthread_mutex_t init_lock=PTHREAD_MUTEX_INITIALIZER;
+# include <pthread.h> /* pthread library */
+
+# define DEADLOCK 0   /* 0: no deadlock diagnostics, */
+                      /* 1: deadlock diagnostics */
+
+# define __lock_get(LOCK) __lock_get_int(__func__, __LINE__, #LOCK, LOCK)
+# define __lock_let(LOCK) __lock_let_int(__func__, __LINE__, #LOCK, LOCK)
+
+# ifdef __cplusplus
+extern "C" {
+# endif
+
+/****************************************************************************/
+/*! Initialize pthread lock. */
+/****************************************************************************/
+int
+__lock_init(pthread_mutex_t * const __lock);
+
+
+/****************************************************************************/
+/*! Destroy pthread lock. */
+/****************************************************************************/
+int
+__lock_free(pthread_mutex_t * const __lock);
+
+
+/****************************************************************************/
+/*! Lock pthread lock. */
+/****************************************************************************/
+int
+__lock_get_int(char const * const __func, int const __line,
+               char const * const __lock_str, pthread_mutex_t * const __lock);
+
+
+/****************************************************************************/
+/*! Unlock pthread lock. */
+/****************************************************************************/
+int
+__lock_let_int(char const * const __func, int const __line,
+               char const * const __lock_str, pthread_mutex_t * const __lock);
+
+# ifdef __cplusplus
+}
+# endif
+#else
+# define __lock_init(...) 0
+# define __lock_free(...) 0
+# define __lock_get(...)  0
+# define __lock_let(...)  0
 #endif
 
 
-/****************************************************************************/
-/*! The single instance of vmm per process. */
-/****************************************************************************/
-struct vmm vmm={.init=0};
-
-
-/****************************************************************************/
-/*! Initialize the sbma environment. */
-/****************************************************************************/
-SBMA_EXTERN int
-__sbma_init(char const * const __fstem, int const __uniq,
-            size_t const __page_size, int const __n_procs,
-            size_t const __max_mem, int const __opts)
-{
-  /* acquire init lock */
-  if (-1 == __lock_get(&init_lock))
-    return -1;
-
-  if (-1 == __vmm_init(&vmm, __fstem, __uniq, __page_size, __n_procs,\
-      __max_mem, __opts))
-  {
-    (void)__lock_let(&init_lock);
-    return -1;
-  }
-
-  /* release init lock */
-  if (-1 == __lock_let(&init_lock))
-    return -1;
-
-  return 0;
-}
-SBMA_EXPORT(internal, int
-__sbma_init(char const * const __fstem, int const __uniq,
-            size_t const __page_size, int const __n_procs,
-            size_t const __max_mem, int const __opts));
-
-
-/****************************************************************************/
-/*! Destroy the sbma environment. */
-/****************************************************************************/
-SBMA_EXTERN int
-__sbma_destroy(void)
-{
-  /* acquire init lock */
-  if (-1 == __lock_get(&init_lock))
-    return -1;
-
-  if (-1 == __vmm_destroy(&vmm)) {
-    (void)__lock_let(&init_lock);
-    return -1;
-  }
-
-  /* release init lock */
-  if (-1 == __lock_let(&init_lock))
-    return -1;
-
-  return 0;
-}
-SBMA_EXPORT(internal, int
-__sbma_destroy(void));
+#endif

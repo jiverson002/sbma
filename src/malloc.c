@@ -29,6 +29,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #endif
 
 
+#include <errno.h>     /* errno library */
 #include <fcntl.h>     /* O_WRONLY, O_CREAT, O_EXCL */
 #include <stdint.h>    /* uint8_t, uintptr_t */
 #include <stddef.h>    /* NULL, size_t */
@@ -40,9 +41,9 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <unistd.h>    /* truncate, ftruncate */
 #include "config.h"
 #include "ipc.h"
+#include "lock.h"
 #include "mmu.h"
 #include "sbma.h"
-#include "thread.h"
 #include "vmm.h"
 
 
@@ -136,7 +137,7 @@ __sbma_malloc(size_t const __size)
   ate->flags   = (uint8_t*)(addr+((s_pages+n_pages)*page_size));
 
   /* initialize ate lock */
-  ret = LOCK_INIT(&(ate->lock));
+  ret = __lock_init(&(ate->lock));
   if (-1 == ret)
     return NULL;
 
@@ -203,7 +204,7 @@ __sbma_free(void * const __ptr)
     return -1;
 
   /* destory ate lock */
-  ret = LOCK_FREE(&(ate->lock));
+  ret = __lock_free(&(ate->lock));
   if (-1 == ret)
     return -1;
 

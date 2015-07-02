@@ -32,8 +32,8 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <stdint.h> /* uintptr_t */
 #include <stddef.h> /* NULL */
 #include "config.h"
+#include "lock.h"
 #include "mmu.h"
-#include "thread.h"
 
 
 SBMA_EXTERN int
@@ -46,7 +46,7 @@ __mmu_init(struct mmu * const __mmu, size_t const __page_size)
   __mmu->page_size = __page_size;
 
   /* initialize mmu lock */
-  if (-1 == LOCK_INIT(&(__mmu->lock)))
+  if (-1 == __lock_init(&(__mmu->lock)))
     return -1;
 
   return 0;
@@ -59,7 +59,7 @@ SBMA_EXTERN int
 __mmu_destroy(struct mmu * const __mmu)
 {
   /* destroy mmu lock */
-  if (-1 == LOCK_FREE(&(__mmu->lock)))
+  if (-1 == __lock_free(&(__mmu->lock)))
     return -1;
 
   return 0;
@@ -74,7 +74,7 @@ SBMA_EXTERN int
 __mmu_insert_ate(struct mmu * const __mmu, struct ate * const __ate)
 {
   /* acquire lock */
-  if (-1 == LOCK_GET(&(__mmu->lock)))
+  if (-1 == __lock_get(&(__mmu->lock)))
     return -1;
 
   /* insert at beginning of doubly linked list */
@@ -91,7 +91,7 @@ __mmu_insert_ate(struct mmu * const __mmu, struct ate * const __ate)
   }
 
   /* release lock */
-  if (-1 == LOCK_LET(&(__mmu->lock)))
+  if (-1 == __lock_let(&(__mmu->lock)))
     return -1;
 
   return 0;
@@ -103,7 +103,7 @@ __mmu_insert_ate(struct mmu * const __mmu, struct ate * const __ate));
 SBMA_EXTERN int
 __mmu_invalidate_ate(struct mmu * const __mmu, struct ate * const __ate)
 {
-  if (-1 == LOCK_GET(&(__mmu->lock)))
+  if (-1 == __lock_get(&(__mmu->lock)))
     return -1;
 
   /* remove from doubly linked list */
@@ -114,7 +114,7 @@ __mmu_invalidate_ate(struct mmu * const __mmu, struct ate * const __ate)
   if (NULL != __ate->next)
     __ate->next->prev = __ate->prev;
 
-  if (-1 == LOCK_LET(&(__mmu->lock)))
+  if (-1 == __lock_let(&(__mmu->lock)))
     return -1;
 
   return 0;
@@ -131,7 +131,7 @@ __mmu_lookup_ate(struct mmu * const __mmu, void const * const __addr)
   struct ate * ate;
 
   /* acquire lock */
-  if (-1 == LOCK_GET(&(__mmu->lock)))
+  if (-1 == __lock_get(&(__mmu->lock)))
     return (struct ate*)-1;
 
   /* search doubly linked list for a ate which contains __addr */
@@ -143,13 +143,13 @@ __mmu_lookup_ate(struct mmu * const __mmu, void const * const __addr)
   }
 
   /* lock ate */
-  if (NULL != ate && -1 == LOCK_GET(&(ate->lock))) {
-    (void)LOCK_LET(&(__mmu->lock));
+  if (NULL != ate && -1 == __lock_get(&(ate->lock))) {
+    (void)__lock_let(&(__mmu->lock));
     return (struct ate*)-1;
   }
 
   /* release lock */
-  if (-1 == LOCK_LET(&(__mmu->lock)))
+  if (-1 == __lock_let(&(__mmu->lock)))
     return (struct ate*)-1;
 
   return ate;
