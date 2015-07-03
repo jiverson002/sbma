@@ -324,7 +324,7 @@ __ipc_madmit(struct ipc * const __ipc, size_t const __value)
    * satisfy the request.
    */
 
-  int ret, i, ii;
+  int ret, i, ii, dlctr;
   ssize_t smem, mxmem;
   struct timespec ts;
   uint8_t * flags;
@@ -352,7 +352,9 @@ __ipc_madmit(struct ipc * const __ipc, size_t const __value)
     /* find a process which has memory and is eligible */
     mxmem = 0;
     ii    = -1;
-    for (i=0; i<__ipc->n_procs; ++i) {
+    for (dlctr=0,i=0; i<__ipc->n_procs; ++i) {
+      dlctr += (IPC_BLOCKED == (flags[i]&(IPC_BLOCKED|IPC_POPULATED)));
+
       if (i == __ipc->id)
         continue;
 
@@ -366,8 +368,10 @@ __ipc_madmit(struct ipc * const __ipc, size_t const __value)
     }
 
     /* no such process exists, break loop */
-    if (-1 == ii)
+    if (-1 == ii) {
+      ASSERT(dlctr != __ipc->n_procs);
       break;
+    }
 
     /* such a process is available, tell it to free memory */
     ret = kill(pid[ii], SIGIPC);
@@ -390,6 +394,13 @@ __ipc_madmit(struct ipc * const __ipc, size_t const __value)
   if (smem >= 0) {
     *__ipc->smem -= __value;
     __ipc->pmem[__ipc->id] += __value;
+
+#if SBMA_VERSION >= 200
+    /* transition to running state */
+    ret = __ipc_unblock(__ipc);
+    if (-1 == ret)
+      return -1;
+#endif
   }
 
   ret = sem_post(__ipc->mtx);
@@ -398,13 +409,23 @@ __ipc_madmit(struct ipc * const __ipc, size_t const __value)
 
 #if SBMA_VERSION >= 200
   if (smem < 0) {
+    /* NOTE: Because the process enters the block state here, but does not
+     * become unblocked until it successfully admits the memory, the behavior
+     * is undefined if -1 is returned with errno equal EAGAIN and the user
+     * does not call __ipc_madmit again. */
+
+    /* transition to blocked state */
+    ret = __ipc_block(__ipc);
+    if (-1 == ret)
+      return -1;
+
     /* TODO: there is a performance issue here. Currently this process will
      * block and unblock each call to nanosleep. Instead, the process should
      * block until it can admit the memory, then unblock. This should increase
      * performance. */
     ts.tv_sec  = 0;
     ts.tv_nsec = 250000000;
-    ret = nanosleep(&ts, NULL);
+    ret = libc_nanosleep(&ts, NULL);
     if (-1 == ret && EINTR != errno)
       return -1;
 

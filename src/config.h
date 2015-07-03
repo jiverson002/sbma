@@ -41,6 +41,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <stdlib.h>     /* abort, stderr */
 #include <string.h>     /* basename */
 #include <sys/types.h>  /* ssize_t */
+#include <unistd.h>     /* alarm */
 
 
 /****************************************************************************/
@@ -75,6 +76,29 @@ do {                                                                        \
 
 
 /****************************************************************************/
+/*! Process deadlock check functions. */
+/****************************************************************************/
+#define DEADLOCK_ALARM_TIME  25
+#ifdef DEADLOCK_ALARM_TIME
+# define DEADLOCK_ALARM_ON()\
+do {\
+  printf("[%5d] %s:%d alarm on\n", (int)getpid(), basename(__FILE__),\
+    __LINE__);\
+  alarm(DEADLOCK_ALARM_TIME);\
+} while (0)
+# define DEADLOCK_ALARM_OFF()\
+do {\
+  printf("[%5d] %s:%d alarm off\n", (int)getpid(), basename(__FILE__),\
+    __LINE__);\
+  alarm(0);\
+} while (0)
+#else
+# define DEADLOCK_ALARM_ON()  (void)0
+# define DEADLOCK_ALARM_OFF() (void)0
+#endif
+
+
+/****************************************************************************/
 /*! Function prototypes for libc hooks. */
 /****************************************************************************/
 #ifdef __cplusplus
@@ -87,6 +111,8 @@ int     libc_open(char const *, int, ...);
 ssize_t libc_read(int const, void * const, size_t const);
 ssize_t libc_write(int const, void const * const, size_t const);
 int     libc_mlock(void const * const, size_t const);
+int     libc_nanosleep(struct timespec const * const req,
+                       struct timespec * const rem);
 #ifdef USE_THREAD
 int     libc_sem_wait(sem_t * const sem);
 int     libc_sem_timedwait(sem_t * const sem,

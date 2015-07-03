@@ -872,6 +872,8 @@ nanosleep(struct timespec const * const req, struct timespec * const rem)
 {
   int ret;
 
+  DEADLOCK_ALARM_ON();
+
   /* transition to blocked state */
   ret = __ipc_block(&(vmm.ipc));
   if (-1 == ret)
@@ -889,6 +891,8 @@ nanosleep(struct timespec const * const req, struct timespec * const rem)
   if (-1 == ret)
     return -1;
 
+  DEADLOCK_ALARM_OFF();
+
   return 0;
 }
 SBMA_EXPORT(default, int
@@ -903,6 +907,8 @@ SBMA_EXTERN int
 sem_wait(sem_t * const sem)
 {
   int ret;
+
+  DEADLOCK_ALARM_ON();
 
   /* transition to blocked state */
   ret = __ipc_block(&(vmm.ipc));
@@ -921,6 +927,8 @@ sem_wait(sem_t * const sem)
   if (-1 == ret)
     return -1;
 
+  DEADLOCK_ALARM_OFF();
+
   return 0;
 }
 SBMA_EXPORT(default, int
@@ -934,6 +942,8 @@ SBMA_EXTERN int
 sem_timedwait(sem_t * const sem, struct timespec const * const ts)
 {
   int ret;
+
+  DEADLOCK_ALARM_ON();
 
   /* transition to blocked state */
   ret = __ipc_block(&(vmm.ipc));
@@ -952,6 +962,8 @@ sem_timedwait(sem_t * const sem, struct timespec const * const ts)
   if (-1 == ret)
     return -1;
 
+  DEADLOCK_ALARM_OFF();
+
   return 0;
 }
 SBMA_EXPORT(default, int
@@ -967,6 +979,8 @@ mq_send(mqd_t const mqdes, char const * const msg_ptr, size_t const msg_len,
 {
   int ret;
   struct mq_attr oldattr, newattr;
+
+  DEADLOCK_ALARM_ON();
 
   /* transition to blocked state */
   ret = __ipc_block(&(vmm.ipc));
@@ -984,6 +998,8 @@ mq_send(mqd_t const mqdes, char const * const msg_ptr, size_t const msg_len,
   ret = __ipc_unblock(&(vmm.ipc));
   if (-1 == ret)
     return -1;
+
+  DEADLOCK_ALARM_OFF();
 
   return 0;
 }
@@ -1003,6 +1019,8 @@ mq_timedsend(mqd_t const mqdes, char const * const msg_ptr,
   int ret;
   struct mq_attr oldattr, newattr;
 
+  DEADLOCK_ALARM_ON();
+
   /* transition to blocked state */
   ret = __ipc_block(&(vmm.ipc));
   if (-1 == ret)
@@ -1019,6 +1037,8 @@ mq_timedsend(mqd_t const mqdes, char const * const msg_ptr,
   ret = __ipc_unblock(&(vmm.ipc));
   if (-1 == ret)
     return -1;
+
+  DEADLOCK_ALARM_OFF();
 
   return 0;
 }
@@ -1039,6 +1059,8 @@ mq_receive(mqd_t const mqdes, char * const msg_ptr, size_t const msg_len,
   ssize_t retval;
   struct mq_attr oldattr, newattr;
 
+  DEADLOCK_ALARM_ON();
+
   /* transition to blocked state */
   ret = __ipc_block(&(vmm.ipc));
   if (-1 == ret)
@@ -1055,6 +1077,8 @@ mq_receive(mqd_t const mqdes, char * const msg_ptr, size_t const msg_len,
   ret = __ipc_unblock(&(vmm.ipc));
   if (-1 == ret)
     return -1;
+
+  DEADLOCK_ALARM_OFF();
 
   return retval;
 }
@@ -1075,6 +1099,8 @@ mq_timedreceive(mqd_t const mqdes, char * const msg_ptr, size_t const msg_len,
   ssize_t retval;
   struct mq_attr oldattr, newattr;
 
+  DEADLOCK_ALARM_ON();
+
   /* transition to blocked state */
   ret = __ipc_block(&(vmm.ipc));
   if (-1 == ret)
@@ -1092,6 +1118,8 @@ mq_timedreceive(mqd_t const mqdes, char * const msg_ptr, size_t const msg_len,
   ret = __ipc_unblock(&(vmm.ipc));
   if (-1 == ret)
     return -1;
+
+  DEADLOCK_ALARM_OFF();
 
   return retval;
 }

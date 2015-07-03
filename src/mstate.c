@@ -242,8 +242,6 @@ __sbma_mtouch(void * const __addr, size_t const __len)
       break;
     }
 #endif
-    ASSERT(0 == __ipc_is_eligible(&(vmm.ipc)));
-
     ret = __ipc_madmit(&(vmm.ipc), l_pages);
     if (-1 == ret) {
       if (EAGAIN == errno) {
@@ -255,6 +253,7 @@ __sbma_mtouch(void * const __addr, size_t const __len)
       }
     }
     else {
+      ASSERT(0 == __ipc_is_eligible(&(vmm.ipc)));
       break;
     }
   }
@@ -331,8 +330,6 @@ __sbma_mtouch_atomic(void * const __addr, size_t const __len, ...)
       break;
 #endif
 
-    ASSERT(0 == __ipc_is_eligible(&(vmm.ipc)));
-
     ret = __ipc_madmit(&(vmm.ipc), l_pages);
     if (-1 == ret) {
       if (EAGAIN == errno)
@@ -341,6 +338,7 @@ __sbma_mtouch_atomic(void * const __addr, size_t const __len, ...)
         goto CLEANUP;
     }
     else {
+      ASSERT(0 == __ipc_is_eligible(&(vmm.ipc)));
       break;
     }
   }
