@@ -54,21 +54,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "config.h"
 #include "ipc.h"
 #include "sbma.h"
-
-
-/****************************************************************************/
-/* required function prototypes */
-/****************************************************************************/
-#ifdef __cplusplus
-extern "C" {
-#endif
-
-int __sbma_eligible(int);
-int __sbma_is_eligible(void);
-
-#ifdef __cplusplus
-}
-#endif
+#include "vmm.h"
 
 
 /****************************************************************************/
@@ -884,31 +870,24 @@ msync(void * const addr, size_t const len, int const flags));
 SBMA_EXTERN int
 nanosleep(struct timespec const * const req, struct timespec * const rem)
 {
-  int ret, is_eligible;
+  int ret;
 
-  is_eligible = __sbma_is_eligible();
-
-  /* add eligibility */
-  if (0 == is_eligible) {
-    ret = __sbma_eligible(IPC_ELIGIBLE);
-    if (-1 == ret)
-      return -1;
-  }
+  /* transition to blocked state */
+  ret = __ipc_block(&(vmm.ipc));
+  if (-1 == ret)
+    return -1;
 
   /* perform blocking wait */
   ret = libc_nanosleep(req, rem);
   if (-1 == ret) {
-    if (0 != __sbma_is_eligible() && 0 == is_eligible)
-      (void)__sbma_eligible(0);
+    (void)__ipc_unblock(&(vmm.ipc));
     return -1;
   }
 
-  /* reset eligibility */
-  if (0 == is_eligible) {
-    ret = __sbma_eligible(0);
-    if (-1 == ret)
-      return -1;
-  }
+  /* transition to running state */
+  ret = __ipc_unblock(&(vmm.ipc));
+  if (-1 == ret)
+    return -1;
 
   return 0;
 }
@@ -923,43 +902,24 @@ nanosleep(struct timespec const * const req, struct timespec * const rem));
 SBMA_EXTERN int
 sem_wait(sem_t * const sem)
 {
-  int ret, is_eligible;
+  int ret;
 
-  is_eligible = __sbma_is_eligible();
-
-  /* add eligibility */
-  if (0 == is_eligible) {
-    /* try to wait before blocking */
-    ret = sem_trywait(sem);
-    if (-1 == ret) {
-      if (EAGAIN == errno)
-        errno = 0;
-      else
-        return -1;
-    }
-    else {
-      return 0;
-    }
-
-    ret = __sbma_eligible(IPC_ELIGIBLE);
-    if (-1 == ret)
-      return -1;
-  }
+  /* transition to blocked state */
+  ret = __ipc_block(&(vmm.ipc));
+  if (-1 == ret)
+    return -1;
 
   /* perform blocking wait */
   ret = libc_sem_wait(sem);
   if (-1 == ret) {
-    if (0 != __sbma_is_eligible() && 0 == is_eligible)
-      (void)__sbma_eligible(0);
+    (void)__ipc_unblock(&(vmm.ipc));
     return -1;
   }
 
-  /* reset eligibility */
-  if (0 == is_eligible) {
-    ret = __sbma_eligible(0);
-    if (-1 == ret)
-      return -1;
-  }
+  /* transition to running state */
+  ret = __ipc_unblock(&(vmm.ipc));
+  if (-1 == ret)
+    return -1;
 
   return 0;
 }
@@ -973,43 +933,24 @@ sem_wait(sem_t * const sem));
 SBMA_EXTERN int
 sem_timedwait(sem_t * const sem, struct timespec const * const ts)
 {
-  int ret, is_eligible;
+  int ret;
 
-  is_eligible = __sbma_is_eligible();
-
-  /* add eligibility */
-  if (0 == is_eligible) {
-    /* try to wait before blocking */
-    ret = sem_trywait(sem);
-    if (-1 == ret) {
-      if (EAGAIN == errno)
-        errno = 0;
-      else
-        return -1;
-    }
-    else {
-      return 0;
-    }
-
-    ret = __sbma_eligible(IPC_ELIGIBLE);
-    if (-1 == ret)
-      return -1;
-  }
+  /* transition to blocked state */
+  ret = __ipc_block(&(vmm.ipc));
+  if (-1 == ret)
+    return -1;
 
   /* perform blocking wait */
   ret = libc_sem_timedwait(sem, ts);
   if (-1 == ret) {
-    if (0 != __sbma_is_eligible() && 0 == is_eligible)
-      (void)__sbma_eligible(0);
+    (void)__ipc_unblock(&(vmm.ipc));
     return -1;
   }
 
-  /* reset eligibility */
-  if (0 == is_eligible) {
-    ret = __sbma_eligible(0);
-    if (-1 == ret)
-      return -1;
-  }
+  /* transition to running state */
+  ret = __ipc_unblock(&(vmm.ipc));
+  if (-1 == ret)
+    return -1;
 
   return 0;
 }
@@ -1024,68 +965,25 @@ SBMA_EXTERN int
 mq_send(mqd_t const mqdes, char const * const msg_ptr, size_t const msg_len,
         unsigned const msg_prio)
 {
-  int ret, is_eligible;
+  int ret;
   struct mq_attr oldattr, newattr;
 
-  is_eligible = __sbma_is_eligible();
-
-  /* add eligibility */
-  if (0 == is_eligible) {
-    /* try to send before blocking */
-#if 0
-    /* get current mq attributes */
-    ret = mq_getattr(mqdes, &oldattr);
-    if (-1 == ret)
-      return -1;
-
-    /* set mq as non-blocking to test for message */
-    if (O_NONBLOCK != (oldattr.mq_flags&O_NONBLOCK)) {
-      memcpy(&newattr, &oldattr, sizeof(struct mq_attr));
-      newattr.mq_flags = O_NONBLOCK;
-      ret = mq_setattr(mqdes, &newattr, NULL);
-      if (-1 == ret)
-        return -1;
-    }
-
-    /* check if message can be received */
-    ret = libc_mq_send(mqdes, msg_ptr, msg_len, msg_prio);
-    if (-1 == ret) {
-      if (EAGAIN == errno)
-        errno = 0;
-      else
-        return -1;
-    }
-    else {
-      return 0;
-    }
-
-    /* reset mq attributes if necessary */
-    if (O_NONBLOCK != (oldattr.mq_flags&O_NONBLOCK)) {
-      ret = mq_setattr(mqdes, &oldattr, NULL);
-      if (-1 == ret)
-        return -1;
-    }
-#endif
-
-    ret = __sbma_eligible(IPC_ELIGIBLE);
-    if (-1 == ret)
-      return -1;
-  }
+  /* transition to blocked state */
+  ret = __ipc_block(&(vmm.ipc));
+  if (-1 == ret)
+    return -1;
 
   /* perform blocking send */
   ret = libc_mq_send(mqdes, msg_ptr, msg_len, msg_prio);
   if (-1 == ret) {
-    if (0 != __sbma_is_eligible() && 0 == is_eligible)
-      (void)__sbma_eligible(0);
+    (void)__ipc_unblock(&(vmm.ipc));
     return -1;
   }
 
-  /* reset eligibility */
-  if (0 == is_eligible) {
-    ret = __sbma_eligible(0);
-    if (-1 == ret)
-      return -1;
-  }
+  /* transition to running state */
+  ret = __ipc_unblock(&(vmm.ipc));
+  if (-1 == ret)
+    return -1;
 
   return 0;
 }
@@ -1102,68 +1000,25 @@ mq_timedsend(mqd_t const mqdes, char const * const msg_ptr,
              size_t const msg_len, unsigned const msg_prio,
              struct timespec const * const abs_timeout)
 {
-  int ret, is_eligible;
+  int ret;
   struct mq_attr oldattr, newattr;
 
-  is_eligible = __sbma_is_eligible();
-
-  /* add eligibility */
-  if (0 == is_eligible) {
-    /* try to send before blocking */
-#if 0
-    /* get current mq attributes */
-    ret = mq_getattr(mqdes, &oldattr);
-    if (-1 == ret)
-      return -1;
-
-    /* set mq as non-blocking to test for message */
-    if (O_NONBLOCK != (oldattr.mq_flags&O_NONBLOCK)) {
-      libc_memcpy(&newattr, &oldattr, sizeof(struct mq_attr));
-      newattr.mq_flags = O_NONBLOCK;
-      ret = mq_setattr(mqdes, &newattr, NULL);
-      if (-1 == ret)
-        return -1;
-    }
-
-    /* check if message can be received */
-    ret = libc_mq_send(mqdes, msg_ptr, msg_len, msg_prio);
-    if (-1 == ret) {
-      if (EAGAIN == errno)
-        errno = 0;
-      else
-        return -1;
-    }
-    else {
-      return 0;
-    }
-
-    /* reset mq attributes if necessary */
-    if (O_NONBLOCK != (oldattr.mq_flags&O_NONBLOCK)) {
-      ret = mq_setattr(mqdes, &oldattr, NULL);
-      if (-1 == ret)
-        return -1;
-    }
-#endif
-
-    ret = __sbma_eligible(IPC_ELIGIBLE);
-    if (-1 == ret)
-      return -1;
-  }
+  /* transition to blocked state */
+  ret = __ipc_block(&(vmm.ipc));
+  if (-1 == ret)
+    return -1;
 
   /* perform block send */
   ret = libc_mq_timedsend(mqdes, msg_ptr, msg_len, msg_prio, abs_timeout);
   if (-1 == ret) {
-    if (0 != __sbma_is_eligible() && 0 == is_eligible)
-      (void)__sbma_eligible(0);
+    (void)__ipc_unblock(&(vmm.ipc));
     return -1;
   }
 
-  /* reset eligibility */
-  if (0 == is_eligible) {
-    ret = __sbma_eligible(0);
-    if (-1 == ret)
-      return -1;
-  }
+  /* transition to running state */
+  ret = __ipc_unblock(&(vmm.ipc));
+  if (-1 == ret)
+    return -1;
 
   return 0;
 }
@@ -1180,69 +1035,26 @@ SBMA_EXTERN ssize_t
 mq_receive(mqd_t const mqdes, char * const msg_ptr, size_t const msg_len,
            unsigned * const msg_prio)
 {
-  int ret, is_eligible;
+  int ret;
   ssize_t retval;
   struct mq_attr oldattr, newattr;
 
-  is_eligible = __sbma_is_eligible();
-
-  /* add eligibility */
-  if (0 == is_eligible) {
-    /* try to receive before blocking */
-#if 0
-    /* get current mq attributes */
-    ret = mq_getattr(mqdes, &oldattr);
-    if (-1 == ret)
-      return -1;
-
-    /* set mq as non-blocking to test for message */
-    if (O_NONBLOCK != (oldattr.mq_flags&O_NONBLOCK)) {
-      libc_memcpy(&newattr, &oldattr, sizeof(struct mq_attr));
-      newattr.mq_flags = O_NONBLOCK;
-      ret = mq_setattr(mqdes, &newattr, NULL);
-      if (-1 == ret)
-        return -1;
-    }
-
-    /* check if message can be received */
-    retval = libc_mq_receive(mqdes, msg_ptr, msg_len, msg_prio);
-    if (-1 == retval) {
-      if (EAGAIN == errno)
-        errno = 0;
-      else
-        return -1;
-    }
-    else {
-      return retval;
-    }
-
-    /* reset mq attributes if necessary */
-    if (O_NONBLOCK != (oldattr.mq_flags&O_NONBLOCK)) {
-      ret = mq_setattr(mqdes, &oldattr, NULL);
-      if (-1 == ret)
-        return -1;
-    }
-#endif
-
-    ret = __sbma_eligible(IPC_ELIGIBLE);
-    if (-1 == ret)
-      return -1;
-  }
+  /* transition to blocked state */
+  ret = __ipc_block(&(vmm.ipc));
+  if (-1 == ret)
+    return -1;
 
   /* perform blocking receive */
   retval = libc_mq_receive(mqdes, msg_ptr, msg_len, msg_prio);
   if (-1 == retval) {
-    if (0 != __sbma_is_eligible() && 0 == is_eligible)
-      (void)__sbma_eligible(0);
+    (void)__ipc_unblock(&(vmm.ipc));
     return -1;
   }
 
-  /* reset eligibility */
-  if (0 == is_eligible) {
-    ret = __sbma_eligible(0);
-    if (-1 == ret)
-      return -1;
-  }
+  /* transition to running state */
+  ret = __ipc_unblock(&(vmm.ipc));
+  if (-1 == ret)
+    return -1;
 
   return retval;
 }
@@ -1259,70 +1071,27 @@ mq_timedreceive(mqd_t const mqdes, char * const msg_ptr, size_t const msg_len,
                 unsigned * const msg_prio,
                 struct timespec const * const abs_timeout)
 {
-  int ret, is_eligible;
+  int ret;
   ssize_t retval;
   struct mq_attr oldattr, newattr;
 
-  is_eligible = __sbma_is_eligible();
-
-  /* add eligibility */
-  if (0 == is_eligible) {
-    /* try to receive before blocking */
-#if 0
-    /* get current mq attributes */
-    ret = mq_getattr(mqdes, &oldattr);
-    if (-1 == ret)
-      return -1;
-
-    /* set mq as non-blocking to test for message */
-    if (O_NONBLOCK != (oldattr.mq_flags&O_NONBLOCK)) {
-      libc_memcpy(&newattr, &oldattr, sizeof(struct mq_attr));
-      newattr.mq_flags = O_NONBLOCK;
-      ret = mq_setattr(mqdes, &newattr, NULL);
-      if (-1 == ret)
-        return -1;
-    }
-
-    /* check if message can be received */
-    retval = libc_mq_receive(mqdes, msg_ptr, msg_len, msg_prio);
-    if (-1 == retval) {
-      if (EAGAIN == errno)
-        errno = 0;
-      else
-        return -1;
-    }
-    else {
-      return retval;
-    }
-
-    /* reset mq attributes if necessary */
-    if (O_NONBLOCK != (oldattr.mq_flags&O_NONBLOCK)) {
-      ret = mq_setattr(mqdes, &oldattr, NULL);
-      if (-1 == ret)
-        return -1;
-    }
-#endif
-
-    ret = __sbma_eligible(IPC_ELIGIBLE);
-    if (-1 == ret)
-      return -1;
-  }
+  /* transition to blocked state */
+  ret = __ipc_block(&(vmm.ipc));
+  if (-1 == ret)
+    return -1;
 
   /* perform blocking receive */
   retval = libc_mq_timedreceive(mqdes, msg_ptr, msg_len, msg_prio,\
     abs_timeout);
   if (-1 == retval) {
-    if (0 != __sbma_is_eligible() && 0 == is_eligible)
-      (void)__sbma_eligible(0);
+    (void)__ipc_unblock(&(vmm.ipc));
     return -1;
   }
 
-  /* reset eligibility */
-  if (0 == is_eligible) {
-    ret = __sbma_eligible(0);
-    if (-1 == ret)
-      return -1;
-  }
+  /* transition to running state */
+  ret = __ipc_unblock(&(vmm.ipc));
+  if (-1 == ret)
+    return -1;
 
   return retval;
 }

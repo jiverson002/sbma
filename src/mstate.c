@@ -242,7 +242,7 @@ __sbma_mtouch(void * const __addr, size_t const __len)
       break;
     }
 #endif
-    ASSERT(IPC_ELIGIBLE != (vmm.ipc.flags[vmm.ipc.id]&IPC_ELIGIBLE));
+    ASSERT(0 == __ipc_is_eligible(&(vmm.ipc)));
 
     ret = __ipc_madmit(&(vmm.ipc), l_pages);
     if (-1 == ret) {
@@ -331,7 +331,7 @@ __sbma_mtouch_atomic(void * const __addr, size_t const __len, ...)
       break;
 #endif
 
-    ASSERT(IPC_ELIGIBLE != (vmm.ipc.flags[vmm.ipc.id]&IPC_ELIGIBLE));
+    ASSERT(0 == __ipc_is_eligible(&(vmm.ipc)));
 
     ret = __ipc_madmit(&(vmm.ipc), l_pages);
     if (-1 == ret) {
@@ -416,7 +416,7 @@ __sbma_mtouchall(void)
         break;
       }
 #endif
-      ASSERT(IPC_ELIGIBLE != (vmm.ipc.flags[vmm.ipc.id]&IPC_ELIGIBLE));
+      ASSERT(0 == __ipc_is_eligible(&(vmm.ipc)));
 
       ret = __ipc_madmit(&(vmm.ipc), retval);
       if (-1 == ret) {
@@ -609,6 +609,12 @@ __sbma_mevictall_int(size_t * const __l_pages, size_t * const __numwr)
   ssize_t ret;
   struct ate * ate;
 
+  /* change my status to unpopulated - must be before any potential waiting,
+   * since SIGIPC could be raised again then. */
+  ret = __ipc_unpopulate(&(vmm.ipc));
+  if (-1 == ret)
+    return -1;
+
   ret = __lock_get(&(vmm.lock));
   if (-1 == ret)
     return -1;
@@ -645,9 +651,6 @@ __sbma_mevictall_int(size_t * const __l_pages, size_t * const __numwr)
   ret = __lock_let(&(vmm.lock));
   if (-1 == ret)
     return -1;
-
-  /* mark the process as unpopulated */
-  vmm.ipc.flags[vmm.ipc.id] &= ~IPC_POPULATED;
 
   *__l_pages = l_pages;
   *__numwr   = numwr;

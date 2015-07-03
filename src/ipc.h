@@ -41,14 +41,14 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 /*!
  * Inter-process communication process status bits:
  *
- *   bit 0 ==    0: ineligible           1: has some memory loaded
- *   bit 1 ==    0: ineligible           1: eligible for ipc memory eviction
+ *   bit 0 ==    0: running       1: blocked
+ *   bit 1 ==    0: unpopulated   1: populated
  */
 /****************************************************************************/
 enum ipc_code
 {
-  IPC_POPULATED = 1 << 0,
-  IPC_ELIGIBLE  = 1 << 1
+  IPC_BLOCKED   = 1 << 0,
+  IPC_POPULATED = 1 << 1
 };
 
 
@@ -57,6 +57,8 @@ enum ipc_code
 /****************************************************************************/
 struct ipc
 {
+  int init;      /*!< initialized indicator */
+
   int id;        /*!< ipc id of process amoung the n_procs */
   int n_procs;   /*!< number of processes in coordination */
 
@@ -96,28 +98,35 @@ __ipc_destroy(struct ipc * const __ipc);
 
 
 /****************************************************************************/
-/*! Change populated status for the process. */
+/*! Transition process to blocked state. */
 /****************************************************************************/
 int
-__ipc_populated(struct ipc * const __ipc, int const __eligible);
+__ipc_block(struct ipc * const __ipc);
 
 
 /****************************************************************************/
-/*! Check populated status for the process. */
-/****************************************************************************/
-int
-__ipc_is_populated(struct ipc * const __ipc);
-
-
-/****************************************************************************/
-/*! Change elibibility for eviction for the process. */
+/*! Transition process to running state. */
 /****************************************************************************/
 int
-__ipc_eligible(struct ipc * const __ipc, int const __eligible);
+__ipc_unblock(struct ipc * const __ipc);
 
 
 /****************************************************************************/
-/*! Check elibibility for eviction for the process. */
+/*! Transition process to populated status. */
+/****************************************************************************/
+int
+__ipc_populate(struct ipc * const __ipc);
+
+
+/****************************************************************************/
+/*! Transition process to unpopulated status. */
+/****************************************************************************/
+int
+__ipc_unpopulate(struct ipc * const __ipc);
+
+
+/****************************************************************************/
+/*! Check if process is eligible for eviction. */
 /****************************************************************************/
 int
 __ipc_is_eligible(struct ipc * const __ipc);

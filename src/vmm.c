@@ -174,8 +174,6 @@ __vmm_sigsegv(int const sig, siginfo_t * const si, void * const ctx)
       }
 #endif
 
-      ASSERT(IPC_ELIGIBLE != (vmm.ipc.flags[vmm.ipc.id]&IPC_ELIGIBLE));
-
       ret = __ipc_madmit(&(vmm.ipc), VMM_TO_SYS(l_pages));
       if (-1 == ret) {
         if (EAGAIN == errno) {
@@ -254,11 +252,7 @@ __vmm_sigipc(int const sig, siginfo_t * const si, void * const ctx)
    * while in this function? */
 
   /* Only honor the SIGIPC if my status is still eligible */
-  if (IPC_ELIGIBLE == (vmm.ipc.flags[vmm.ipc.id]&IPC_ELIGIBLE)) {
-    /* change my eligibility to ineligible - must be before any potential
-     * waiting, since SIGIPC could be raised again then. */
-    vmm.ipc.flags[vmm.ipc.id] &= ~IPC_ELIGIBLE;
-
+  if (1 == __ipc_is_eligible(&(vmm.ipc))) {
     /* evict all memory */
     ret = __sbma_mevictall_int(&l_pages, &numwr);
     ASSERT(-1 != ret);
@@ -636,7 +630,7 @@ __vmm_init(struct vmm * const __vmm, char const * const __fstem,
 
   vmm.init = 1;
 
-  ASSERT(IPC_ELIGIBLE != (vmm.ipc.flags[vmm.ipc.id]&IPC_ELIGIBLE));
+  ASSERT(0 == __ipc_is_eligible(&(__vmm->ipc)));
 
   return 0;
 }

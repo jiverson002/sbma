@@ -167,6 +167,7 @@ __ipc_init(struct ipc * const __ipc, int const __uniq, int const __n_procs,
     return -1;
 
   /* setup ipc struct */
+  __ipc->init    = 1;
   __ipc->id      = id;
   __ipc->n_procs = __n_procs;
   __ipc->uniq    = __uniq;
@@ -195,6 +196,8 @@ __ipc_destroy(struct ipc * const __ipc)
 {
   int ret;
   char fname[FILENAME_MAX];
+
+  __ipc->init = 0;
 
   ret = munmap(__ipc->shm, IPC_LEN(__ipc->n_procs));
   if (-1 == ret)
@@ -249,23 +252,60 @@ __ipc_destroy(struct ipc * const __ipc));
 
 
 SBMA_EXTERN int
-__ipc_eligible(struct ipc * const __ipc, int const __eligible)
+__ipc_block(struct ipc * const __ipc)
 {
-  if (IPC_ELIGIBLE == (__eligible&IPC_ELIGIBLE))
-    __ipc->flags[__ipc->id] |= IPC_ELIGIBLE;
-  else
-    __ipc->flags[__ipc->id] &= ~IPC_ELIGIBLE;
-
+  if (0 == __ipc->init)
+    return 0;
+  __ipc->flags[__ipc->id] |= IPC_BLOCKED;
   return 0;
 }
 SBMA_EXPORT(internal, int
-__ipc_eligible(struct ipc * const __ipc, int const __eligible));
+__ipc_block(struct ipc * const __ipc));
+
+
+SBMA_EXTERN int
+__ipc_unblock(struct ipc * const __ipc)
+{
+  if (0 == __ipc->init)
+    return 0;
+  __ipc->flags[__ipc->id] &= ~IPC_BLOCKED;
+  return 0;
+}
+SBMA_EXPORT(internal, int
+__ipc_unblock(struct ipc * const __ipc));
+
+
+SBMA_EXTERN int
+__ipc_populate(struct ipc * const __ipc)
+{
+  if (0 == __ipc->init)
+    return 0;
+  __ipc->flags[__ipc->id] |= IPC_POPULATED;
+  return 0;
+}
+SBMA_EXPORT(internal, int
+__ipc_populate(struct ipc * const __ipc));
+
+
+SBMA_EXTERN int
+__ipc_unpopulate(struct ipc * const __ipc)
+{
+  if (0 == __ipc->init)
+    return 0;
+  __ipc->flags[__ipc->id] &= ~IPC_POPULATED;
+  return 0;
+}
+SBMA_EXPORT(internal, int
+__ipc_unpopulate(struct ipc * const __ipc));
 
 
 SBMA_EXTERN int
 __ipc_is_eligible(struct ipc * const __ipc)
 {
-  return (IPC_ELIGIBLE == (__ipc->flags[__ipc->id]&IPC_ELIGIBLE));
+  uint8_t const flag = (IPC_BLOCKED|IPC_POPULATED);
+  if (0 == __ipc->init)
+    return 0;
+  return (flag == (__ipc->flags[__ipc->id]&flag));
 }
 SBMA_EXPORT(internal, int
 __ipc_is_eligible(struct ipc * const __ipc));
@@ -299,9 +339,9 @@ __ipc_madmit(struct ipc * const __ipc, size_t const __value)
   //        bdmp_recv for EINTR
   // 3) repeat until enough free memory or no processes have any loaded memory
 
-  ASSERT(IPC_ELIGIBLE != (__ipc->flags[__ipc->id]&IPC_ELIGIBLE));
+  HNDLINTR(sem_wait(__ipc->mtx));
 
-  HNDLINTR(libc_sem_wait(__ipc->mtx));
+  ASSERT(0 == __ipc_is_eligible(__ipc));
 
   smem  = *__ipc->smem-__value;
   pmem  = __ipc->pmem;
@@ -316,7 +356,7 @@ __ipc_madmit(struct ipc * const __ipc, size_t const __value)
       if (i == __ipc->id)
         continue;
 
-      if ((IPC_POPULATED|IPC_ELIGIBLE) == (flags[i]&(IPC_POPULATED|IPC_ELIGIBLE))) {
+      if ((IPC_BLOCKED|IPC_POPULATED) == (flags[i]&(IPC_BLOCKED|IPC_POPULATED))) {
         /*if (pmem[__ipc->id] >= pmem[i] && pmem[i] > mxmem) {*/
         if (pmem[i] > mxmem) {
           ii = i;
@@ -358,6 +398,10 @@ __ipc_madmit(struct ipc * const __ipc, size_t const __value)
 
 #if SBMA_VERSION >= 200
   if (smem < 0) {
+    /* TODO: there is a performance issue here. Currently this process will
+     * block and unblock each call to nanosleep. Instead, the process should
+     * block until it can admit the memory, then unblock. This should increase
+     * performance. */
     ts.tv_sec  = 0;
     ts.tv_nsec = 250000000;
     ret = nanosleep(&ts, NULL);
@@ -369,10 +413,12 @@ __ipc_madmit(struct ipc * const __ipc, size_t const __value)
   }
 #endif
 
-  ASSERT(IPC_ELIGIBLE != (__ipc->flags[__ipc->id]&IPC_ELIGIBLE));
+  ASSERT(0 == __ipc_is_eligible(__ipc));
   ASSERT(smem >= 0);
 
-  __ipc->flags[__ipc->id] |= IPC_POPULATED;
+  ret = __ipc_populate(__ipc);
+  if (-1 == ret)
+    return -1;
 
   return smem;
 }
@@ -388,7 +434,7 @@ __ipc_mevict(struct ipc * const __ipc, ssize_t const __value)
   if (__value > 0)
     return -1;
 
-  ASSERT(IPC_ELIGIBLE != (__ipc->flags[__ipc->id]&IPC_ELIGIBLE));
+  ASSERT(0 == __ipc_is_eligible(__ipc));
 
   HNDLINTR(libc_sem_wait(__ipc->mtx));
 
@@ -401,7 +447,7 @@ __ipc_mevict(struct ipc * const __ipc, ssize_t const __value)
   if (-1 == ret)
     return -1;
 
-  ASSERT(IPC_ELIGIBLE != (__ipc->flags[__ipc->id]&IPC_ELIGIBLE));
+  ASSERT(0 == __ipc_is_eligible(__ipc));
 
   return 0;
 }

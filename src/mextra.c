@@ -111,18 +111,63 @@ __sbma_mallinfo(void));
 
 
 /****************************************************************************/
-/*! Modify the eligibility of a process for ipc memory tracking */
+/*! Transition process to blocked state. */
 /****************************************************************************/
 SBMA_EXTERN int
-__sbma_eligible(int const __eligible)
+__sbma_block(void)
 {
   if (0 == vmm.init)
     return 0;
 
-  return __ipc_eligible(&(vmm.ipc), __eligible);
+  return __ipc_block(&(vmm.ipc));
 }
-SBMA_EXPORT(default, int
-__sbma_eligible(int const __eligible));
+SBMA_EXPORT(internal, int
+__sbma_block(void));
+
+
+/****************************************************************************/
+/*! Transition process to running state. */
+/****************************************************************************/
+SBMA_EXTERN int
+__sbma_unblock(void)
+{
+  if (0 == vmm.init)
+    return 0;
+
+  return __ipc_unblock(&(vmm.ipc));
+}
+SBMA_EXPORT(internal, int
+__sbma_unblock(void));
+
+
+/****************************************************************************/
+/*! Transition process to populated status. */
+/****************************************************************************/
+SBMA_EXTERN int
+__sbma_populate(void)
+{
+  if (0 == vmm.init)
+    return 0;
+
+  return __ipc_populate(&(vmm.ipc));
+}
+SBMA_EXPORT(internal, int
+__sbma_populate(void));
+
+
+/****************************************************************************/
+/*! Transition process to unpopulated status. */
+/****************************************************************************/
+SBMA_EXTERN int
+__sbma_unpopulate(void)
+{
+  if (0 == vmm.init)
+    return 0;
+
+  return __ipc_unpopulate(&(vmm.ipc));
+}
+SBMA_EXPORT(internal, int
+__sbma_unpopulate(void));
 
 
 /****************************************************************************/
@@ -136,5 +181,5 @@ __sbma_is_eligible(void)
 
   return __ipc_is_eligible(&(vmm.ipc));
 }
-SBMA_EXPORT(default, int
+SBMA_EXPORT(internal, int
 __sbma_is_eligible(void));

@@ -81,7 +81,7 @@ __sbma_malloc(size_t const __size)
 #if SBMA_VERSION < 200
   if (VMM_LZYWR == (vmm.opts&VMM_LZYWR)) {
 #endif
-    ASSERT(IPC_ELIGIBLE != (vmm.ipc.flags[vmm.ipc.id]&IPC_ELIGIBLE));
+    ASSERT(0 == __ipc_is_eligible(&(vmm.ipc)));
     for (;;) {
       ret = __ipc_madmit(&(vmm.ipc),\
         VMM_TO_SYS(s_pages+n_pages+f_pages));
@@ -317,7 +317,7 @@ __sbma_realloc(void * const __ptr, size_t const __size)
 #if SBMA_VERSION < 200
     if (VMM_LZYWR == (vmm.opts&VMM_LZYWR)) {
 #endif
-      ASSERT(IPC_ELIGIBLE != (vmm.ipc.flags[vmm.ipc.id]&IPC_ELIGIBLE));
+      ASSERT(0 == __ipc_is_eligible(&(vmm.ipc)));
       for (;;) {
         ret = __ipc_madmit(&(vmm.ipc),\
           VMM_TO_SYS((nn_pages-on_pages)+(nf_pages-of_pages)));
