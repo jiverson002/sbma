@@ -30,6 +30,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 
 #include <errno.h>     /* errno library */
+#include <stdarg.h>    /* stdarg library */
 #include <stdint.h>    /* uint8_t, uintptr_t */
 #include <stddef.h>    /* NULL, size_t */
 #include <sys/types.h> /* ssize_t */
@@ -279,6 +280,74 @@ __sbma_mtouch(void * const __addr, size_t const __len)
 }
 SBMA_EXPORT(internal, ssize_t
 __sbma_mtouch(void * const __addr, size_t const __len));
+
+
+/****************************************************************************/
+/*! Touch the specified ranges. */
+/****************************************************************************/
+SBMA_EXTERN ssize_t
+__sbma_mtouch_atomic(void * const __addr, size_t const __len, ...)
+{
+  int ret;
+  ssize_t l_pages, numrd;
+  struct ate * ate;
+
+  ate = __mmu_lookup_ate(&(vmm.mmu), __addr);
+  if (NULL == ate)
+    return -1;
+
+  /* check memory file to see if there is enough free memory to complete this
+   * allocation. */
+  for (;;) {
+    l_pages = __sbma_mtouch_probe(ate, __addr, __len);
+    if (-1 == l_pages) {
+      (void)__lock_let(&(ate->lock));
+      return -1;
+    }
+
+#if SBMA_VERSION < 200
+    if (VMM_LZYWR != (vmm.opts&VMM_LZYWR)) {
+      break;
+    }
+#endif
+    ASSERT(IPC_ELIGIBLE != (vmm.ipc.flags[vmm.ipc.id]&IPC_ELIGIBLE));
+
+    ret = __ipc_madmit(&(vmm.ipc), l_pages);
+    if (-1 == ret) {
+      if (EAGAIN == errno) {
+        errno = 0;
+      }
+      else {
+        (void)__lock_let(&(ate->lock));
+        return -1;
+      }
+    }
+    else {
+      break;
+    }
+  }
+
+  numrd = __sbma_mtouch_int(ate, __addr, __len);
+  if (-1 == numrd) {
+    (void)__lock_let(&(ate->lock));
+    return -1;
+  }
+
+  ret = __lock_let(&(ate->lock));
+  if (-1 == ret)
+    return -1;
+
+  /* track number of syspages currently loaded, number of syspages written to
+   * disk, and high water mark for syspages loaded */
+  VMM_TRACK(curpages, l_pages);
+  VMM_TRACK(numrd, numrd);
+  VMM_TRACK(maxpages,\
+    vmm.curpages>vmm.maxpages?vmm.curpages-vmm.maxpages:0);
+
+  return l_pages;
+}
+SBMA_EXPORT(internal, ssize_t
+__sbma_mtouch_atomic(void * const __addr, size_t const __len, ...));
 
 
 /****************************************************************************/

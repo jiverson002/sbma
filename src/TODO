@@ -1,0 +1,104 @@
+Create the following interface:
+
+Create a function similar to __sbma_madmit(), called __sbma_madmit_atomic(),
+which does two things: 1) makes sure that a certain amount of memory can be
+admitted in main memory and 2) marks the process so that until
+__sbma_atomic_done() has been called, the process will not be eligible for
+eviction. This will increase performance in situations that have
+characteristics similar to the following:
+
+void
+vanilla_memcpy_hook(new, old, num)
+{
+  __sbma_mtouch(new, num);
+  __sbma_mtouch(old, num);
+  memcpy(new, old, num);
+}
+
+void
+atomic_memcpy_hook(new, old, num)
+{
+  nate = __mmu_lookup_ate(&(vmm.mmu), new);
+  if (NULL == nate)
+    return -1;
+  oate = __mmu_lookup_ate(&(vmm.mmu), old);
+  if (NULL == oate)
+    return -1;
+
+  ASSERT(IPC_ELIGIBLE != (vmm.ipc.flags[vmm.ipc.id]&IPC_ELIGIBLE));
+
+  for (;;) {
+    nnew = __sbma_mtouch_probe(nate, new, num);
+    if (-1 == nnew) {
+      (void)__lock_let(&(nate->lock));
+      (void)__lock_let(&(oate->lock));
+      return -1;
+    }
+    nold = __sbma_mtouch_probe(oate, old, num);
+    if (-1 == nold) {
+      (void)__lock_let(&(nate->lock));
+      (void)__lock_let(&(oate->lock));
+      return -1;
+    }
+
+    ret = __ipc_madmit(&(vmm.ipc), nnew+nold);
+    if (-1 == ret) {
+      if (EAGAIN == errno) {
+        errno = 0;
+      }
+      else {
+        (void)__lock_let(&(nate->lock));
+        (void)__lock_let(&(oate->lock));
+        return -1;
+      }
+    }
+    else {
+      break;
+    }
+  }
+
+  __sbma_mtouch_atomic(new, num);
+  __sbma_mtouch_atomic(old, num);
+  memcpy(new, old, num);
+}
+
+In the first version, it is possible that while mtouch'ing old, new will be
+evicted. If this happens, then every time a page from new is loaded during
+memcpy, an eviction may happen. Instead, what we should do is call madmit only
+once, since this is where the possible eviction can happen. Then mtouch the
+two memory locations without calling madmit, since it has been called already.
+This way, we know the memory gets loaded without possibility for eviction.
+
+Instead of the complicated code that is seen above, we could instead have a
+function like the following:
+
+void
+__sbma_madmit_atomic(void * ptr1, size_t const num1, ...)
+{
+  // stdarg stuff
+
+  for (;;) {
+    foreach (ptr, num) in ... {
+      ate = __mmu_lookup_ate(&(vmm.mmu), ptr);
+      if (NULL == ptr)
+        return -1;
+
+      l_pages += __sbma_mtouch_probe(ate, ptr, num);
+    }
+
+    ret = __ipc_madmit(&(vmm.ipc), l_pages);
+    if (-1 == ret) {
+      if (EAGAIN == errno) {
+        errno = 0;
+      }
+      else {
+        foreach (ptr, num) in ...
+          (void)__lock_let(&(ate->lock));
+        return -1;
+      }
+    }
+    else {
+      break;
+    }
+  }
+}

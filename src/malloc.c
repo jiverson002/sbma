@@ -154,7 +154,7 @@ __sbma_malloc(size_t const __size)
 
   return (void*)ate->base;
 }
-SBMA_EXPORT(internal, void *
+SBMA_EXPORT(default, void *
 __sbma_malloc(size_t const __size));
 
 
@@ -166,7 +166,7 @@ __sbma_calloc(size_t const __num, size_t const __size)
 {
   return __sbma_malloc(__num*__size);
 }
-SBMA_EXPORT(internal, void *
+SBMA_EXPORT(default, void *
 __sbma_calloc(size_t const __num, size_t const __size));
 
 
@@ -230,7 +230,7 @@ __sbma_free(void * const __ptr)
 
   return 0;
 }
-SBMA_EXPORT(internal, int
+SBMA_EXPORT(default, int
 __sbma_free(void * const __ptr));
 
 
@@ -413,7 +413,7 @@ __sbma_realloc(void * const __ptr, size_t const __size)
 
   return (void*)ate->base;
 }
-SBMA_EXPORT(internal, void *
+SBMA_EXPORT(default, void *
 __sbma_realloc(void * const __ptr, size_t const __size));
 
 

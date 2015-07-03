@@ -35,8 +35,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #define SBMA_MINOR   2
 #define SBMA_PATCH   1
 #define SBMA_RCAND   0
-#define SBMA_VERSION (SBMA_MAJOR*10000+SBMA_MINOR*100+SBMA_PATCH)
-
+#define SBMA_VERSION (__sbma_MAJOR*10000+__sbma_MINOR*100+__sbma_PATCH)
 
 #define SBMA_DEFAULT_PAGE_SIZE (1<<14)
 #define SBMA_DEFAULT_FSTEM     "/tmp/"
@@ -46,7 +45,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 /****************************************************************************/
 /*! Mallopt parameters. */
 /****************************************************************************/
-enum SBMA_mallopt_params
+enum __sbma_mallopt_params
 {
   M_VMMOPTS = 0 /*!< vmm option parameter for mallopt */
 };
@@ -61,46 +60,75 @@ enum SBMA_mallopt_params
  *   bit 2 ==    0:                  1: ghost pages
  */
 /****************************************************************************/
-enum SBMA_vmm_opt_code
+enum __sbma_vmm_opt_code
 {
   VMM_LZYRD = 1 << 0,
   VMM_LZYWR = 1 << 1,
   VMM_GHOST = 1 << 2
 };
 
-
+/****************************************************************************/
+/*!
+ * Function prototypes
+ */
+/****************************************************************************/
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-/* malloc.c */
-void * SBMA_malloc(size_t const size);
-void * SBMA_calloc(size_t const num, size_t const size);
-int    SBMA_free(void * const ptr);
-void * SBMA_realloc(void * const ptr, size_t const size);
+/* klmalloc.c */
+int    KL_init(void * unused, ...);
+int    KL_destroy(void);
+void * KL_malloc(size_t const size);
+void * KL_calloc(size_t const num, size_t const size);
+void * KL_realloc(void * const ptr, size_t const size);
+int    KL_free(void * const ptr);
 
-/* mcntrl.c */
-int SBMA_init(char const * const fstem, int const uniq,
-              size_t const page_size, int const n_procs, size_t const max_mem,
-              int const opts);
-int SBMA_destroy(void);
+/* malloc.c */
+void * __sbma_malloc(size_t const size);
+void * __sbma_calloc(size_t const num, size_t const size);
+int    __sbma_free(void * const ptr);
+void * __sbma_realloc(void * const ptr, size_t const size);
 
 /* mextra.c */
-int             SBMA_mallopt(int const param, int const value);
-struct mallinfo SBMA_mallinfo(void);
+int             __sbma_mallopt(int const param, int const value);
+struct mallinfo __sbma_mallinfo(void);
 
 /* mstate.c */
-ssize_t SBMA_mtouch(void * const ptr, size_t const size);
-ssize_t SBMA_mtouchall(void);
-ssize_t SBMA_mclear(void * const ptr, size_t const size);
-ssize_t SBMA_mclearall(void);
-ssize_t SBMA_mevict(void * const ptr, size_t const size);
-ssize_t SBMA_mevictall(void);
-int     SBMA_mexist(void const * const ptr);
+ssize_t __sbma_mtouch(void * const ptr, size_t const size);
+ssize_t __sbma_mtouch_atomic(void * const ptr, size_t const size, ...);
+ssize_t __sbma_mtouchall(void);
+ssize_t __sbma_mclear(void * const ptr, size_t const size);
+ssize_t __sbma_mclearall(void);
+ssize_t __sbma_mevict(void * const ptr, size_t const size);
+ssize_t __sbma_mevictall(void);
+int     __sbma_mexist(void const * const ptr);
 
 #ifdef __cplusplus
 }
 #endif
+
+/* klmalloc.c */
+#define SBMA_init(...)     KL_init(NULL, __VA_ARGS__)
+#define SBMA_destroy       KL_destroy
+#define SBMA_malloc        KL_malloc
+#define SBMA_calloc        KL_calloc
+#define SBMA_realloc       KL_realloc
+#define SBMA_free          KL_free
+
+/* mextra.c */
+#define SBMA_mallopt       __sbma_mallopt
+#define SBMA_mallinfo      __sbma_mallinfo
+
+/* mstate.c */
+#define SBMA_mtouch        __sbma_mtouch
+#define SBMA_mtouch_atomic __sbma_mtouch_atomic
+#define SBMA_mtouchall     __sbma_mtouchall
+#define SBMA_mclear        __sbma_mclear
+#define SBMA_mclearall     __sbma_mclearall
+#define SBMA_mevict        __sbma_mevict
+#define SBMA_mevictall     __sbma_mevictall
+#define SBMA_mexist        __sbma_mexist
 
 
 #endif

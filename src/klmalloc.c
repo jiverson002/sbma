@@ -870,7 +870,7 @@ static kl_mem_t mem={
 };
 
 static int
-kl_mem_init(kl_mem_t * const mem)
+kl_mem_init(kl_mem_t * const mem, ...)
 {
   int i;
 
@@ -1864,4 +1864,47 @@ KL_mallinfo(void)
   mi.keepcost = mem.num_undes*BLOCK_DEFAULT_SIZE; /* bytes of undesignated blocks */
 
   return mi;
+}
+
+
+KL_EXPORT int
+KL_init(void * unused, ...)
+{
+  int ret;
+#ifdef CALL_SYS_INIT
+  va_list rest;
+
+  va_start(rest, unused);
+  ret = CALL_SYS_INIT(rest);
+  va_end(rest);
+  if (-1 == ret)
+    return -1;
+#endif
+
+  /* enable the klmalloc subsystem */
+  ret = KL_mallopt(M_ENABLED, M_ENABLED_ON);
+  if (-1 == ret)
+    return -1;
+
+  return 0;
+}
+
+
+KL_EXPORT int
+KL_destroy(void)
+{
+  int ret;
+
+  /* disable the klmalloc subsystem */
+  ret = KL_mallopt(M_ENABLED, M_ENABLED_OFF);
+  if (-1 == ret)
+    return -1;
+
+#ifdef CALL_SYS_DESTROY
+  ret = CALL_SYS_DESTROY();
+  if (-1 == ret)
+    return -1;
+#endif
+
+  return 0;
 }

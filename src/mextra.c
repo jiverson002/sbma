@@ -65,7 +65,7 @@ __sbma_mallopt(int const __param, int const __value)
 
   return 0;
 }
-SBMA_EXPORT(internal, int
+SBMA_EXPORT(default, int
 __sbma_mallopt(int const __param, int const __value));
 
 
@@ -106,7 +106,7 @@ __sbma_mallinfo(void)
 
   return mi;
 }
-SBMA_EXPORT(internal, struct mallinfo
+SBMA_EXPORT(default, struct mallinfo
 __sbma_mallinfo(void));
 
 
@@ -121,7 +121,7 @@ __sbma_eligible(int const __eligible)
 
   return __ipc_eligible(&(vmm.ipc), __eligible);
 }
-SBMA_EXPORT(internal, int
+SBMA_EXPORT(default, int
 __sbma_eligible(int const __eligible));
 
 
@@ -136,5 +136,5 @@ __sbma_is_eligible(void)
 
   return __ipc_is_eligible(&(vmm.ipc));
 }
-SBMA_EXPORT(internal, int
+SBMA_EXPORT(default, int
 __sbma_is_eligible(void));

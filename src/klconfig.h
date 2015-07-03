@@ -178,14 +178,14 @@ do {                                                                        \
 #if defined(USE_MMAP) && defined(USE_MEMALIGN)
 # undef USE_MMAP
 #endif
-#if defined(USE_MMAP) && defined(USE_SBMALLOC)
-# undef USE_SBMALLOC
+#if defined(USE_MMAP) && defined(USE_SBMA)
+# undef USE_SBMA
 #endif
-#if defined(USE_MEMALIGN) && defined(USE_SBMALLOC)
-# undef USE_SBMALLOC
+#if defined(USE_MEMALIGN) && defined(USE_SBMA)
+# undef USE_SBMA
 #endif
-#if !defined(USE_MMAP) && !defined(USE_MEMALIGN) && !defined(USE_SBMALLOC)
-# define USE_SBMALLOC
+#if !defined(USE_MMAP) && !defined(USE_MEMALIGN) && !defined(USE_SBMA)
+# define USE_SBMA
 #endif
 
 
@@ -216,13 +216,18 @@ do {                                                                        \
 # define CALL_SYS_FREE(P,S)  libc_free(P)
 # define CALL_SYS_BZERO(P,S) memset(P, 0, S)
 #endif
-#ifdef USE_SBMALLOC
+#ifdef USE_SBMA
+# include <stdarg.h>
+int    __sbma_vinit(va_list args);
+int    __sbma_destroy(void);
 void * __sbma_malloc(size_t const size);
 void * __sbma_realloc(void * const ptr, size_t const size);
 int    __sbma_free(void * const ptr);
 //int    __sbma_remap(void * const nptr, void * const ptr, size_t const num,
 //                    size_t const off);
 # define SYS_ALLOC_FAIL NULL
+# define CALL_SYS_INIT(L)          __sbma_vinit(L)
+# define CALL_SYS_DESTROY()        __sbma_destroy()
 # define CALL_SYS_ALLOC(P,S)       ((P)=__sbma_malloc(S))
 # define CALL_SYS_REALLOC(N,O,S,F) ((N)=__sbma_realloc(O,F))
 //# define CALL_SYS_REMAP(N,O,S,F)   __sbma_remap(N,O,S,F)

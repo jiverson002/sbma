@@ -29,6 +29,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #endif
 
 
+#include <stdarg.h> /* stdarg library */
 #include <stddef.h> /* size_t */
 #include "config.h"
 #include "lock.h"
@@ -78,6 +79,24 @@ SBMA_EXPORT(internal, int
 __sbma_init(char const * const __fstem, int const __uniq,
             size_t const __page_size, int const __n_procs,
             size_t const __max_mem, int const __opts));
+
+
+/****************************************************************************/
+/*! Initialize the sbma environment from a va_list. */
+/****************************************************************************/
+SBMA_EXTERN int
+__sbma_vinit(va_list args)
+{
+  char const * fstem     = va_arg(args, char const *);
+  int const uniq         = va_arg(args, int);
+  size_t const page_size = va_arg(args, size_t);
+  int const n_procs      = va_arg(args, int);
+  size_t const max_mem   = va_arg(args, size_t);
+  int const opts         = va_arg(args, int);
+  return __sbma_init(fstem, uniq, page_size, n_procs, max_mem, opts);
+}
+SBMA_EXPORT(internal, int
+__sbma_vinit(va_list args));
 
 
 /****************************************************************************/
