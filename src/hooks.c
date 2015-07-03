@@ -412,6 +412,23 @@ SBMA_EXPORT(internal, int
 libc_msync(void * const addr, size_t const len, int const flags));
 
 
+/****************************************************************************/
+/*! Hook: libc nanosleep */
+/****************************************************************************/
+SBMA_EXTERN int
+libc_nanosleep(struct timespec const * const req, struct timespec * const rem)
+{
+  static int (*_libc_nanosleep)(struct timespec const*, struct timespec*)=NULL;
+
+  HOOK_INIT(nanosleep);
+
+  return _libc_nanosleep(req, rem);
+}
+SBMA_EXPORT(internal, int
+libc_nanosleep(struct timespec const * const req,
+               struct timespec * const rem));
+
+
 #ifdef USE_THREAD
 /****************************************************************************/
 /*! Hook: libc sem_wait */
@@ -859,6 +876,44 @@ msync(void * const addr, size_t const len, int const flags)
 }
 SBMA_EXPORT(default, int
 msync(void * const addr, size_t const len, int const flags));
+
+
+/****************************************************************************/
+/*! Hook: nanosleep */
+/****************************************************************************/
+SBMA_EXTERN int
+nanosleep(struct timespec const * const req, struct timespec * const rem)
+{
+  int ret, is_eligible;
+
+  is_eligible = __sbma_is_eligible();
+
+  /* add eligibility */
+  if (0 == is_eligible) {
+    ret = __sbma_eligible(IPC_ELIGIBLE);
+    if (-1 == ret)
+      return -1;
+  }
+
+  /* perform blocking wait */
+  ret = libc_nanosleep(req, rem);
+  if (-1 == ret) {
+    if (0 != __sbma_is_eligible() && 0 == is_eligible)
+      (void)__sbma_eligible(0);
+    return -1;
+  }
+
+  /* reset eligibility */
+  if (0 == is_eligible) {
+    ret = __sbma_eligible(0);
+    if (-1 == ret)
+      return -1;
+  }
+
+  return 0;
+}
+SBMA_EXPORT(default, int
+nanosleep(struct timespec const * const req, struct timespec * const rem));
 
 
 #ifdef USE_THREAD

@@ -358,17 +358,11 @@ __ipc_madmit(struct ipc * const __ipc, size_t const __value)
 
 #if SBMA_VERSION >= 200
   if (smem < 0) {
-    /* mark myself as eligible and blocked in madmit */
-    flags[__ipc->id] |= IPC_ELIGIBLE;
-
     ts.tv_sec  = 0;
     ts.tv_nsec = 250000000;
     ret = nanosleep(&ts, NULL);
     if (-1 == ret && EINTR != errno)
       return -1;
-
-    /* mark myself as ineligible and not blocked in madmit */
-    flags[__ipc->id] &= ~IPC_ELIGIBLE;
 
     errno = EAGAIN;
     return -1;
