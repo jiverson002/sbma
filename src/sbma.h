@@ -35,11 +35,14 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #define SBMA_MINOR   2
 #define SBMA_PATCH   1
 #define SBMA_RCAND   0
-#define SBMA_VERSION (__sbma_MAJOR*10000+__sbma_MINOR*100+__sbma_PATCH)
+#define SBMA_VERSION (SBMA_MAJOR*10000+SBMA_MINOR*100+SBMA_PATCH)
 
 #define SBMA_DEFAULT_PAGE_SIZE (1<<14)
 #define SBMA_DEFAULT_FSTEM     "/tmp/"
 #define SBMA_DEFAULT_OPTS      0
+
+#define SBMA_ATOMIC_MAX 256
+#define SBMA_ATOMIC_END ((void*)-1)
 
 
 /****************************************************************************/
@@ -66,6 +69,7 @@ enum __sbma_vmm_opt_code
   VMM_LZYWR = 1 << 1,
   VMM_GHOST = 1 << 2
 };
+
 
 /****************************************************************************/
 /*!
@@ -108,27 +112,28 @@ int     __sbma_mexist(void const * const ptr);
 }
 #endif
 
+
 /* klmalloc.c */
-#define SBMA_init(...)     KL_init(NULL, __VA_ARGS__)
-#define SBMA_destroy       KL_destroy
-#define SBMA_malloc        KL_malloc
-#define SBMA_calloc        KL_calloc
-#define SBMA_realloc       KL_realloc
-#define SBMA_free          KL_free
+#define SBMA_init(...)          KL_init(NULL, __VA_ARGS__)
+#define SBMA_destroy            KL_destroy
+#define SBMA_malloc             KL_malloc
+#define SBMA_calloc             KL_calloc
+#define SBMA_realloc            KL_realloc
+#define SBMA_free               KL_free
 
 /* mextra.c */
-#define SBMA_mallopt       __sbma_mallopt
-#define SBMA_mallinfo      __sbma_mallinfo
+#define SBMA_mallopt            __sbma_mallopt
+#define SBMA_mallinfo           __sbma_mallinfo
 
 /* mstate.c */
-#define SBMA_mtouch        __sbma_mtouch
-#define SBMA_mtouch_atomic __sbma_mtouch_atomic
-#define SBMA_mtouchall     __sbma_mtouchall
-#define SBMA_mclear        __sbma_mclear
-#define SBMA_mclearall     __sbma_mclearall
-#define SBMA_mevict        __sbma_mevict
-#define SBMA_mevictall     __sbma_mevictall
-#define SBMA_mexist        __sbma_mexist
+#define SBMA_mtouch             __sbma_mtouch
+#define SBMA_mtouch_atomic(...) __sbma_mtouch_atomic(__VA_ARGS__, SBMA_ATOMIC_END)
+#define SBMA_mtouchall          __sbma_mtouchall
+#define SBMA_mclear             __sbma_mclear
+#define SBMA_mclearall          __sbma_mclearall
+#define SBMA_mevict             __sbma_mevict
+#define SBMA_mevictall          __sbma_mevictall
+#define SBMA_mexist             __sbma_mexist
 
 
 #endif

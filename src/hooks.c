@@ -47,7 +47,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <stdarg.h>    /* stdarg library */
 #include <stddef.h>    /* size_t */
 #include <stdio.h>     /* FILE */
-#include <string.h>    /* memset */
+#include <string.h>    /* memset, memcpy */
 #include <sys/stat.h>  /* stat, open */
 #include <sys/types.h> /* stat, open */
 #include <unistd.h>    /* ssize_t, stat */
@@ -168,7 +168,7 @@ libc_realloc(void * const ptr, size_t const size));
 SBMA_EXTERN void
 libc_free(void * const ptr)
 {
-  static void * (*_libc_free)(void* const)=NULL;
+  static void (*_libc_free)(void* const)=NULL;
 
   HOOK_INIT(free);
 
@@ -176,6 +176,38 @@ libc_free(void * const ptr)
 }
 SBMA_EXPORT(internal, void
 libc_free(void * const ptr));
+
+
+/*************************************************************************/
+/*! Hook: libc memcpy */
+/*************************************************************************/
+SBMA_EXTERN void *
+libc_memcpy(void * const dst, void const * const src, size_t const num)
+{
+  static void * (*_libc_memcpy)(void*, void const*, size_t)=NULL;
+
+  HOOK_INIT(memcpy);
+
+  return _libc_memcpy(dst, src, num);
+}
+SBMA_EXPORT(internal, void *
+libc_memcpy(void * const dst, void const * const src, size_t const num));
+
+
+/*************************************************************************/
+/*! Hook: libc memmove */
+/*************************************************************************/
+SBMA_EXTERN void *
+libc_memmove(void * const dst, void const * const src, size_t const num)
+{
+  static void * (*_libc_memmove)(void*, void const*, size_t)=NULL;
+
+  HOOK_INIT(memmove);
+
+  return _libc_memmove(dst, src, num);
+}
+SBMA_EXPORT(internal, void *
+libc_memmove(void * const dst, void const * const src, size_t const num));
 
 
 /*************************************************************************/
@@ -566,12 +598,60 @@ free(void * const ptr));
 
 
 /*************************************************************************/
+/*! Hook: memcpy */
+/*************************************************************************/
+SBMA_EXTERN void *
+memcpy(void * const dst, void const * const src, size_t const num)
+{
+  HOOK_INIT(calloc); /* Why is this here? */
+
+  if (1 == SBMA_mexist(dst) && 1 == SBMA_mexist(src)) {
+    (void)SBMA_mtouch_atomic(dst, num, src, num);
+  }
+  else {
+    if (1 == SBMA_mexist(dst))
+      (void)SBMA_mtouch(dst, num);
+    if (1 == SBMA_mexist(src))
+      (void)SBMA_mtouch(dst, num);
+  }
+
+  return libc_memcpy(dst, src, num);
+}
+SBMA_EXPORT(default, void *
+memcpy(void * const dst, void const * const src, size_t const num));
+
+
+/*************************************************************************/
+/*! Hook: memmove */
+/*************************************************************************/
+SBMA_EXTERN void *
+memmove(void * const dst, void const * const src, size_t const num)
+{
+  HOOK_INIT(calloc); /* Why is this here? */
+
+  if (1 == SBMA_mexist(dst) && 1 == SBMA_mexist(src)) {
+    (void)SBMA_mtouch_atomic(dst, num, src, num);
+  }
+  else {
+    if (1 == SBMA_mexist(dst))
+      (void)SBMA_mtouch(dst, num);
+    if (1 == SBMA_mexist(src))
+      (void)SBMA_mtouch(dst, num);
+  }
+
+  return libc_memmove(dst, src, num);
+}
+SBMA_EXPORT(default, void *
+memmove(void * const dst, void const * const src, size_t const num));
+
+
+/*************************************************************************/
 /*! Hook: mallinfo */
 /*************************************************************************/
 SBMA_EXTERN struct mallinfo
 mallinfo(void)
 {
-  HOOK_INIT(calloc);
+  HOOK_INIT(calloc); /* why is this here? */
 
   return SBMA_mallinfo();
 }
@@ -983,7 +1063,7 @@ mq_timedsend(mqd_t const mqdes, char const * const msg_ptr,
 
     /* set mq as non-blocking to test for message */
     if (O_NONBLOCK != (oldattr.mq_flags&O_NONBLOCK)) {
-      memcpy(&newattr, &oldattr, sizeof(struct mq_attr));
+      libc_memcpy(&newattr, &oldattr, sizeof(struct mq_attr));
       newattr.mq_flags = O_NONBLOCK;
       ret = mq_setattr(mqdes, &newattr, NULL);
       if (-1 == ret)
@@ -1062,7 +1142,7 @@ mq_receive(mqd_t const mqdes, char * const msg_ptr, size_t const msg_len,
 
     /* set mq as non-blocking to test for message */
     if (O_NONBLOCK != (oldattr.mq_flags&O_NONBLOCK)) {
-      memcpy(&newattr, &oldattr, sizeof(struct mq_attr));
+      libc_memcpy(&newattr, &oldattr, sizeof(struct mq_attr));
       newattr.mq_flags = O_NONBLOCK;
       ret = mq_setattr(mqdes, &newattr, NULL);
       if (-1 == ret)
@@ -1141,7 +1221,7 @@ mq_timedreceive(mqd_t const mqdes, char * const msg_ptr, size_t const msg_len,
 
     /* set mq as non-blocking to test for message */
     if (O_NONBLOCK != (oldattr.mq_flags&O_NONBLOCK)) {
-      memcpy(&newattr, &oldattr, sizeof(struct mq_attr));
+      libc_memcpy(&newattr, &oldattr, sizeof(struct mq_attr));
       newattr.mq_flags = O_NONBLOCK;
       ret = mq_setattr(mqdes, &newattr, NULL);
       if (-1 == ret)

@@ -36,7 +36,6 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <stdint.h>    /* uint8_t, uintptr_t */
 #include <stddef.h>    /* NULL, size_t */
 #include <stdio.h>     /* FILENAME_MAX */
-#include <string.h>    /* memcpy */
 #include <sys/mman.h>  /* mmap, mremap, munmap, madvise, mprotect */
 #include <sys/stat.h>  /* S_IRUSR, S_IWUSR */
 #include <sys/types.h> /* ftruncate */

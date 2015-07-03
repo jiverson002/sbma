@@ -34,7 +34,6 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <stdint.h>    /* uint8_t, uintptr_t */
 #include <stddef.h>    /* NULL, size_t */
 #include <stdio.h>     /* FILENAME_MAX */
-#include <string.h>    /* memcpy */
 #include <sys/mman.h>  /* mmap, mremap, munmap, madvise, mprotect */
 #include <sys/stat.h>  /* S_IRUSR, S_IWUSR */
 #include <sys/types.h> /* truncate, ftruncate */
@@ -285,7 +284,7 @@ __sbma_realloc(void * const __ptr, size_t const __size)
       return NULL;
 
     /* copy page flags to new location */
-    memmove((void*)(oaddr+((s_pages+nn_pages)*page_size)),\
+    libc_memmove((void*)(oaddr+((s_pages+nn_pages)*page_size)),\
       (void*)(oaddr+((s_pages+on_pages)*page_size)), nf_pages*page_size);
 
     /* unmap unused section of memory */
@@ -350,7 +349,7 @@ __sbma_realloc(void * const __ptr, size_t const __size)
       return NULL;
 
     /* copy page flags to new location */
-    memmove((void*)(naddr+((s_pages+nn_pages)*page_size)),\
+    libc_memmove((void*)(naddr+((s_pages+nn_pages)*page_size)),\
       (void*)(naddr+((s_pages+on_pages)*page_size)), of_pages*page_size);
 
     /* grant read-only permission to extended area of application memory */
@@ -417,7 +416,6 @@ SBMA_EXPORT(default, void *
 __sbma_realloc(void * const __ptr, size_t const __size));
 
 
-#if SBMA_VERSION < 200
 /* NOTE: For now, __sbma_remap is disabled in versions >= 0.2.0. The reason
  * for this is that it works by assuming that memory protections are
  * completely contained within this function. Unfortunately, due to the
@@ -467,8 +465,8 @@ __sbma_remap(void * const __nbase, void * const __obase, size_t const __size,
    * will lead to a huge performance decrease. There should be some way to
    * load both with a single 'mtouch' like call. */
 
-  /* load old memory */
-  ret = __sbma_mtouch(optr, __size);
+  /* load new and old memory */
+  ret = __sbma_mtouch_atomic(nptr, __size, optr, __size, SBMA_ATOMIC_END);
   if (-1 == ret)
     return -1;
 
@@ -479,7 +477,7 @@ __sbma_remap(void * const __nbase, void * const __obase, size_t const __size,
     return -1;
 
   /* copy memory */
-  memcpy(nptr, optr, __size);
+  libc_memcpy(nptr, optr, __size);
 
   /* grant read-only permission to new memory */
   ret = mprotect((void*)((uintptr_t)nptr-__off), __size+__off, PROT_READ);
@@ -523,4 +521,3 @@ __sbma_remap(void * const __nbase, void * const __obase, size_t const __size,
 SBMA_EXPORT(internal, int
 __sbma_remap(void * const __nbase, void * const __obase, size_t const __size,
              size_t const __off));
-#endif

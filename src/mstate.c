@@ -289,53 +289,74 @@ SBMA_EXTERN ssize_t
 __sbma_mtouch_atomic(void * const __addr, size_t const __len, ...)
 {
   int ret;
-  ssize_t l_pages, numrd;
-  struct ate * ate;
+  size_t i, num, _len;
+  ssize_t _l_pages, _numrd, l_pages, numrd;
+  va_list args;
+  void * _addr;
+  size_t len[SBMA_ATOMIC_MAX];
+  void * addr[SBMA_ATOMIC_MAX];
+  struct ate * ate[SBMA_ATOMIC_MAX];
 
-  ate = __mmu_lookup_ate(&(vmm.mmu), __addr);
-  if (NULL == ate)
-    return -1;
+  if (NULL == __addr)
+    return 0;
 
-  /* check memory file to see if there is enough free memory to complete this
-   * allocation. */
+  /* populate the arrays with the variable number of pointers and lengths */
+  num   = 0;
+  _addr = __addr;
+  _len  = __len;
+  va_start(args, __len);
+  while (SBMA_ATOMIC_END != _addr) {
+    addr[num]  = _addr;
+    len[num]   = _len;
+    ate[num++] = __mmu_lookup_ate(&(vmm.mmu), _addr);
+
+    _addr = va_arg(args, void *);
+    if (SBMA_ATOMIC_END != _addr)
+      _len = va_arg(args, size_t);
+  }
+  va_end(args);
+
+  /* check memory file to see if there is enough free memory to admit the
+   * required amount of memory. */
   for (;;) {
-    l_pages = __sbma_mtouch_probe(ate, __addr, __len);
-    if (-1 == l_pages) {
-      (void)__lock_let(&(ate->lock));
-      return -1;
+    for (l_pages=0,i=0; i<num; ++i) {
+      _l_pages = __sbma_mtouch_probe(ate[i], addr[i], len[i]);
+      if (-1 == _l_pages)
+        goto CLEANUP;
+      l_pages += _l_pages;
     }
 
 #if SBMA_VERSION < 200
-    if (VMM_LZYWR != (vmm.opts&VMM_LZYWR)) {
+    if (VMM_LZYWR != (vmm.opts&VMM_LZYWR))
       break;
-    }
 #endif
+
     ASSERT(IPC_ELIGIBLE != (vmm.ipc.flags[vmm.ipc.id]&IPC_ELIGIBLE));
 
     ret = __ipc_madmit(&(vmm.ipc), l_pages);
     if (-1 == ret) {
-      if (EAGAIN == errno) {
+      if (EAGAIN == errno)
         errno = 0;
-      }
-      else {
-        (void)__lock_let(&(ate->lock));
-        return -1;
-      }
+      else
+        goto CLEANUP;
     }
     else {
       break;
     }
   }
 
-  numrd = __sbma_mtouch_int(ate, __addr, __len);
-  if (-1 == numrd) {
-    (void)__lock_let(&(ate->lock));
-    return -1;
-  }
+  /* touch each of the pointers */
+  for (numrd=0, i=0; i<num; ++i) {
+    _numrd = __sbma_mtouch_int(ate[i], addr[i], len[i]);
+    if (-1 == _numrd)
+      goto CLEANUP;
+    numrd += _numrd;
 
-  ret = __lock_let(&(ate->lock));
-  if (-1 == ret)
-    return -1;
+    ret = __lock_let(&(ate[i]->lock));
+    if (-1 == ret)
+      goto CLEANUP;
+    ate[i] = NULL; /* clear in case of failure */
+  }
 
   /* track number of syspages currently loaded, number of syspages written to
    * disk, and high water mark for syspages loaded */
@@ -345,6 +366,13 @@ __sbma_mtouch_atomic(void * const __addr, size_t const __len, ...)
     vmm.curpages>vmm.maxpages?vmm.curpages-vmm.maxpages:0);
 
   return l_pages;
+
+  CLEANUP:
+  for (i=0; i<num; ++i) {
+    if (NULL != ate[i])
+      (void)__lock_let(&(ate[i]->lock));
+  }
+  return -1;
 }
 SBMA_EXPORT(internal, ssize_t
 __sbma_mtouch_atomic(void * const __addr, size_t const __len, ...));

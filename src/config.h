@@ -81,14 +81,16 @@ do {                                                                        \
 extern "C" {
 #endif
 
-extern int     libc_open(char const *, int, ...);
-extern ssize_t libc_read(int const, void * const, size_t const);
-extern ssize_t libc_write(int const, void const * const, size_t const);
-extern int     libc_mlock(void const * const, size_t const);
+void *  libc_memcpy(void * const, void const * const, size_t const);
+void *  libc_memmove(void * const, void const * const, size_t const);
+int     libc_open(char const *, int, ...);
+ssize_t libc_read(int const, void * const, size_t const);
+ssize_t libc_write(int const, void const * const, size_t const);
+int     libc_mlock(void const * const, size_t const);
 #ifdef USE_THREAD
-extern int     libc_sem_wait(sem_t * const sem);
-extern int     libc_sem_timedwait(sem_t * const sem,
-                                  struct timespec const * const ts);
+int     libc_sem_wait(sem_t * const sem);
+int     libc_sem_timedwait(sem_t * const sem,
+                           struct timespec const * const ts);
 #endif
 
 #ifdef __cplusplus
