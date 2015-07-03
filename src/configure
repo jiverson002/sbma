@@ -411,7 +411,7 @@ p \#{{{1
 p \# Version information
 p DATE    = \"`date`\"
 p COMMIT  = \"`git rev-parse --short HEAD`\"
-p VERSION = \"0.2.0\"
+p VERSION = \"0.2.1\"
 p
 p "AUTOFLAGS = \\"
 if [ 'x' != "x${BUILD[${CONFIG['build']}]}" ] ; then
