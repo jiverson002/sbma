@@ -88,12 +88,6 @@ void * KL_calloc(size_t const num, size_t const size);
 void * KL_realloc(void * const ptr, size_t const size);
 int    KL_free(void * const ptr);
 
-/* malloc.c */
-void * __sbma_malloc(size_t const size);
-void * __sbma_calloc(size_t const num, size_t const size);
-int    __sbma_free(void * const ptr);
-void * __sbma_realloc(void * const ptr, size_t const size);
-
 /* mextra.c */
 int             __sbma_mallopt(int const param, int const value);
 struct mallinfo __sbma_mallinfo(void);
