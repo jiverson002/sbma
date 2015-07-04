@@ -45,23 +45,6 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "sbma.h"
 
 
-#define HNDLINTR(CMND)\
-do {\
-  for (;;) {\
-    int ret = CMND;\
-    if (-1 == ret) {\
-      if (EINTR == errno)\
-        errno = 0;\
-      else\
-        return -1;\
-    }\
-    else {\
-      break;\
-    }\
-  }\
-} while (0)
-
-
 #define IPC_LEN(__N_PROCS)\
   (sizeof(ssize_t)+(__N_PROCS)*(sizeof(size_t)+sizeof(int)+sizeof(uint8_t))+\
     sizeof(int))
@@ -331,17 +314,12 @@ __ipc_madmit(struct ipc * const __ipc, size_t const __value)
   int * pid;
   size_t * pmem;
 
-  // 1) check to see if there is enough free system memory
-  // 2) if not, then signal to the process with the most memory
-  //   2.1) __ipc_init should install a signal handler on the said signal
-  //        which will call __vmm_mevictall__
-  //   2.2) this will require BDMPL_SLEEP to check the return value of
-  //        bdmp_recv for EINTR
-  // 3) repeat until enough free memory or no processes have any loaded memory
-
-  HNDLINTR(sem_wait(__ipc->mtx));
-
-  ASSERT(0 == __ipc_is_eligible(__ipc));
+  ret = sem_wait(__ipc->mtx);
+  if (-1 == ret) {
+    if (EINTR == errno)
+      errno = EAGAIN;
+    return -1;
+  }
 
   smem  = *__ipc->smem-__value;
   pmem  = __ipc->pmem;
@@ -359,8 +337,14 @@ __ipc_madmit(struct ipc * const __ipc, size_t const __value)
         continue;
 
       if ((IPC_BLOCKED|IPC_POPULATED) == (flags[i]&(IPC_BLOCKED|IPC_POPULATED))) {
-        /*if (pmem[__ipc->id] >= pmem[i] && pmem[i] > mxmem) {*/
         if (pmem[i] > mxmem) {
+        /* choose this process if it has more resident memory than the
+         * candidate process AND (i am running OR my resident memory is larger
+         * than theirs). */
+        /*if (pmem[i] > mxmem &&
+            (IPC_BLOCKED != (flags[__ipc->id]&IPC_BLOCKED) ||
+             pmem[__ipc->id] >= pmem[i]))
+        {*/
           ii = i;
           mxmem = pmem[i];
         }
@@ -394,13 +378,6 @@ __ipc_madmit(struct ipc * const __ipc, size_t const __value)
   if (smem >= 0) {
     *__ipc->smem -= __value;
     __ipc->pmem[__ipc->id] += __value;
-
-#if SBMA_VERSION >= 200
-    /* transition to running state */
-    ret = __ipc_unblock(__ipc);
-    if (-1 == ret)
-      return -1;
-#endif
   }
 
   ret = sem_post(__ipc->mtx);
@@ -410,7 +387,7 @@ __ipc_madmit(struct ipc * const __ipc, size_t const __value)
 #if SBMA_VERSION >= 200
   if (smem < 0) {
     /* NOTE: Because the process enters the block state here, but does not
-     * become unblocked until it successfully admits the memory, the behavior
+     * become unblocked until subsequent calls to this function, the behavior
      * is undefined if -1 is returned with errno equal EAGAIN and the user
      * does not call __ipc_madmit again. */
 
@@ -419,10 +396,6 @@ __ipc_madmit(struct ipc * const __ipc, size_t const __value)
     if (-1 == ret)
       return -1;
 
-    /* TODO: there is a performance issue here. Currently this process will
-     * block and unblock each call to nanosleep. Instead, the process should
-     * block until it can admit the memory, then unblock. This should increase
-     * performance. */
     ts.tv_sec  = 0;
     ts.tv_nsec = 250000000;
     ret = libc_nanosleep(&ts, NULL);
@@ -457,7 +430,12 @@ __ipc_mevict(struct ipc * const __ipc, ssize_t const __value)
 
   ASSERT(0 == __ipc_is_eligible(__ipc));
 
-  HNDLINTR(libc_sem_wait(__ipc->mtx));
+  ret = sem_wait(__ipc->mtx);
+  if (-1 == ret) {
+    if (EINTR == errno)
+      errno = EAGAIN;
+    return -1;
+  }
 
   ASSERT(__ipc->pmem[__ipc->id] >= -__value);
 

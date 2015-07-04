@@ -414,8 +414,6 @@ __sbma_mtouchall(void)
         break;
       }
 #endif
-      ASSERT(0 == __ipc_is_eligible(&(vmm.ipc)));
-
       ret = __ipc_madmit(&(vmm.ipc), retval);
       if (-1 == ret) {
         if (EAGAIN == errno) {
@@ -428,6 +426,7 @@ __sbma_mtouchall(void)
         }
       }
       else {
+        ASSERT(0 == __ipc_is_eligible(&(vmm.ipc)));
         break;
       }
     }
@@ -447,9 +446,9 @@ __sbma_mtouchall(void)
       (void)__lock_let(&(vmm.lock));
       return -1;
     }
-    ret = __sbma_mtouch_int(ate, (void*)ate->base,\
+    retval = __sbma_mtouch_int(ate, (void*)ate->base,\
       ate->n_pages*vmm.page_size);
-    if (-1 == ret) {
+    if (-1 == retval) {
       (void)__lock_let(&(ate->lock));
       (void)__lock_let(&(vmm.lock));
       return -1;
@@ -459,7 +458,7 @@ __sbma_mtouchall(void)
       (void)__lock_let(&(vmm.lock));
       return -1;
     }
-    numrd += ret;
+    numrd += retval;
   }
 
   ret = __lock_let(&(vmm.lock));
@@ -579,9 +578,18 @@ __sbma_mevict(void * const __addr, size_t const __len)
 #if SBMA_VERSION < 200
   if (VMM_LZYWR == (vmm.opts&VMM_LZYWR)) {
 #endif
-    ret = __ipc_mevict(&(vmm.ipc), -l_pages);
-    if (-1 == ret)
-      return -1;
+    for (;;) {
+      ret = __ipc_mevict(&(vmm.ipc), -l_pages);
+      if (-1 == ret) {
+        if (EAGAIN == errno)
+          errno = 0;
+        else
+          return -1;
+      }
+      else {
+        break;
+      }
+    }
 #if SBMA_VERSION < 200
   }
 #endif
@@ -676,9 +684,18 @@ __sbma_mevictall(void)
 #if SBMA_VERSION < 200
   if (VMM_LZYWR == (vmm.opts&VMM_LZYWR)) {
 #endif
-    ret = __ipc_mevict(&(vmm.ipc), -l_pages);
-    if (-1 == ret)
-      return -1;
+    for (;;) {
+      ret = __ipc_mevict(&(vmm.ipc), -l_pages);
+      if (-1 == ret) {
+        if (EAGAIN == errno)
+          errno = 0;
+        else
+          return -1;
+      }
+      else {
+        break;
+      }
+    }
 #if SBMA_VERSION < 200
   }
 #endif

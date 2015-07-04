@@ -78,7 +78,7 @@ do {                                                                        \
 /****************************************************************************/
 /*! Process deadlock check functions. */
 /****************************************************************************/
-#define DEADLOCK_ALARM_TIME  25
+//#define DEADLOCK_ALARM_TIME  25
 #ifdef DEADLOCK_ALARM_TIME
 # define DEADLOCK_ALARM_ON()\
 do {\

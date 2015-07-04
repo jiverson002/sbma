@@ -216,9 +216,18 @@ __sbma_free(void * const __ptr)
 #if SBMA_VERSION < 200
   if (VMM_LZYWR == (vmm.opts&VMM_LZYWR)) {
 #endif
-    ret = __ipc_mevict(&(vmm.ipc), -VMM_TO_SYS(s_pages+l_pages+f_pages));
-    if (-1 == ret)
-      return -1;
+    for (;;) {
+      ret = __ipc_mevict(&(vmm.ipc), -VMM_TO_SYS(s_pages+l_pages+f_pages));
+      if (-1 == ret) {
+        if (EAGAIN == errno)
+          errno = 0;
+        else
+          return -1;
+      }
+      else {
+        break;
+      }
+    }
 #if SBMA_VERSION < 200
   }
 #endif
@@ -297,10 +306,19 @@ __sbma_realloc(void * const __ptr, size_t const __size)
 #if SBMA_VERSION < 200
     if (VMM_LZYWR == (vmm.opts&VMM_LZYWR)) {
 #endif
-      ret = __ipc_mevict(&(vmm.ipc),\
-        -VMM_TO_SYS((on_pages-nn_pages)+(of_pages-nf_pages)));
-      if (-1 == ret)
-        return NULL;
+      for (;;) {
+        ret = __ipc_mevict(&(vmm.ipc),\
+          -VMM_TO_SYS((on_pages-nn_pages)+(of_pages-nf_pages)));
+        if (-1 == ret) {
+          if (EAGAIN == errno)
+            errno = 0;
+          else
+            return NULL;
+        }
+        else {
+          break;
+        }
+      }
 #if SBMA_VERSION < 200
     }
 #endif
@@ -456,14 +474,6 @@ __sbma_remap(void * const __nbase, void * const __obase, size_t const __size,
    * operation and end is a ceil operation. */
   beg = ((uintptr_t)nptr-nate->base)/page_size;
   end = 1+(((uintptr_t)nptr+__size-nate->base-1)/page_size);
-
-  /* TODO: there is a performance issue here in version >= 0.2.0 due to the
-   * following. since the process may become eligible during the call to
-   * __sbma_mtouch, the new memory could be evicted. then during the memcpy,
-   * when loading the two different allocations, it is possible that the
-   * process will load one then evict, then load the other, then evict. This
-   * will lead to a huge performance decrease. There should be some way to
-   * load both with a single 'mtouch' like call. */
 
   /* load new and old memory */
   ret = __sbma_mtouch_atomic(nptr, __size, optr, __size, SBMA_ATOMIC_END);
