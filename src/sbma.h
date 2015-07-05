@@ -65,9 +65,10 @@ enum __sbma_mallopt_params
 /****************************************************************************/
 enum __sbma_vmm_opt_code
 {
-  VMM_LZYRD = 1 << 0,
-  VMM_LZYWR = 1 << 1,
-  VMM_GHOST = 1 << 2
+  VMM_OSVMM = 1 << 0,
+  VMM_LZYRD = 1 << 1,
+  VMM_LZYWR = 1 << 2,
+  VMM_GHOST = 1 << 3
 };
 
 

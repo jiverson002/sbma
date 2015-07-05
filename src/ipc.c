@@ -385,28 +385,16 @@ __ipc_madmit(struct ipc * const __ipc, size_t const __value)
   if (-1 == ret)
     return -1;
 
-#if SBMA_VERSION >= 200
   if (smem < 0) {
-    /* NOTE: Because the process enters the block state here, but does not
-     * become unblocked until subsequent calls to this function, the behavior
-     * is undefined if -1 is returned with errno equal EAGAIN and the user
-     * does not call __ipc_madmit again. */
-
-    /* transition to blocked state */
-    ret = __ipc_block(__ipc);
-    if (-1 == ret)
-      return -1;
-
     ts.tv_sec  = 0;
     ts.tv_nsec = 250000000;
-    ret = libc_nanosleep(&ts, NULL);
+    ret = nanosleep(&ts, NULL);
     if (-1 == ret && EINTR != errno)
       return -1;
 
     errno = EAGAIN;
     return -1;
   }
-#endif
 
   ASSERT(0 == __ipc_is_eligible(__ipc));
   ASSERT(smem >= 0);

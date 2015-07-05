@@ -78,26 +78,19 @@ __sbma_malloc(size_t const __size)
 
   /* check memory file to see if there is enough free memory to complete this
    * allocation. */
-#if SBMA_VERSION < 200
-  if (VMM_LZYWR == (vmm.opts&VMM_LZYWR)) {
-#endif
+  for (;;) {
     ASSERT(0 == __ipc_is_eligible(&(vmm.ipc)));
-    for (;;) {
-      ret = __ipc_madmit(&(vmm.ipc),\
-        VMM_TO_SYS(s_pages+n_pages+f_pages));
-      if (-1 == ret) {
-        if (EAGAIN == errno)
-          errno = 0;
-        else
-          return NULL;
-      }
-      else {
-        break;
-      }
+    ret = __ipc_madmit(&(vmm.ipc), VMM_TO_SYS(s_pages+n_pages+f_pages));
+    if (-1 == ret) {
+      if (EAGAIN == errno)
+        errno = 0;
+      else
+        return NULL;
     }
-#if SBMA_VERSION < 200
+    else {
+      break;
+    }
   }
-#endif
 
   /* allocate memory */
   addr = (uintptr_t)mmap(NULL, (s_pages+n_pages+f_pages)*page_size,
@@ -213,24 +206,18 @@ __sbma_free(void * const __ptr)
     return -1;
 
   /* update memory file */
-#if SBMA_VERSION < 200
-  if (VMM_LZYWR == (vmm.opts&VMM_LZYWR)) {
-#endif
-    for (;;) {
-      ret = __ipc_mevict(&(vmm.ipc), -VMM_TO_SYS(s_pages+l_pages+f_pages));
-      if (-1 == ret) {
-        if (EAGAIN == errno)
-          errno = 0;
-        else
-          return -1;
-      }
-      else {
-        break;
-      }
+  for (;;) {
+    ret = __ipc_mevict(&(vmm.ipc), -VMM_TO_SYS(s_pages+l_pages+f_pages));
+    if (-1 == ret) {
+      if (EAGAIN == errno)
+        errno = 0;
+      else
+        return -1;
     }
-#if SBMA_VERSION < 200
+    else {
+      break;
+    }
   }
-#endif
 
   /* track number of syspages currently loaded and allocated */
   VMM_TRACK(curpages, -VMM_TO_SYS(s_pages+l_pages+f_pages));
@@ -303,25 +290,19 @@ __sbma_realloc(void * const __ptr, size_t const __size)
       return NULL;
 
     /* update memory file */
-#if SBMA_VERSION < 200
-    if (VMM_LZYWR == (vmm.opts&VMM_LZYWR)) {
-#endif
-      for (;;) {
-        ret = __ipc_mevict(&(vmm.ipc),\
-          -VMM_TO_SYS((on_pages-nn_pages)+(of_pages-nf_pages)));
-        if (-1 == ret) {
-          if (EAGAIN == errno)
-            errno = 0;
-          else
-            return NULL;
-        }
-        else {
-          break;
-        }
+    for (;;) {
+      ret = __ipc_mevict(&(vmm.ipc),\
+        -VMM_TO_SYS((on_pages-nn_pages)+(of_pages-nf_pages)));
+      if (-1 == ret) {
+        if (EAGAIN == errno)
+          errno = 0;
+        else
+          return NULL;
       }
-#if SBMA_VERSION < 200
+      else {
+        break;
+      }
     }
-#endif
 
     /* track number of syspages currently loaded and allocated */
     VMM_TRACK(curpages,\
@@ -332,26 +313,20 @@ __sbma_realloc(void * const __ptr, size_t const __size)
   else {
     /* check memory file to see if there is enough free memory to complete
      * this allocation. */
-#if SBMA_VERSION < 200
-    if (VMM_LZYWR == (vmm.opts&VMM_LZYWR)) {
-#endif
+    for (;;) {
       ASSERT(0 == __ipc_is_eligible(&(vmm.ipc)));
-      for (;;) {
-        ret = __ipc_madmit(&(vmm.ipc),\
-          VMM_TO_SYS((nn_pages-on_pages)+(nf_pages-of_pages)));
-        if (-1 == ret) {
-          if (EAGAIN == errno)
-            errno = 0;
-          else
-            return NULL;
-        }
-        else {
-          break;
-        }
+      ret = __ipc_madmit(&(vmm.ipc),\
+        VMM_TO_SYS((nn_pages-on_pages)+(nf_pages-of_pages)));
+      if (-1 == ret) {
+        if (EAGAIN == errno)
+          errno = 0;
+        else
+          return NULL;
       }
-#if SBMA_VERSION < 200
+      else {
+        break;
+      }
     }
-#endif
 
     /* resize allocation */
 #if 1

@@ -231,17 +231,13 @@ __sbma_mtouch(void * const __addr, size_t const __len)
   /* check memory file to see if there is enough free memory to complete this
    * allocation. */
   for (;;) {
+    ASSERT(0 == __ipc_is_eligible(&(vmm.ipc)));
     l_pages = __sbma_mtouch_probe(ate, __addr, __len);
     if (-1 == l_pages) {
       (void)__lock_let(&(ate->lock));
       return -1;
     }
 
-#if SBMA_VERSION < 200
-    if (VMM_LZYWR != (vmm.opts&VMM_LZYWR)) {
-      break;
-    }
-#endif
     ret = __ipc_madmit(&(vmm.ipc), l_pages);
     if (-1 == ret) {
       if (EAGAIN == errno) {
@@ -253,7 +249,6 @@ __sbma_mtouch(void * const __addr, size_t const __len)
       }
     }
     else {
-      ASSERT(0 == __ipc_is_eligible(&(vmm.ipc)));
       break;
     }
   }
@@ -318,17 +313,13 @@ __sbma_mtouch_atomic(void * const __addr, size_t const __len, ...)
   /* check memory file to see if there is enough free memory to admit the
    * required amount of memory. */
   for (;;) {
+    ASSERT(0 == __ipc_is_eligible(&(vmm.ipc)));
     for (l_pages=0,i=0; i<num; ++i) {
       _l_pages = __sbma_mtouch_probe(ate[i], addr[i], len[i]);
       if (-1 == _l_pages)
         goto CLEANUP;
       l_pages += _l_pages;
     }
-
-#if SBMA_VERSION < 200
-    if (VMM_LZYWR != (vmm.opts&VMM_LZYWR))
-      break;
-#endif
 
     ret = __ipc_madmit(&(vmm.ipc), l_pages);
     if (-1 == ret) {
@@ -338,7 +329,6 @@ __sbma_mtouch_atomic(void * const __addr, size_t const __len, ...)
         goto CLEANUP;
     }
     else {
-      ASSERT(0 == __ipc_is_eligible(&(vmm.ipc)));
       break;
     }
   }
@@ -401,6 +391,7 @@ __sbma_mtouchall(void)
     /* check memory file to see if there is enough free memory to complete
      * this allocation. */
     for (;;) {
+      ASSERT(0 == __ipc_is_eligible(&(vmm.ipc)));
       retval = __sbma_mtouch_probe(ate, (void*)ate->base,\
         ate->n_pages*vmm.page_size);
       if (-1 == retval) {
@@ -409,11 +400,6 @@ __sbma_mtouchall(void)
         return -1;
       }
 
-#if SBMA_VERSION < 200
-      if (VMM_LZYWR != (vmm.opts&VMM_LZYWR)) {
-        break;
-      }
-#endif
       ret = __ipc_madmit(&(vmm.ipc), retval);
       if (-1 == ret) {
         if (EAGAIN == errno) {
@@ -426,7 +412,6 @@ __sbma_mtouchall(void)
         }
       }
       else {
-        ASSERT(0 == __ipc_is_eligible(&(vmm.ipc)));
         break;
       }
     }
@@ -575,24 +560,18 @@ __sbma_mevict(void * const __addr, size_t const __len)
   }
 
   /* update memory file */
-#if SBMA_VERSION < 200
-  if (VMM_LZYWR == (vmm.opts&VMM_LZYWR)) {
-#endif
-    for (;;) {
-      ret = __ipc_mevict(&(vmm.ipc), -l_pages);
-      if (-1 == ret) {
-        if (EAGAIN == errno)
-          errno = 0;
-        else
-          return -1;
-      }
-      else {
-        break;
-      }
+  for (;;) {
+    ret = __ipc_mevict(&(vmm.ipc), -l_pages);
+    if (-1 == ret) {
+      if (EAGAIN == errno)
+        errno = 0;
+      else
+        return -1;
     }
-#if SBMA_VERSION < 200
+    else {
+      break;
+    }
   }
-#endif
 
   /* track number of syspages currently loaded, number of syspages written to
    * disk, and high water mark for syspages loaded */
@@ -681,24 +660,18 @@ __sbma_mevictall(void)
     return -1;
 
   /* update memory file */
-#if SBMA_VERSION < 200
-  if (VMM_LZYWR == (vmm.opts&VMM_LZYWR)) {
-#endif
-    for (;;) {
-      ret = __ipc_mevict(&(vmm.ipc), -l_pages);
-      if (-1 == ret) {
-        if (EAGAIN == errno)
-          errno = 0;
-        else
-          return -1;
-      }
-      else {
-        break;
-      }
+  for (;;) {
+    ret = __ipc_mevict(&(vmm.ipc), -l_pages);
+    if (-1 == ret) {
+      if (EAGAIN == errno)
+        errno = 0;
+      else
+        return -1;
     }
-#if SBMA_VERSION < 200
+    else {
+      break;
+    }
   }
-#endif
 
   /* track number of syspages currently loaded, number of syspages written to
    * disk, and high water mark for syspages loaded */

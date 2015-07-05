@@ -91,6 +91,9 @@ extern struct vmm vmm;
 #define VMM_TRACK(__FIELD, __VAL)\
 do {\
   if (0 == __lock_get(&(vmm.lock))) {\
+    if ((__VAL) < 0 && vmm.__FIELD < (size_t)(-(__VAL)))\
+      printf("[%5d] %s:%d %zd,%zd\n", (int)getpid(), __func__, __LINE__,\
+        (size_t)vmm.__FIELD, (ssize_t)__VAL);\
     vmm.__FIELD += (__VAL);\
     (void)__lock_let(&(vmm.lock));\
   }\

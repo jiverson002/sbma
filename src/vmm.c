@@ -154,6 +154,7 @@ __vmm_sigsegv(int const sig, siginfo_t * const si, void * const ctx)
 
   if (MMU_RSDNT == (flags[ip]&MMU_RSDNT)) {
     for (;;) {
+      ASSERT(0 == __ipc_is_eligible(&(vmm.ipc)));
       if (VMM_LZYRD == (vmm.opts&VMM_LZYRD))
         l_pages = 1;
       else
@@ -167,12 +168,6 @@ __vmm_sigsegv(int const sig, siginfo_t * const si, void * const ctx)
        * number of times that a process is asked to evict all of its memory.
        * On the other hand, it requires the acquisition of a mutex for every
        * read fault. */
-
-#if SBMA_VERSION < 200
-      if (VMM_LZYWR != (vmm.opts&VMM_LZYWR)) {
-        break;
-      }
-#endif
 
       ret = __ipc_madmit(&(vmm.ipc), VMM_TO_SYS(l_pages));
       if (-1 == ret) {

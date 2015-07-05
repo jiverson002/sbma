@@ -533,7 +533,10 @@ malloc(size_t const size)
 {
   HOOK_INIT(calloc);
 
-  return SBMA_malloc(size);
+  if (VMM_OSVMM == (vmm.opts&VMM_OSVMM))
+    return libc_malloc(size);
+  else
+    return SBMA_malloc(size);
 }
 SBMA_EXPORT(default, void *
 malloc(size_t const size));
@@ -550,7 +553,10 @@ calloc(size_t const num, size_t const size)
   if (internal_calloc == _libc_calloc)
     return internal_calloc(num, size);
 
-  return SBMA_calloc(num, size);
+  if (VMM_OSVMM == (vmm.opts&VMM_OSVMM))
+    return libc_calloc(num, size);
+  else
+    return SBMA_calloc(num, size);
 }
 SBMA_EXPORT(default, void *
 calloc(size_t const num, size_t const size));
@@ -567,7 +573,10 @@ realloc(void * const ptr, size_t const size)
   if (NULL == ptr)
     return SBMA_malloc(size);
 
-  return SBMA_realloc(ptr, size);
+  if (VMM_OSVMM == (vmm.opts&VMM_OSVMM))
+    return libc_realloc(ptr, size);
+  else
+    return SBMA_realloc(ptr, size);
 }
 SBMA_EXPORT(default, void *
 realloc(void * const ptr, size_t const size));
@@ -591,7 +600,10 @@ free(void * const ptr)
     return;
   }
 
-  SBMA_free(ptr);
+  if (VMM_OSVMM == (vmm.opts&VMM_OSVMM))
+    libc_free(ptr);
+  else
+    SBMA_free(ptr);
 }
 SBMA_EXPORT(default, void
 free(void * const ptr));
