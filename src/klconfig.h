@@ -188,7 +188,7 @@ do {                                                                        \
 # define USE_SBMA
 #endif
 
-
+#include <stddef.h> /* size_t */
 #ifdef USE_MMAP
 # ifndef _BSD_SOURCE
 #   define _BSD_SOURCE

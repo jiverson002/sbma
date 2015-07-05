@@ -41,9 +41,8 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <errno.h>     /* errno library */
 #include <fcntl.h>     /* open */
 #include <malloc.h>    /* struct mallinfo */
-#ifdef USE_THREAD
-# include <mqueue.h>   /* mq_*send, mq_*receive */
-#endif
+#include <mqueue.h>    /* mq_*send, mq_*receive */
+#include <semaphore.h> /* semaphore library */
 #include <stdarg.h>    /* stdarg library */
 #include <stddef.h>    /* size_t */
 #include <stdio.h>     /* FILE */
@@ -415,7 +414,6 @@ libc_nanosleep(struct timespec const * const req,
                struct timespec * const rem));
 
 
-#ifdef USE_THREAD
 /****************************************************************************/
 /*! Hook: libc sem_wait */
 /****************************************************************************/
@@ -525,7 +523,6 @@ SBMA_EXPORT(internal, ssize_t
 libc_mq_timedreceive(mqd_t const mqdes, char * const msg_ptr,
                      size_t const msg_len, unsigned * const msg_prio,
                      struct timespec const * const abs_timeout));
-#endif
 
 
 /****************************************************************************/
@@ -899,7 +896,6 @@ SBMA_EXPORT(default, int
 nanosleep(struct timespec const * const req, struct timespec * const rem));
 
 
-#ifdef USE_THREAD
 /****************************************************************************/
 /*! Hook: sem_wait */
 /****************************************************************************/
@@ -978,7 +974,6 @@ mq_send(mqd_t const mqdes, char const * const msg_ptr, size_t const msg_len,
         unsigned const msg_prio)
 {
   int ret;
-  struct mq_attr oldattr, newattr;
 
   DEADLOCK_ALARM_ON();
 
@@ -1017,7 +1012,6 @@ mq_timedsend(mqd_t const mqdes, char const * const msg_ptr,
              struct timespec const * const abs_timeout)
 {
   int ret;
-  struct mq_attr oldattr, newattr;
 
   DEADLOCK_ALARM_ON();
 
@@ -1057,7 +1051,6 @@ mq_receive(mqd_t const mqdes, char * const msg_ptr, size_t const msg_len,
 {
   int ret;
   ssize_t retval;
-  struct mq_attr oldattr, newattr;
 
   DEADLOCK_ALARM_ON();
 
@@ -1097,7 +1090,6 @@ mq_timedreceive(mqd_t const mqdes, char * const msg_ptr, size_t const msg_len,
 {
   int ret;
   ssize_t retval;
-  struct mq_attr oldattr, newattr;
 
   DEADLOCK_ALARM_ON();
 
@@ -1127,7 +1119,6 @@ SBMA_EXPORT(default, ssize_t
 mq_timedreceive(mqd_t const mqdes, char * const msg_ptr, size_t const msg_len,
                 unsigned * const msg_prio,
                 struct timespec const * const abs_timeout));
-#endif
 
 
 #pragma GCC pop_options

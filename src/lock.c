@@ -145,4 +145,6 @@ SBMA_EXPORT(internal, int
 __lock_let_int(char const * const __func, int const __line,
                char const * const __lock_str,
                pthread_mutex_t * const __lock));
+#else
+typedef int make_iso_compilers_happy;
 #endif

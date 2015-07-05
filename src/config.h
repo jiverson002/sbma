@@ -33,14 +33,12 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #endif
 
 
-#ifdef USE_THREAD
-# include <semaphore.h> /* semaphore libray */
-# include <time.h>      /* CLOCK_REALTIME, struct timespec, clock_gettime */
-#endif
+#include <semaphore.h>  /* semaphore libray */
 #include <stdio.h>      /* fprintf */
 #include <stdlib.h>     /* abort, stderr */
 #include <string.h>     /* basename */
 #include <sys/types.h>  /* ssize_t */
+#include <time.h>       /* CLOCK_REALTIME, struct timespec, clock_gettime */
 #include <unistd.h>     /* alarm */
 
 
@@ -113,11 +111,9 @@ ssize_t libc_write(int const, void const * const, size_t const);
 int     libc_mlock(void const * const, size_t const);
 int     libc_nanosleep(struct timespec const * const req,
                        struct timespec * const rem);
-#ifdef USE_THREAD
 int     libc_sem_wait(sem_t * const sem);
 int     libc_sem_timedwait(sem_t * const sem,
                            struct timespec const * const ts);
-#endif
 
 #ifdef __cplusplus
 }

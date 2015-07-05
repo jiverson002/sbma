@@ -308,7 +308,8 @@ __ipc_madmit(struct ipc * const __ipc, size_t const __value)
    */
 
   int ret, i, ii, dlctr;
-  ssize_t smem, mxmem;
+  size_t mxmem;
+  ssize_t smem;
   struct timespec ts;
   uint8_t * flags;
   int * pid;
@@ -437,7 +438,7 @@ __ipc_mevict(struct ipc * const __ipc, ssize_t const __value)
     return -1;
   }
 
-  ASSERT(__ipc->pmem[__ipc->id] >= -__value);
+  ASSERT(__ipc->pmem[__ipc->id] >= (size_t)(-__value));
 
   *__ipc->smem -= __value;
   __ipc->pmem[__ipc->id] += __value;

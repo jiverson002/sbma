@@ -272,6 +272,8 @@ __vmm_sigipc(int const sig, siginfo_t * const si, void * const ctx)
   ASSERT(-1 != ret);
 
   VMM_TRACK(numipc, 1);
+
+  if (NULL == si || NULL == ctx) {}
 }
 
 
@@ -295,7 +297,6 @@ __vmm_swap_i(struct ate * const __ate, size_t const __beg,
   if (0 == __num)
     return 0;
 
-  int GO = 0;
   /* shortcut by checking to see if all pages are already loaded */
   if (__ate->l_pages == __ate->n_pages)
     return 0;
@@ -358,7 +359,7 @@ __vmm_swap_i(struct ate * const __ate, size_t const __beg,
           (ip-ipfirst)*page_size, (ip-ipfirst)*page_size,\
           MREMAP_MAYMOVE|MREMAP_FIXED,
           (void*)(__ate->base+(ipfirst*page_size)));
-        if (-1 == raddr)
+        if (MAP_FAILED == (void*)raddr)
           return -1;
       }
 

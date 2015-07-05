@@ -75,7 +75,7 @@ __sbma_mallopt(int const __param, int const __value));
 SBMA_EXTERN struct mallinfo
 __sbma_mallinfo(void)
 {
-  int ret;
+  /*int ret;*/
   struct mallinfo mi;
 
   memset(&mi, 0, sizeof(struct mallinfo));

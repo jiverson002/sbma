@@ -3,10 +3,11 @@ add_with_param pthread no no= yes='-DUSE_PTHREAD -pthread'
 add_with_param openmp no no= yes='-DUSE_OPENMP -fopenmp'
 add_with_param mmap no no= yes='-DUSE_MMAP'
 add_with_param memalign no no= yes='-DUSE_MEMALIGN'
-add_with_param sbmalloc no no= yes='-DUSE_SBMALLOC'
+add_with_param sbma no no= yes='-DUSE_SBMA'
 add_with_param libc no no= yes='-DUSE_LIBC'
 
-add_library libsbma.a klmalloc.o malloc.o mstate.o mextra.o api.o hooks.o
+add_library libsbma.a hooks.o ipc.o klmalloc.o lock.o malloc.o mcntrl.o \
+  mextra.o mmu.o mstate.o vmm.o
 
 add_executable test/micro1 test/micro1.c
 
