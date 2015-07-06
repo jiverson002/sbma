@@ -254,9 +254,12 @@ __sbma_mtouch(void * const __addr, size_t const __len)
       }
     }
     else {
+      ASSERT(VMM_TO_SYS(ate->l_pages) == chk_l_pages);
       break;
     }
   }
+
+  ASSERT(VMM_TO_SYS(ate->l_pages) == chk_l_pages);
 
   numrd = __sbma_mtouch_int(ate, __addr, __len);
   if (-1 == numrd) {

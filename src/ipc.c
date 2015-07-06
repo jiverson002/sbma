@@ -50,6 +50,11 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
     sizeof(int))
 
 
+/* A thread static variable for checking to see if a SIGIPC was received and
+ * honored bewteen __ipc_block() and __ipc_unblock(). */
+static __thread size_t _chk_l_pages;
+
+
 SBMA_EXTERN int
 __ipc_init(struct ipc * const __ipc, int const __uniq, int const __n_procs,
            size_t const __max_mem)
@@ -239,7 +244,14 @@ __ipc_block(struct ipc * const __ipc)
 {
   if (0 == __ipc->init)
     return 0;
+
+  /* Get number of loaded pages when process is in a state where reception of
+   * SIGIPC is not honored. */
+  _chk_l_pages = __ipc->pmem[__ipc->id];
+
+  /* Transition to blocked */
   __ipc->flags[__ipc->id] |= IPC_BLOCKED;
+
   return 0;
 }
 SBMA_EXPORT(internal, int
@@ -251,8 +263,22 @@ __ipc_unblock(struct ipc * const __ipc)
 {
   if (0 == __ipc->init)
     return 0;
+
+  /* Transition to running */
   __ipc->flags[__ipc->id] &= ~IPC_BLOCKED;
-  return 0;
+
+  /* Compare number of loaded pages now, when process is in a state where
+   * reception of SIGIPC is not honored, to before the process was put in
+   * state where it would be honored. If the two values are different, then a
+   * SIGIPC was received and honored and thus -1 should be returned with errno
+   * set to EAGAIN. */
+  if (_chk_l_pages != __ipc->pmem[__ipc->id]) {
+    errno = EAGAIN;
+    //return -1;
+  }
+  //else {
+    return 0;
+  //}
 }
 SBMA_EXPORT(internal, int
 __ipc_unblock(struct ipc * const __ipc));
@@ -317,8 +343,14 @@ __ipc_madmit(struct ipc * const __ipc, size_t const __value)
 
   ret = sem_wait(__ipc->mtx);
   if (-1 == ret) {
-    if (EINTR == errno)
+    if (EINTR == errno) {
       errno = EAGAIN;
+    }
+    return -1;
+  }
+  else if (EAGAIN == errno) {
+    /* Need to release semaphore since this is returning an error. */
+    (void)sem_post(__ipc->mtx);
     return -1;
   }
 
@@ -397,13 +429,13 @@ __ipc_madmit(struct ipc * const __ipc, size_t const __value)
     return -1;
   }
 
-  ASSERT(0 == __ipc_is_eligible(__ipc));
   ASSERT(smem >= 0);
 
   ret = __ipc_populate(__ipc);
   if (-1 == ret)
     return -1;
 
+  ASSERT(0 == __ipc_is_eligible(__ipc));
   return smem;
 }
 SBMA_EXPORT(internal, ssize_t
@@ -422,15 +454,21 @@ __ipc_mevict(struct ipc * const __ipc, ssize_t const __value)
 
   ret = sem_wait(__ipc->mtx);
   if (-1 == ret) {
-    if (EINTR == errno)
+    if (EINTR == errno) {
       errno = EAGAIN;
+    }
+    return -1;
+  }
+  else if (EAGAIN == errno) {
+    /* Need to release semaphore since this is returning an error. */
+    (void)sem_post(__ipc->mtx);
     return -1;
   }
 
   if (__ipc->pmem[__ipc->id] < (size_t)(-__value))
     printf("[%5d] %s:%d %zu,%zd\n", (int)getpid(), __func__, __LINE__,
       __ipc->pmem[__ipc->id], __value);
-  //ASSERT(__ipc->pmem[__ipc->id] >= (size_t)(-__value));
+  ASSERT(__ipc->pmem[__ipc->id] >= (size_t)(-__value));
 
   *__ipc->smem -= __value;
   __ipc->pmem[__ipc->id] += __value;

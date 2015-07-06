@@ -923,12 +923,25 @@ sem_wait(sem_t * const sem)
   if (-1 == ret)
     return -1;
 
+  /* NOTE: If a signal is received here or at 'marker', then it will be
+   * identified when __ipc_unblock is called and errno will be set to EAGAIN
+   * accordingly. Note that in the case that errno is set to EAGAIN, -1 will
+   * not be returned, but rather a value indicating success. */
+
   /* perform blocking wait */
   ret = libc_sem_wait(sem);
   if (-1 == ret) {
-    (void)__ipc_unblock(&(vmm.ipc));
+    if (EINTR == errno) {
+      (void)__ipc_unblock(&(vmm.ipc));
+      errno = EINTR;
+    }
+    else {
+      (void)__ipc_unblock(&(vmm.ipc));
+    }
     return -1;
   }
+
+  /* NOTE: marker */
 
   /* transition to running state */
   ret = __ipc_unblock(&(vmm.ipc));
@@ -961,7 +974,13 @@ sem_timedwait(sem_t * const sem, struct timespec const * const ts)
   /* perform blocking wait */
   ret = libc_sem_timedwait(sem, ts);
   if (-1 == ret) {
-    (void)__ipc_unblock(&(vmm.ipc));
+    if (EINTR == errno) {
+      (void)__ipc_unblock(&(vmm.ipc));
+      errno = EINTR;
+    }
+    else {
+      (void)__ipc_unblock(&(vmm.ipc));
+    }
     return -1;
   }
 
@@ -997,7 +1016,13 @@ mq_send(mqd_t const mqdes, char const * const msg_ptr, size_t const msg_len,
   /* perform blocking send */
   ret = libc_mq_send(mqdes, msg_ptr, msg_len, msg_prio);
   if (-1 == ret) {
-    (void)__ipc_unblock(&(vmm.ipc));
+    if (EINTR == errno) {
+      (void)__ipc_unblock(&(vmm.ipc));
+      errno = EINTR;
+    }
+    else {
+      (void)__ipc_unblock(&(vmm.ipc));
+    }
     return -1;
   }
 
@@ -1035,7 +1060,13 @@ mq_timedsend(mqd_t const mqdes, char const * const msg_ptr,
   /* perform block send */
   ret = libc_mq_timedsend(mqdes, msg_ptr, msg_len, msg_prio, abs_timeout);
   if (-1 == ret) {
-    (void)__ipc_unblock(&(vmm.ipc));
+    if (EINTR == errno) {
+      (void)__ipc_unblock(&(vmm.ipc));
+      errno = EINTR;
+    }
+    else {
+      (void)__ipc_unblock(&(vmm.ipc));
+    }
     return -1;
   }
 
@@ -1074,7 +1105,13 @@ mq_receive(mqd_t const mqdes, char * const msg_ptr, size_t const msg_len,
   /* perform blocking receive */
   retval = libc_mq_receive(mqdes, msg_ptr, msg_len, msg_prio);
   if (-1 == retval) {
-    (void)__ipc_unblock(&(vmm.ipc));
+    if (EINTR == errno) {
+      (void)__ipc_unblock(&(vmm.ipc));
+      errno = EINTR;
+    }
+    else {
+      (void)__ipc_unblock(&(vmm.ipc));
+    }
     return -1;
   }
 
@@ -1114,7 +1151,13 @@ mq_timedreceive(mqd_t const mqdes, char * const msg_ptr, size_t const msg_len,
   retval = libc_mq_timedreceive(mqdes, msg_ptr, msg_len, msg_prio,\
     abs_timeout);
   if (-1 == retval) {
-    (void)__ipc_unblock(&(vmm.ipc));
+    if (EINTR == errno) {
+      (void)__ipc_unblock(&(vmm.ipc));
+      errno = EINTR;
+    }
+    else {
+      (void)__ipc_unblock(&(vmm.ipc));
+    }
     return -1;
   }
 
