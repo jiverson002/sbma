@@ -108,18 +108,3 @@ __sbma_mallinfo(void)
 }
 SBMA_EXPORT(default, struct mallinfo
 __sbma_mallinfo(void));
-
-
-/****************************************************************************/
-/*! Modify the eligibility of a process for ipc memory tracking */
-/****************************************************************************/
-SBMA_EXTERN int
-__sbma_is_eligible(void)
-{
-  if (0 == vmm.init)
-    return 0;
-
-  return __ipc_is_eligible(&(vmm.ipc));
-}
-SBMA_EXPORT(internal, int
-__sbma_is_eligible(void));
