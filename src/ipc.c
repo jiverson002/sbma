@@ -272,13 +272,13 @@ __ipc_unblock(struct ipc * const __ipc)
    * state where it would be honored. If the two values are different, then a
    * SIGIPC was received and honored and thus -1 should be returned with errno
    * set to EAGAIN. */
-  if (_chk_l_pages != __ipc->pmem[__ipc->id]) {
+  /* TODO: create a better API for this functionality than having the calling
+   * process check to see if errno equals EAGAIN on a successful function
+   * return. */
+  if (_chk_l_pages != __ipc->pmem[__ipc->id])
     errno = EAGAIN;
-    //return -1;
-  }
-  //else {
-    return 0;
-  //}
+
+  return 0;
 }
 SBMA_EXPORT(internal, int
 __ipc_unblock(struct ipc * const __ipc));
