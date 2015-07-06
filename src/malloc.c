@@ -173,12 +173,13 @@ __sbma_free(void * const __ptr)
   struct ate * ate;
   char fname[FILENAME_MAX];
 
+  ASSERT(0 == __ipc_is_eligible(&(vmm.ipc)));
+
   page_size = vmm.page_size;
   s_pages   = 1+((sizeof(struct ate)-1)/page_size);
   ate       = (struct ate*)((uintptr_t)__ptr-(s_pages*page_size));
   n_pages   = ate->n_pages;
   f_pages   = 1+((n_pages*sizeof(uint8_t)-1)/page_size);
-  l_pages   = ate->l_pages;
 
   /* remove the file */
   if (0 > snprintf(fname, FILENAME_MAX, "%s%d-%zx", vmm.fstem, (int)getpid(),\
@@ -199,6 +200,9 @@ __sbma_free(void * const __ptr)
   ret = __lock_free(&(ate->lock));
   if (-1 == ret)
     return -1;
+
+  /* this is the correct l_pages for certain */
+  l_pages = ate->l_pages;
 
   /* free resources */
   ret = munmap((void*)ate, (s_pages+n_pages+f_pages)*page_size);

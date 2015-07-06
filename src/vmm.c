@@ -132,7 +132,7 @@ SBMA_STATIC void
 __vmm_sigsegv(int const sig, siginfo_t * const si, void * const ctx)
 {
   int ret;
-  size_t ip, page_size, l_pages;
+  size_t ip, page_size, l_pages, chk_l_pages;
   ssize_t numrd;
   uintptr_t addr;
   uint8_t * flags;
@@ -169,6 +169,9 @@ __vmm_sigsegv(int const sig, siginfo_t * const si, void * const ctx)
        * On the other hand, it requires the acquisition of a mutex for every
        * read fault. */
 
+      chk_l_pages = ate->l_pages;
+
+      ASSERT(0 == __ipc_is_eligible(&(vmm.ipc)));
       ret = __ipc_madmit(&(vmm.ipc), VMM_TO_SYS(l_pages));
       if (-1 == ret) {
         if (EAGAIN == errno) {
@@ -193,6 +196,8 @@ __vmm_sigsegv(int const sig, siginfo_t * const si, void * const ctx)
       numrd = __vmm_swap_i(ate, 0, ate->n_pages, vmm.opts&VMM_GHOST);
       ASSERT(-1 != numrd);
     }
+
+    ASSERT(l_pages == ate->l_pages-chk_l_pages);
 
     /* release lock on alloction table entry */
     ret = __lock_let(&(ate->lock));
@@ -243,11 +248,15 @@ __vmm_sigipc(int const sig, siginfo_t * const si, void * const ctx)
   ASSERT(SIGIPC <= SIGRTMAX);
   ASSERT(SIGIPC == sig);
 
-  /* TODO: is it possible / what happens if the process receives a SIGIPC
-   * while in this function? */
-
   /* Only honor the SIGIPC if my status is still eligible */
   if (1 == __ipc_is_eligible(&(vmm.ipc))) {
+    /* TODO: is it possible / what happens / does it matter if the process
+     * receives a SIGIPC at this point in the execution of the signal handler?
+     * */
+    /* It shouldn't be possible because if this process received SIGIPC, then
+     * the process which signaled it should be waiting on vmm.ipc.trn1, and
+     * thus no other processes can signal. */
+
     /* evict all memory */
     ret = __sbma_mevictall_int(&l_pages, &numwr);
     ASSERT(-1 != ret);

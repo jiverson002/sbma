@@ -624,7 +624,7 @@ memcpy(void * const dst, void const * const src, size_t const num)
     if (1 == SBMA_mexist(dst))
       (void)SBMA_mtouch(dst, num);
     if (1 == SBMA_mexist(src))
-      (void)SBMA_mtouch(dst, num);
+      (void)SBMA_mtouch((void*)src, num);
   }
 
   return libc_memcpy(dst, src, num);
@@ -648,7 +648,7 @@ memmove(void * const dst, void const * const src, size_t const num)
     if (1 == SBMA_mexist(dst))
       (void)SBMA_mtouch(dst, num);
     if (1 == SBMA_mexist(src))
-      (void)SBMA_mtouch(dst, num);
+      (void)SBMA_mtouch((void*)src, num);
   }
 
   return libc_memmove(dst, src, num);

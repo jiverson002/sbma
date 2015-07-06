@@ -221,6 +221,7 @@ SBMA_EXTERN ssize_t
 __sbma_mtouch(void * const __addr, size_t const __len)
 {
   int ret;
+  size_t chk_l_pages;
   ssize_t l_pages, numrd;
   struct ate * ate;
 
@@ -238,7 +239,11 @@ __sbma_mtouch(void * const __addr, size_t const __len)
       return -1;
     }
 
+    chk_l_pages = VMM_TO_SYS(ate->l_pages);
+
+    ASSERT(0 == __ipc_is_eligible(&(vmm.ipc)));
     ret = __ipc_madmit(&(vmm.ipc), l_pages);
+    ASSERT(0 == __ipc_is_eligible(&(vmm.ipc)));
     if (-1 == ret) {
       if (EAGAIN == errno) {
         errno = 0;
@@ -258,6 +263,12 @@ __sbma_mtouch(void * const __addr, size_t const __len)
     (void)__lock_let(&(ate->lock));
     return -1;
   }
+
+  if (l_pages != VMM_TO_SYS(ate->l_pages)-chk_l_pages)
+    printf("[%5d] %s:%d %zd,%zu,%zu\n", (int)getpid(), __func__, __LINE__,
+      l_pages, VMM_TO_SYS(ate->l_pages), chk_l_pages);
+  ASSERT(VMM_TO_SYS(ate->l_pages) >= chk_l_pages);
+  ASSERT(l_pages == VMM_TO_SYS(ate->l_pages)-chk_l_pages);
 
   ret = __lock_let(&(ate->lock));
   if (-1 == ret)
@@ -287,6 +298,7 @@ __sbma_mtouch_atomic(void * const __addr, size_t const __len, ...)
   ssize_t _l_pages, _numrd, l_pages, numrd;
   va_list args;
   void * _addr;
+  size_t new_l_pages[SBMA_ATOMIC_MAX], chk_l_pages[SBMA_ATOMIC_MAX];
   size_t len[SBMA_ATOMIC_MAX];
   void * addr[SBMA_ATOMIC_MAX];
   struct ate * ate[SBMA_ATOMIC_MAX];
@@ -319,8 +331,12 @@ __sbma_mtouch_atomic(void * const __addr, size_t const __len, ...)
       if (-1 == _l_pages)
         goto CLEANUP;
       l_pages += _l_pages;
+
+      new_l_pages[i] = _l_pages;
+      chk_l_pages[i] = VMM_TO_SYS(ate[i]->l_pages);
     }
 
+    ASSERT(0 == __ipc_is_eligible(&(vmm.ipc)));
     ret = __ipc_madmit(&(vmm.ipc), l_pages);
     if (-1 == ret) {
       if (EAGAIN == errno)
@@ -343,6 +359,9 @@ __sbma_mtouch_atomic(void * const __addr, size_t const __len, ...)
     ret = __lock_let(&(ate[i]->lock));
     if (-1 == ret)
       goto CLEANUP;
+
+    ASSERT(new_l_pages[i] == VMM_TO_SYS(ate[i]->l_pages)-chk_l_pages[i]);
+
     ate[i] = NULL; /* clear in case of failure */
   }
 
@@ -375,75 +394,61 @@ __sbma_mtouchall(void)
   int ret;
   size_t l_pages=0, numrd=0;
   ssize_t retval;
-  struct ate * ate;
+  struct ate * ate, * start=NULL, * stop=NULL;
 
   ret = __lock_get(&(vmm.lock));
   if (-1 == ret)
     return -1;
 
+  /* Lock all allocations */
   for (ate=vmm.mmu.a_tbl; NULL!=ate; ate=ate->next) {
     ret = __lock_get(&(ate->lock));
     if (-1 == ret) {
       (void)__lock_let(&(vmm.lock));
       return -1;
     }
-
-    /* check memory file to see if there is enough free memory to complete
-     * this allocation. */
-    for (;;) {
-      ASSERT(0 == __ipc_is_eligible(&(vmm.ipc)));
-      retval = __sbma_mtouch_probe(ate, (void*)ate->base,\
-        ate->n_pages*vmm.page_size);
-      if (-1 == retval) {
-        (void)__lock_let(&(ate->lock));
-        (void)__lock_let(&(vmm.lock));
-        return -1;
-      }
-
-      ret = __ipc_madmit(&(vmm.ipc), retval);
-      if (-1 == ret) {
-        if (EAGAIN == errno) {
-          errno = 0;
-        }
-        else {
-          (void)__lock_let(&(ate->lock));
-          (void)__lock_let(&(vmm.lock));
-          return -1;
-        }
-      }
-      else {
-        break;
-      }
-    }
-
-    ret = __lock_let(&(ate->lock));
-    if (-1 == ret) {
-      (void)__lock_let(&(vmm.lock));
-      return -1;
-    }
-
-    l_pages += retval;
   }
 
-  for (ate=vmm.mmu.a_tbl; NULL!=ate; ate=ate->next) {
-    ret = __lock_get(&(ate->lock));
-    if (-1 == ret) {
-      (void)__lock_let(&(vmm.lock));
-      return -1;
+  /* check memory file to see if there is enough free memory to complete
+   * this allocation. */
+  for (;;) {
+    ASSERT(0 == __ipc_is_eligible(&(vmm.ipc)));
+    for (l_pages=0,ate=vmm.mmu.a_tbl; NULL!=ate; ate=ate->next) {
+      retval = __sbma_mtouch_probe(ate, (void*)ate->base,\
+        ate->n_pages*vmm.page_size);
+      if (-1 == retval)
+        goto CLEANUP;
+      l_pages += retval;
+
+      stop = ate;
     }
+
+    ASSERT(0 == __ipc_is_eligible(&(vmm.ipc)));
+    ret = __ipc_madmit(&(vmm.ipc), l_pages);
+    if (-1 == ret) {
+      if (EAGAIN == errno)
+        errno = 0;
+      else
+        goto CLEANUP;
+    }
+    else {
+      break;
+    }
+  }
+
+  /* touch the memory */
+  for (ate=vmm.mmu.a_tbl; NULL!=ate; ate=ate->next) {
     retval = __sbma_mtouch_int(ate, (void*)ate->base,\
       ate->n_pages*vmm.page_size);
-    if (-1 == retval) {
-      (void)__lock_let(&(ate->lock));
-      (void)__lock_let(&(vmm.lock));
-      return -1;
-    }
+    if (-1 == retval)
+      goto CLEANUP;
+
     ret = __lock_let(&(ate->lock));
-    if (-1 == ret) {
-      (void)__lock_let(&(vmm.lock));
-      return -1;
-    }
+    if (-1 == ret)
+      goto CLEANUP;
     numrd += retval;
+
+    start = ate->next;
   }
 
   ret = __lock_let(&(vmm.lock));
@@ -459,6 +464,12 @@ __sbma_mtouchall(void)
     vmm.curpages>vmm.maxpages?vmm.curpages-vmm.maxpages:0);
 
   return l_pages;
+
+  CLEANUP:
+  for (ate=start; stop!=ate; ate=ate->next)
+    (void)__lock_let(&(ate->lock));
+  (void)__lock_let(&(vmm.lock));
+  return -1;
 }
 SBMA_EXPORT(internal, ssize_t
 __sbma_mtouchall(void));
@@ -542,6 +553,8 @@ __sbma_mevict(void * const __addr, size_t const __len)
   int ret;
   ssize_t l_pages, numwr;
   struct ate * ate;
+
+  ASSERT(0 == __ipc_is_eligible(&(vmm.ipc)));
 
   ate = __mmu_lookup_ate(&(vmm.mmu), __addr);
   if (NULL == ate)
@@ -654,6 +667,8 @@ __sbma_mevictall(void)
 {
   int ret;
   size_t l_pages, numwr;
+
+  ASSERT(0 == __ipc_is_eligible(&(vmm.ipc)));
 
   ret = __sbma_mevictall_int(&l_pages, &numwr);
   if (-1 == ret)

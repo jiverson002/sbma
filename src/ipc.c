@@ -392,6 +392,7 @@ __ipc_madmit(struct ipc * const __ipc, size_t const __value)
     if (-1 == ret && EINTR != errno)
       return -1;
 
+    ASSERT(0 == __ipc_is_eligible(__ipc));
     errno = EAGAIN;
     return -1;
   }
@@ -426,7 +427,10 @@ __ipc_mevict(struct ipc * const __ipc, ssize_t const __value)
     return -1;
   }
 
-  ASSERT(__ipc->pmem[__ipc->id] >= (size_t)(-__value));
+  if (__ipc->pmem[__ipc->id] < (size_t)(-__value))
+    printf("[%5d] %s:%d %zu,%zd\n", (int)getpid(), __func__, __LINE__,
+      __ipc->pmem[__ipc->id], __value);
+  //ASSERT(__ipc->pmem[__ipc->id] >= (size_t)(-__value));
 
   *__ipc->smem -= __value;
   __ipc->pmem[__ipc->id] += __value;
