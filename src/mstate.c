@@ -244,16 +244,11 @@ __sbma_mtouch(void * const __addr, size_t const __len)
     ASSERT(0 == __ipc_is_eligible(&(vmm.ipc)));
     ret = __ipc_madmit(&(vmm.ipc), l_pages);
     ASSERT(0 == __ipc_is_eligible(&(vmm.ipc)));
-    if (-1 == ret) {
-      if (EAGAIN == errno) {
-        errno = 0;
-      }
-      else {
-        (void)__lock_let(&(ate->lock));
-        return -1;
-      }
+    if (-1 == ret && EAGAIN != errno) {
+      (void)__lock_let(&(ate->lock));
+      return -1;
     }
-    else {
+    else if (-1 != ret) {
       ASSERT(VMM_TO_SYS(ate->l_pages) == chk_l_pages);
       break;
     }
@@ -341,15 +336,10 @@ __sbma_mtouch_atomic(void * const __addr, size_t const __len, ...)
 
     ASSERT(0 == __ipc_is_eligible(&(vmm.ipc)));
     ret = __ipc_madmit(&(vmm.ipc), l_pages);
-    if (-1 == ret) {
-      if (EAGAIN == errno)
-        errno = 0;
-      else
-        goto CLEANUP;
-    }
-    else {
+    if (-1 == ret && EAGAIN != errno)
+      goto CLEANUP;
+    else if (-1 != ret)
       break;
-    }
   }
 
   /* touch each of the pointers */
@@ -428,15 +418,10 @@ __sbma_mtouchall(void)
 
     ASSERT(0 == __ipc_is_eligible(&(vmm.ipc)));
     ret = __ipc_madmit(&(vmm.ipc), l_pages);
-    if (-1 == ret) {
-      if (EAGAIN == errno)
-        errno = 0;
-      else
-        goto CLEANUP;
-    }
-    else {
+    if (-1 == ret && EAGAIN != errno)
+      goto CLEANUP;
+    else if (-1 != ret)
       break;
-    }
   }
 
   /* touch the memory */
@@ -578,15 +563,10 @@ __sbma_mevict(void * const __addr, size_t const __len)
   /* update memory file */
   for (;;) {
     ret = __ipc_mevict(&(vmm.ipc), -l_pages);
-    if (-1 == ret) {
-      if (EAGAIN == errno)
-        errno = 0;
-      else
-        return -1;
-    }
-    else {
+    if (-1 == ret && EAGAIN != errno)
+      return -1;
+    else if (-1 != ret)
       break;
-    }
   }
 
   /* track number of syspages currently loaded, number of syspages written to
@@ -680,15 +660,10 @@ __sbma_mevictall(void)
   /* update memory file */
   for (;;) {
     ret = __ipc_mevict(&(vmm.ipc), -l_pages);
-    if (-1 == ret) {
-      if (EAGAIN == errno)
-        errno = 0;
-      else
-        return -1;
-    }
-    else {
+    if (-1 == ret && EAGAIN != errno)
+      return -1;
+    else if (-1 != ret)
       break;
-    }
   }
 
   /* track number of syspages currently loaded, number of syspages written to

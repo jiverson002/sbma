@@ -108,3 +108,15 @@ __sbma_mallinfo(void)
 }
 SBMA_EXPORT(default, struct mallinfo
 __sbma_mallinfo(void));
+
+
+/****************************************************************************/
+/*! Check if a SIGIPC was received during last blocking hook. */
+/****************************************************************************/
+SBMA_EXTERN int
+__sbma_sigrecvd(void)
+{
+  return __ipc_sigrecvd(&(vmm.ipc));
+}
+SBMA_EXPORT(default, int
+__sbma_sigrecvd(void));

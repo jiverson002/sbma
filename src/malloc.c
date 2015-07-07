@@ -81,15 +81,10 @@ __sbma_malloc(size_t const __size)
   for (;;) {
     ASSERT(0 == __ipc_is_eligible(&(vmm.ipc)));
     ret = __ipc_madmit(&(vmm.ipc), VMM_TO_SYS(s_pages+n_pages+f_pages));
-    if (-1 == ret) {
-      if (EAGAIN == errno)
-        errno = 0;
-      else
-        return NULL;
-    }
-    else {
+    if (-1 == ret && EAGAIN != errno)
+      return NULL;
+    else if (-1 != ret)
       break;
-    }
   }
 
   /* allocate memory */
@@ -212,15 +207,10 @@ __sbma_free(void * const __ptr)
   /* update memory file */
   for (;;) {
     ret = __ipc_mevict(&(vmm.ipc), -VMM_TO_SYS(s_pages+l_pages+f_pages));
-    if (-1 == ret) {
-      if (EAGAIN == errno)
-        errno = 0;
-      else
-        return -1;
-    }
-    else {
+    if (-1 == ret && EAGAIN != errno)
+      return -1;
+    else if (-1 != ret)
       break;
-    }
   }
 
   /* track number of syspages currently loaded and allocated */
@@ -297,15 +287,10 @@ __sbma_realloc(void * const __ptr, size_t const __size)
     for (;;) {
       ret = __ipc_mevict(&(vmm.ipc),\
         -VMM_TO_SYS((on_pages-nn_pages)+(of_pages-nf_pages)));
-      if (-1 == ret) {
-        if (EAGAIN == errno)
-          errno = 0;
-        else
-          return NULL;
-      }
-      else {
+      if (-1 == ret && EAGAIN != errno)
+        return NULL;
+      else if (-1 != ret)
         break;
-      }
     }
 
     /* track number of syspages currently loaded and allocated */
@@ -321,15 +306,10 @@ __sbma_realloc(void * const __ptr, size_t const __size)
       ASSERT(0 == __ipc_is_eligible(&(vmm.ipc)));
       ret = __ipc_madmit(&(vmm.ipc),\
         VMM_TO_SYS((nn_pages-on_pages)+(nf_pages-of_pages)));
-      if (-1 == ret) {
-        if (EAGAIN == errno)
-          errno = 0;
-        else
-          return NULL;
-      }
-      else {
+      if (-1 == ret && EAGAIN != errno)
+        return NULL;
+      else if (-1 != ret)
         break;
-      }
     }
 
     /* resize allocation */

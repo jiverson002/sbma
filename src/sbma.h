@@ -119,6 +119,7 @@ int     __sbma_mexist(void const * const ptr);
 /* mextra.c */
 #define SBMA_mallopt            __sbma_mallopt
 #define SBMA_mallinfo           __sbma_mallinfo
+#define SBMA_sigrecvd           __sbma_sigrecvd
 
 /* mstate.c */
 #define SBMA_mtouch             __sbma_mtouch

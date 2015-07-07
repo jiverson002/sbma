@@ -173,16 +173,11 @@ __vmm_sigsegv(int const sig, siginfo_t * const si, void * const ctx)
 
       ASSERT(0 == __ipc_is_eligible(&(vmm.ipc)));
       ret = __ipc_madmit(&(vmm.ipc), VMM_TO_SYS(l_pages));
-      if (-1 == ret) {
-        if (EAGAIN == errno) {
-          errno = 0;
-        }
-        else {
-          (void)__lock_let(&(ate->lock));
-          ASSERT(0);
-        }
+      if (-1 == ret && EAGAIN != errno) {
+        (void)__lock_let(&(ate->lock));
+        ASSERT(0);
       }
-      else {
+      else if (-1 != ret) {
         break;
       }
     }

@@ -50,9 +50,10 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
     sizeof(int))
 
 
-/* A thread static variable for checking to see if a SIGIPC was received and
+/* Thread static variables for checking to see if a SIGIPC was received and
  * honored bewteen __ipc_block() and __ipc_unblock(). */
-static __thread size_t _chk_l_pages;
+static __thread size_t _ipc_l_pages;
+static __thread int    _ipc_sigrecvd;
 
 
 SBMA_EXTERN int
@@ -247,7 +248,8 @@ __ipc_block(struct ipc * const __ipc)
 
   /* Get number of loaded pages when process is in a state where reception of
    * SIGIPC is not honored. */
-  _chk_l_pages = __ipc->pmem[__ipc->id];
+  _ipc_l_pages  = __ipc->pmem[__ipc->id];
+  _ipc_sigrecvd = 0;
 
   /* Transition to blocked */
   __ipc->flags[__ipc->id] |= IPC_BLOCKED;
@@ -270,13 +272,10 @@ __ipc_unblock(struct ipc * const __ipc)
   /* Compare number of loaded pages now, when process is in a state where
    * reception of SIGIPC is not honored, to before the process was put in
    * state where it would be honored. If the two values are different, then a
-   * SIGIPC was received and honored and thus -1 should be returned with errno
-   * set to EAGAIN. */
-  /* TODO: create a better API for this functionality than having the calling
-   * process check to see if errno equals EAGAIN on a successful function
-   * return. */
-  if (_chk_l_pages != __ipc->pmem[__ipc->id])
-    errno = EAGAIN;
+   * SIGIPC was received and honored and thus __ipc_sigrecvd should be set to
+   * 1. */
+  if (_ipc_l_pages != __ipc->pmem[__ipc->id])
+    _ipc_sigrecvd = 1;
 
   return 0;
 }
@@ -306,6 +305,15 @@ __ipc_unpopulate(struct ipc * const __ipc)
 }
 SBMA_EXPORT(internal, int
 __ipc_unpopulate(struct ipc * const __ipc));
+
+
+SBMA_EXTERN int
+__ipc_sigrecvd(struct ipc * const __ipc)
+{
+  return _ipc_sigrecvd;
+}
+SBMA_EXPORT(internal, int
+__ipc_sigrecvd(struct ipc * const __ipc));
 
 
 SBMA_EXTERN int
@@ -343,14 +351,14 @@ __ipc_madmit(struct ipc * const __ipc, size_t const __value)
 
   ret = sem_wait(__ipc->mtx);
   if (-1 == ret) {
-    if (EINTR == errno) {
+    if (EINTR == errno)
       errno = EAGAIN;
-    }
     return -1;
   }
-  else if (EAGAIN == errno) {
+  else if (1 == __ipc_sigrecvd(__ipc)) {
     /* Need to release semaphore since this is returning an error. */
     (void)sem_post(__ipc->mtx);
+    errno = EAGAIN;
     return -1;
   }
 
@@ -454,14 +462,14 @@ __ipc_mevict(struct ipc * const __ipc, ssize_t const __value)
 
   ret = sem_wait(__ipc->mtx);
   if (-1 == ret) {
-    if (EINTR == errno) {
+    if (EINTR == errno)
       errno = EAGAIN;
-    }
     return -1;
   }
-  else if (EAGAIN == errno) {
+  else if (1 == __ipc_sigrecvd(__ipc)) {
     /* Need to release semaphore since this is returning an error. */
     (void)sem_post(__ipc->mtx);
+    errno = EAGAIN;
     return -1;
   }
 
