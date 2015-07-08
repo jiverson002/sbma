@@ -562,7 +562,7 @@ __sbma_mevict(void * const __addr, size_t const __len)
 
   /* update memory file */
   for (;;) {
-    ret = __ipc_mevict(&(vmm.ipc), -l_pages);
+    ret = __ipc_mevict(&(vmm.ipc), l_pages);
     if (-1 == ret && EAGAIN != errno)
       return -1;
     else if (-1 != ret)
@@ -659,7 +659,7 @@ __sbma_mevictall(void)
 
   /* update memory file */
   for (;;) {
-    ret = __ipc_mevict(&(vmm.ipc), -l_pages);
+    ret = __ipc_mevict(&(vmm.ipc), l_pages);
     if (-1 == ret && EAGAIN != errno)
       return -1;
     else if (-1 != ret)

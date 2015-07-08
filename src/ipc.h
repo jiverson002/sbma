@@ -144,7 +144,7 @@ __ipc_is_eligible(struct ipc * const __ipc);
 /*! Account for resident memory before admission. Check to see if the system
  *  can support the addition of __value bytes of memory. */
 /****************************************************************************/
-ssize_t
+int
 __ipc_madmit(struct ipc * const __ipc, size_t const __value);
 
 
@@ -152,7 +152,7 @@ __ipc_madmit(struct ipc * const __ipc, size_t const __value);
 /*! Account for loaded memory after eviction. */
 /****************************************************************************/
 int
-__ipc_mevict(struct ipc * const __ipc, ssize_t const __value);
+__ipc_mevict(struct ipc * const __ipc, size_t const __value);
 
 #ifdef __cplusplus
 }

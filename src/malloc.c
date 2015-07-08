@@ -206,7 +206,7 @@ __sbma_free(void * const __ptr)
 
   /* update memory file */
   for (;;) {
-    ret = __ipc_mevict(&(vmm.ipc), -VMM_TO_SYS(s_pages+l_pages+f_pages));
+    ret = __ipc_mevict(&(vmm.ipc), VMM_TO_SYS(s_pages+l_pages+f_pages));
     if (-1 == ret && EAGAIN != errno)
       return -1;
     else if (-1 != ret)
@@ -286,7 +286,7 @@ __sbma_realloc(void * const __ptr, size_t const __size)
     /* update memory file */
     for (;;) {
       ret = __ipc_mevict(&(vmm.ipc),\
-        -VMM_TO_SYS((on_pages-nn_pages)+(of_pages-nf_pages)));
+        VMM_TO_SYS((on_pages-nn_pages)+(of_pages-nf_pages)));
       if (-1 == ret && EAGAIN != errno)
         return NULL;
       else if (-1 != ret)

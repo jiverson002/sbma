@@ -328,7 +328,7 @@ SBMA_EXPORT(internal, int
 __ipc_is_eligible(struct ipc * const __ipc));
 
 
-SBMA_EXTERN ssize_t
+SBMA_EXTERN int
 __ipc_madmit(struct ipc * const __ipc, size_t const __value)
 {
   /* TODO: There is some potential for optimization here regarding how and
@@ -348,6 +348,9 @@ __ipc_madmit(struct ipc * const __ipc, size_t const __value)
   uint8_t * flags;
   int * pid;
   size_t * pmem;
+
+  if (0 == __value)
+    return 0;
 
   ret = sem_wait(__ipc->mtx);
   if (-1 == ret) {
@@ -444,19 +447,19 @@ __ipc_madmit(struct ipc * const __ipc, size_t const __value)
     return -1;
 
   ASSERT(0 == __ipc_is_eligible(__ipc));
-  return smem;
+  return 0;
 }
-SBMA_EXPORT(internal, ssize_t
+SBMA_EXPORT(internal, int
 __ipc_madmit(struct ipc * const __ipc, size_t const __value));
 
 
 SBMA_EXTERN int
-__ipc_mevict(struct ipc * const __ipc, ssize_t const __value)
+__ipc_mevict(struct ipc * const __ipc, size_t const __value)
 {
   int ret;
 
-  if (__value > 0)
-    return -1;
+  if (0 == __value)
+    return 0;
 
   ASSERT(0 == __ipc_is_eligible(__ipc));
 
@@ -473,13 +476,10 @@ __ipc_mevict(struct ipc * const __ipc, ssize_t const __value)
     return -1;
   }
 
-  if (__ipc->pmem[__ipc->id] < (size_t)(-__value))
-    printf("[%5d] %s:%d %zu,%zd\n", (int)getpid(), __func__, __LINE__,
-      __ipc->pmem[__ipc->id], __value);
-  ASSERT(__ipc->pmem[__ipc->id] >= (size_t)(-__value));
+  ASSERT(__ipc->pmem[__ipc->id] >= __value);
 
-  *__ipc->smem -= __value;
-  __ipc->pmem[__ipc->id] += __value;
+  *__ipc->smem += __value;
+  __ipc->pmem[__ipc->id] -= __value;
 
   ret = sem_post(__ipc->mtx);
   if (-1 == ret)
@@ -490,4 +490,4 @@ __ipc_mevict(struct ipc * const __ipc, ssize_t const __value)
   return 0;
 }
 SBMA_EXPORT(internal, int
-__ipc_mevict(struct ipc * const __ipc, ssize_t const __value));
+__ipc_mevict(struct ipc * const __ipc, size_t const __value));
