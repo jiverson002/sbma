@@ -46,7 +46,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 
 #define IPC_LEN(__N_PROCS)\
-  (sizeof(ssize_t)+(__N_PROCS)*(sizeof(size_t)+sizeof(int)+sizeof(uint8_t))+\
+  (sizeof(size_t)+(__N_PROCS)*(sizeof(size_t)+sizeof(int)+sizeof(uint8_t))+\
     sizeof(int))
 
 
@@ -165,8 +165,8 @@ __ipc_init(struct ipc * const __ipc, int const __uniq, int const __n_procs,
   __ipc->cnt     = cnt;
   __ipc->trn1    = trn1;
   __ipc->trn2    = trn2;
-  __ipc->smem    = (ssize_t*)shm;
-  __ipc->pmem    = (size_t*)((uintptr_t)__ipc->smem+sizeof(ssize_t));
+  __ipc->smem    = (size_t*)shm;
+  __ipc->pmem    = (size_t*)((uintptr_t)__ipc->smem+sizeof(size_t));
   __ipc->pid     = (int*)((uintptr_t)__ipc->pmem+(__n_procs*sizeof(size_t)));
   __ipc->flags   = (uint8_t*)((uintptr_t)__ipc->pid+(__n_procs*sizeof(int)));
 
@@ -341,9 +341,8 @@ __ipc_madmit(struct ipc * const __ipc, size_t const __value)
    * satisfy the request.
    */
 
-  int ret, i, ii, dlctr;
-  size_t mxmem;
-  ssize_t smem;
+  int ret, i, ii, id, dlctr;
+  size_t mxmem, smem;
   struct timespec ts;
   uint8_t * flags;
   int * pid;
@@ -365,30 +364,31 @@ __ipc_madmit(struct ipc * const __ipc, size_t const __value)
     return -1;
   }
 
-  smem  = *__ipc->smem-__value;
+  id    = __ipc->id;
+  smem  = *__ipc->smem;
   pmem  = __ipc->pmem;
   pid   = __ipc->pid;
   flags = __ipc->flags;
 
-  while (smem < 0) {
+  while (smem < __value) {
     /* find a process which has memory and is eligible */
     mxmem = 0;
     ii    = -1;
     for (dlctr=0,i=0; i<__ipc->n_procs; ++i) {
       dlctr += (IPC_BLOCKED == (flags[i]&(IPC_BLOCKED|IPC_POPULATED)));
 
-      if (i == __ipc->id)
+      if (i == id)
         continue;
 
       if ((IPC_BLOCKED|IPC_POPULATED) == (flags[i]&(IPC_BLOCKED|IPC_POPULATED))) {
-        if (pmem[i] > mxmem) {
-        /* choose this process if it has more resident memory than the
+        /* Choose this process if it has more resident memory than the
          * candidate process AND (i am running OR my resident memory is larger
-         * than theirs). */
-        /*if (pmem[i] > mxmem &&
-            (IPC_BLOCKED != (flags[__ipc->id]&IPC_BLOCKED) ||
-             pmem[__ipc->id] >= pmem[i]))
-        {*/
+         * than theirs). This should eliminate a lot of the thrashing
+         * otherwise present, since there will be a well defined order to
+         * which processes can request that other processes release memory. */
+        if (pmem[i] > mxmem &&
+            (IPC_BLOCKED != (flags[id]&IPC_BLOCKED) || pmem[id] >= pmem[i])) {
+        /*if (pmem[i] > mxmem) {*/
           ii = i;
           mxmem = pmem[i];
         }
@@ -416,19 +416,19 @@ __ipc_madmit(struct ipc * const __ipc, size_t const __value)
       return -1;
     }
 
-    smem  = *__ipc->smem-__value;
+    smem = *__ipc->smem;
   }
 
-  if (smem >= 0) {
+  if (smem >= __value) {
     *__ipc->smem -= __value;
-    __ipc->pmem[__ipc->id] += __value;
+    __ipc->pmem[id] += __value;
   }
 
   ret = sem_post(__ipc->mtx);
   if (-1 == ret)
     return -1;
 
-  if (smem < 0) {
+  if (smem < __value) {
     ts.tv_sec  = 0;
     ts.tv_nsec = 250000000;
     ret = nanosleep(&ts, NULL);
@@ -440,12 +440,11 @@ __ipc_madmit(struct ipc * const __ipc, size_t const __value)
     return -1;
   }
 
-  ASSERT(smem >= 0);
-
   ret = __ipc_populate(__ipc);
   if (-1 == ret)
     return -1;
 
+  ASSERT(smem >= __value);
   ASSERT(0 == __ipc_is_eligible(__ipc));
   return 0;
 }

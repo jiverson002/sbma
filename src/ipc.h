@@ -31,7 +31,6 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <semaphore.h> /* semaphore library */
 #include <stdint.h>    /* uint8_t */
 #include <stddef.h>    /* size_t */
-#include <sys/types.h> /* ssize_t */
 
 
 #define SIGIPC (SIGRTMIN+0)
@@ -69,10 +68,10 @@ struct ipc
   sem_t * trn1;  /*!< ... */
   sem_t * trn2;  /*!< ... */
 
-  void * shm;     /*!< shared memory region */
-  ssize_t * smem; /*!< pointer into shm for smem scalar */
-  size_t * pmem;  /*!< pointer into shm for pmem array */
-  int * pid;      /*!< pointer into shm for pid array */
+  void * shm;    /*!< shared memory region */
+  size_t * smem; /*!< pointer into shm for smem scalar */
+  size_t * pmem; /*!< pointer into shm for pmem array */
+  int * pid;     /*!< pointer into shm for pid array */
 
   uint8_t * flags; /*!< pointer into shm for flags array */
 };
