@@ -888,7 +888,7 @@ nanosleep(struct timespec const * const req, struct timespec * const rem)
   DEADLOCK_ALARM_ON();
 
   /* transition to blocked state */
-  ret = __ipc_block(&(vmm.ipc));
+  ret = __ipc_block(&(vmm.ipc), IPC_CMD_BLOCKED);
   if (-1 == ret)
     return -1;
 
@@ -923,7 +923,7 @@ sem_wait(sem_t * const sem)
   DEADLOCK_ALARM_ON();
 
   /* transition to blocked state */
-  ret = __ipc_block(&(vmm.ipc));
+  ret = __ipc_block(&(vmm.ipc), IPC_CMD_BLOCKED);
   if (-1 == ret)
     return -1;
 
@@ -966,7 +966,7 @@ sem_timedwait(sem_t * const sem, struct timespec const * const ts)
   DEADLOCK_ALARM_ON();
 
   /* transition to blocked state */
-  ret = __ipc_block(&(vmm.ipc));
+  ret = __ipc_block(&(vmm.ipc), IPC_CMD_BLOCKED);
   if (-1 == ret)
     return -1;
 
@@ -1002,7 +1002,7 @@ mq_send(mqd_t const mqdes, char const * const msg_ptr, size_t const msg_len,
   DEADLOCK_ALARM_ON();
 
   /* transition to blocked state */
-  ret = __ipc_block(&(vmm.ipc));
+  ret = __ipc_block(&(vmm.ipc), IPC_CMD_BLOCKED);
   if (-1 == ret)
     return -1;
 
@@ -1040,7 +1040,7 @@ mq_timedsend(mqd_t const mqdes, char const * const msg_ptr,
   DEADLOCK_ALARM_ON();
 
   /* transition to blocked state */
-  ret = __ipc_block(&(vmm.ipc));
+  ret = __ipc_block(&(vmm.ipc), IPC_CMD_BLOCKED);
   if (-1 == ret)
     return -1;
 
@@ -1079,7 +1079,7 @@ mq_receive(mqd_t const mqdes, char * const msg_ptr, size_t const msg_len,
   DEADLOCK_ALARM_ON();
 
   /* transition to blocked state */
-  ret = __ipc_block(&(vmm.ipc));
+  ret = __ipc_block(&(vmm.ipc), IPC_CMD_BLOCKED);
   if (-1 == ret)
     return -1;
 
@@ -1118,7 +1118,7 @@ mq_timedreceive(mqd_t const mqdes, char * const msg_ptr, size_t const msg_len,
   DEADLOCK_ALARM_ON();
 
   /* transition to blocked state */
-  ret = __ipc_block(&(vmm.ipc));
+  ret = __ipc_block(&(vmm.ipc), IPC_CMD_BLOCKED);
   if (-1 == ret)
     return -1;
 

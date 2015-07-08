@@ -46,8 +46,11 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 /****************************************************************************/
 enum ipc_code
 {
-  IPC_BLOCKED   = 1 << 0,
-  IPC_POPULATED = 1 << 1
+  IPC_CMD_BLOCKED  = 1 << 0,
+  IPC_MEM_BLOCKED  = 1 << 1,
+  IPC_POPULATED    = 1 << 2,
+  IPC_CMD_ELIGIBLE = IPC_CMD_BLOCKED|IPC_POPULATED,
+  IPC_MEM_ELIGIBLE = IPC_MEM_BLOCKED|IPC_POPULATED
 };
 
 
@@ -100,7 +103,7 @@ __ipc_destroy(struct ipc * const __ipc);
 /*! Transition process to blocked state. */
 /****************************************************************************/
 int
-__ipc_block(struct ipc * const __ipc);
+__ipc_block(struct ipc * const __ipc, int const __flag);
 
 
 /****************************************************************************/

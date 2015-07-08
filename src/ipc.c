@@ -49,6 +49,29 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
   (sizeof(size_t)+(__N_PROCS)*(sizeof(size_t)+sizeof(int)+sizeof(uint8_t))+\
     sizeof(int))
 
+#define CALL_LIBC(__IPC, __CMD, __SIGRECVD)\
+do {\
+  ret = __ipc_block(__IPC, IPC_MEM_BLOCKED);\
+  if (-1 == ret)\
+    return -1;\
+  ret = libc_ ## __CMD;\
+  if (-1 == ret) {\
+    (void)__ipc_unblock(__IPC);\
+    if (EINTR == errno)\
+      errno = EAGAIN;\
+    return -1;\
+  }\
+  ret = __ipc_unblock(__IPC);\
+  if (-1 == ret)\
+    return -1;\
+  ret = __ipc_sigrecvd(__IPC);\
+  if (1 == ret) {\
+    (void)__SIGRECVD;\
+    errno = EAGAIN;\
+    return -1;\
+  }\
+} while (0)
+
 
 /* Thread static variables for checking to see if a SIGIPC was received and
  * honored bewteen __ipc_block() and __ipc_unblock(). */
@@ -241,7 +264,7 @@ __ipc_destroy(struct ipc * const __ipc));
 
 
 SBMA_EXTERN int
-__ipc_block(struct ipc * const __ipc)
+__ipc_block(struct ipc * const __ipc, int const __flag)
 {
   if (0 == __ipc->init)
     return 0;
@@ -252,12 +275,12 @@ __ipc_block(struct ipc * const __ipc)
   _ipc_sigrecvd = 0;
 
   /* Transition to blocked */
-  __ipc->flags[__ipc->id] |= IPC_BLOCKED;
+  __ipc->flags[__ipc->id] |= __flag;
 
   return 0;
 }
 SBMA_EXPORT(internal, int
-__ipc_block(struct ipc * const __ipc));
+__ipc_block(struct ipc * const __ipc, int const __flag));
 
 
 SBMA_EXTERN int
@@ -267,7 +290,7 @@ __ipc_unblock(struct ipc * const __ipc)
     return 0;
 
   /* Transition to running */
-  __ipc->flags[__ipc->id] &= ~IPC_BLOCKED;
+  __ipc->flags[__ipc->id] &= ~(IPC_CMD_BLOCKED|IPC_MEM_BLOCKED);
 
   /* Compare number of loaded pages now, when process is in a state where
    * reception of SIGIPC is not honored, to before the process was put in
@@ -319,10 +342,12 @@ __ipc_sigrecvd(struct ipc * const __ipc));
 SBMA_EXTERN int
 __ipc_is_eligible(struct ipc * const __ipc)
 {
-  uint8_t const flag = (IPC_BLOCKED|IPC_POPULATED);
+  uint8_t const flag1 = (IPC_CMD_BLOCKED|IPC_POPULATED);
+  uint8_t const flag2 = (IPC_MEM_BLOCKED|IPC_POPULATED);
   if (0 == __ipc->init)
     return 0;
-  return (flag == (__ipc->flags[__ipc->id]&flag));
+  return ((flag1 == (__ipc->flags[__ipc->id]&flag1)) ||\
+    (flag2 == (__ipc->flags[__ipc->id]&flag2)));
 }
 SBMA_EXPORT(internal, int
 __ipc_is_eligible(struct ipc * const __ipc));
@@ -351,6 +376,9 @@ __ipc_madmit(struct ipc * const __ipc, size_t const __value)
   if (0 == __value)
     return 0;
 
+#if 1
+  CALL_LIBC(__ipc, sem_wait(__ipc->mtx), sem_post(__ipc->mtx));
+#else
   ret = sem_wait(__ipc->mtx);
   if (-1 == ret) {
     if (EINTR == errno)
@@ -363,6 +391,7 @@ __ipc_madmit(struct ipc * const __ipc, size_t const __value)
     errno = EAGAIN;
     return -1;
   }
+#endif
 
   id    = __ipc->id;
   smem  = *__ipc->smem;
@@ -375,24 +404,49 @@ __ipc_madmit(struct ipc * const __ipc, size_t const __value)
     mxmem = 0;
     ii    = -1;
     for (dlctr=0,i=0; i<__ipc->n_procs; ++i) {
-      dlctr += (IPC_BLOCKED == (flags[i]&(IPC_BLOCKED|IPC_POPULATED)));
+      dlctr += (IPC_CMD_BLOCKED == (flags[i]&IPC_CMD_ELIGIBLE));
+      dlctr += (IPC_MEM_BLOCKED == (flags[i]&IPC_MEM_ELIGIBLE));
 
       if (i == id)
         continue;
 
-      if ((IPC_BLOCKED|IPC_POPULATED) == (flags[i]&(IPC_BLOCKED|IPC_POPULATED))) {
-        /* Choose this process if it has more resident memory than the
-         * candidate process AND (i am running OR my resident memory is larger
-         * than theirs). This should eliminate a lot of the thrashing
-         * otherwise present, since there will be a well defined order to
-         * which processes can request that other processes release memory. */
-        if (pmem[i] > mxmem &&
-            (IPC_BLOCKED != (flags[id]&IPC_BLOCKED) || pmem[id] >= pmem[i])) {
-        /*if (pmem[i] > mxmem) {*/
+#if 1
+      /* If the process is blocked on a function call, then choose it as a
+       * candidate if it has the most resident memory so far. */
+      if (IPC_CMD_ELIGIBLE == (flags[i]&IPC_CMD_ELIGIBLE)) {
+        if (pmem[i] > mxmem) {
           ii = i;
           mxmem = pmem[i];
         }
       }
+      /* If the process is blocked trying to admit memory, then choose it only
+       * if has the most resident memory so far AND my resident memory is
+       * larger than its resident memory. */
+      else if (IPC_MEM_ELIGIBLE == (flags[i]&IPC_MEM_ELIGIBLE)) {
+        if (pmem[i] > mxmem && pmem[id] >= pmem[i]) {
+          ii = i;
+          mxmem = pmem[i];
+        }
+      }
+#else
+      if (IPC_CMD_ELIGIBLE == (flags[i]&IPC_CMD_ELIGIBLE) ||\
+        IPC_MEM_ELIGIBLE == (flags[i]&IPC_MEM_ELIGIBLE))
+      {
+        /* Choose this process if it has more resident memory than the
+         * candidate process AND my resident memory is larger than theirs.
+         * This should eliminate a lot of the thrashing otherwise present,
+         * since there will be a well defined order to which processes can
+         * request that other processes release memory. -- This strategy could
+         * lead to deadlock, since a blocked process might have the most
+         * resident memory, in which case, no other process could ask it to
+         * evict memory and thus never make progress. */
+        /*if (pmem[i] > mxmem && pmem[id] >= pmem[i]) {*/
+        if (pmem[i] > mxmem) {
+          ii = i;
+          mxmem = pmem[i];
+        }
+      }
+#endif
     }
 
     /* no such process exists, break loop */
@@ -431,9 +485,14 @@ __ipc_madmit(struct ipc * const __ipc, size_t const __value)
   if (smem < __value) {
     ts.tv_sec  = 0;
     ts.tv_nsec = 250000000;
+
+#if 1
+    CALL_LIBC(__ipc, nanosleep(&ts, NULL), 0);
+#else
     ret = nanosleep(&ts, NULL);
     if (-1 == ret && EINTR != errno)
       return -1;
+#endif
 
     ASSERT(0 == __ipc_is_eligible(__ipc));
     errno = EAGAIN;
@@ -462,6 +521,9 @@ __ipc_mevict(struct ipc * const __ipc, size_t const __value)
 
   ASSERT(0 == __ipc_is_eligible(__ipc));
 
+#if 1
+  CALL_LIBC(__ipc, sem_wait(__ipc->mtx), sem_post(__ipc->mtx));
+#else
   ret = sem_wait(__ipc->mtx);
   if (-1 == ret) {
     if (EINTR == errno)
@@ -474,6 +536,7 @@ __ipc_mevict(struct ipc * const __ipc, size_t const __value)
     errno = EAGAIN;
     return -1;
   }
+#endif
 
   ASSERT(__ipc->pmem[__ipc->id] >= __value);
 
