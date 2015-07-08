@@ -233,27 +233,27 @@ libc___xstat(int ver, char const * path, struct stat * buf));
 #if 0
 SBMA_EXTERN int
 #ifdef __USE_LARGEFILE64
-libc_xstat64(int ver, char const * path, struct stat64 * buf)
+libc___xstat64(int ver, char const * path, struct stat64 * buf)
 #else
-libc_xstat64(int ver, char const * path, struct stat * buf)
+libc___xstat64(int ver, char const * path, struct stat * buf)
 #endif
 {
 #ifdef __USE_LARGEFILE64
-  static ssize_t (*_libc_xstat64)(int, char const*, struct stat64*)=NULL;
+  static ssize_t (*_libc___xstat64)(int, char const*, struct stat64*)=NULL;
 #else
-  static ssize_t (*_libc_xstat64)(int, char const*, struct stat*)=NULL;
+  static ssize_t (*_libc___xstat64)(int, char const*, struct stat*)=NULL;
 #endif
 
-  HOOK_INIT(xstat64);
+  HOOK_INIT(__xstat64);
 
-  return _libc_xstat64(ver, path, buf);
+  return _libc___xstat64(ver, path, buf);
 }
 #ifdef __USE_LARGEFILE64
 SBMA_EXPORT(internal, int
-libc_xstat64(int ver, char const * path, struct stat64 * buf));
+libc___xstat64(int ver, char const * path, struct stat64 * buf));
 #else
 SBMA_EXPORT(internal, int
-libc_xstat64(int ver, char const * path, struct stat * buf));
+libc___xstat64(int ver, char const * path, struct stat * buf));
 #endif
 #endif
 
@@ -570,8 +570,12 @@ realloc(void * const ptr, size_t const size)
 {
   HOOK_INIT(calloc);
 
-  if (NULL == ptr)
-    return SBMA_malloc(size);
+  if (NULL == ptr) {
+    if (VMM_OSVMM == (vmm.opts&VMM_OSVMM))
+      return libc_malloc(size);
+    else
+      return SBMA_malloc(size);
+  }
 
   if (VMM_OSVMM == (vmm.opts&VMM_OSVMM))
     return libc_realloc(ptr, size);
@@ -716,7 +720,7 @@ __xstat64(int ver, const char * path, struct stat64 * buf)
   if (1 == SBMA_mexist(path))
     (void)SBMA_mtouch((void*)path, strlen(path));
 
-  return libc_xstat64(ver, path, buf);
+  return libc___xstat64(ver, path, buf);
 }
 SBMA_EXPORT(default, int
 __xstat64(int ver, const char * path, struct stat64 * buf));
