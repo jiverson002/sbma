@@ -43,10 +43,8 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "config.h"
 #include "ipc.h"
 #include "sbma.h"
-
 #include "vmm.h"
-SBMA_EXTERN void __sbma_check(char const * const __file, int const __line,
-                              int const __flag);
+
 
 #define CALL_LIBC(__IPC, __CMD, __SIGRECVD)\
 do {\
@@ -72,16 +70,14 @@ do {\
 } while (0)
 
 
-/* Thread static variables for checking to see if a SIGIPC was received and
- * honored bewteen __ipc_block() and __ipc_unblock(). */
+/****************************************************************************/
+/*!
+ * Thread static variables for checking to see if a SIGIPC was received and
+ * honored bewteen __ipc_block() and __ipc_unblock().
+ */
+/****************************************************************************/
 static __thread size_t _ipc_l_pages;
 static __thread int    _ipc_sigrecvd;
-       __thread int          _ipc_nosig;
-       __thread int          _ipc_line;
-       __thread char const * _ipc_str;
-       __thread int          _ipc_prsig;
-       __thread int          _ipc_prline;
-       __thread char const * _ipc_prstr;
 
 
 SBMA_EXTERN int
@@ -201,22 +197,6 @@ __ipc_init(struct ipc * const __ipc, int const __uniq, int const __n_procs,
   /* set my process id */
   __ipc->pid[id] = (int)getpid();
 
-  /*libc_sem_wait(__ipc->mtx);
-  printf("[%5d] * %zu-%zu\n   - %zu-%zu\n   - %zu-%zu\n   - %zu-%zu\n  "
-    " - %zu-%zu\n   - %zu-%zu\n",
-    (int)getpid(), (uintptr_t)shm, (uintptr_t)shm+IPC_LEN(__n_procs),
-    (uintptr_t)__ipc->smem, (uintptr_t)__ipc->smem+sizeof(size_t),
-    (uintptr_t)__ipc->pmem, (uintptr_t)__ipc->pmem+__n_procs*sizeof(size_t),
-    (uintptr_t)__ipc->pid, (uintptr_t)__ipc->pid+__n_procs*sizeof(int),
-    (uintptr_t)idp, (uintptr_t)idp+sizeof(int),
-    (uintptr_t)__ipc->flags, (uintptr_t)__ipc->flags+__n_procs*sizeof(uint8_t));
-  printf(" ");
-  int i;
-  for (i=0; i<__n_procs; ++i)
-    printf(" <%d>", __ipc->pid[i]);
-  printf("\n");
-  sem_post(__ipc->mtx);*/
-
   return 0;
 }
 SBMA_EXPORT(internal, int
@@ -298,11 +278,6 @@ __ipc_block(struct ipc * const __ipc, int const __flag)
   /* Transition to blocked */
   __ipc->flags[__ipc->id] |= __flag;
 
-  //if (IPC_CMD_BLOCKED == __flag) {
-    //ASSERT(vmm.curpages == vmm.ipc.pmem[vmm.ipc.id]);
-    //__sbma_check(__FILE__, __LINE__, 7);
-  //}
-
   return 0;
 }
 SBMA_EXPORT(internal, int
@@ -314,11 +289,6 @@ __ipc_unblock(struct ipc * const __ipc)
 {
   if (0 == __ipc->init)
     return 0;
-
-  //if (IPC_CMD_BLOCKED == (__ipc->flags[__ipc->id]&IPC_CMD_BLOCKED)) {
-    //ASSERT(vmm.curpages == vmm.ipc.pmem[vmm.ipc.id]);
-    //__sbma_check(__FILE__, __LINE__, 7);
-  //}
 
   /* Transition to running */
   __ipc->flags[__ipc->id] &= ~(IPC_CMD_BLOCKED|IPC_MEM_BLOCKED);
@@ -407,7 +377,6 @@ __ipc_madmit(struct ipc * const __ipc, size_t const __value)
   if (0 == __value)
     return 0;
 
-  NOSIG_OFF;
 #if 1
   CALL_LIBC(__ipc, sem_wait(__ipc->mtx), sem_post(__ipc->mtx));
 #else
@@ -483,12 +452,12 @@ __ipc_madmit(struct ipc * const __ipc, size_t const __value)
 
     /* no such process exists, break loop */
     if (-1 == ii) {
-      if (dlctr == __ipc->n_procs-1) {
+      /*if (dlctr == __ipc->n_procs-1) {
         printf("[%5d] {%zu,%zu} (", (int)getpid(), __value, *__ipc->smem);
         for (i=0; i<__ipc->n_procs; ++i)
           printf(" <%d,%d,%zu>", pid[i], flags[i], pmem[i]);
         printf(" )\n");
-      }
+      }*/
       ASSERT(dlctr != __ipc->n_procs-1);
       break;
     }
@@ -533,9 +502,6 @@ __ipc_madmit(struct ipc * const __ipc, size_t const __value)
   }
   else {
     ASSERT(vmm.curpages == vmm.ipc.pmem[vmm.ipc.id]);
-    __sbma_check(__FILE__, __LINE__, 7);
-
-    NOSIG_ON;
 
     *__ipc->smem -= __value;
     __ipc->pmem[id] += __value;
@@ -543,30 +509,22 @@ __ipc_madmit(struct ipc * const __ipc, size_t const __value)
     if (-1 == ret)
       goto ERREXIT;
 
-    NOSIG_ON;
-    /*printf("[%5d] %s:%d %zd,%zu,%zu\n", (int)getpid(), __func__, __LINE__,\
-      __value, vmm.curpages, __ipc->pmem[id]);*/
-
     ASSERT(vmm.curpages == vmm.ipc.pmem[vmm.ipc.id]-__value);
 
-    NOSIG_ON;
     ret = sem_post(__ipc->mtx);
     if (-1 == ret)
       goto ERREXIT;
 
-    NOSIG_ON;
     ret = __ipc_populate(__ipc);
     if (-1 == ret)
       goto ERREXIT;
 
-    NOSIG_ON;
     ASSERT(smem >= __value);
     ASSERT(0 == __ipc_is_eligible(__ipc));
     return 0;
   }
 
   ERREXIT:
-  printf("[%5d] %s returned error\n", (int)getpid(), __func__);
   return -1;
 }
 SBMA_EXPORT(internal, int
@@ -582,6 +540,7 @@ __ipc_mevict(struct ipc * const __ipc, size_t const __value)
     return 0;
 
   ASSERT(0 == __ipc_is_eligible(__ipc));
+  /* Not sure if this is necessarily true. */
   ASSERT(vmm.curpages+__value == __ipc->pmem[__ipc->id]);
 
 #if 1
@@ -609,20 +568,17 @@ __ipc_mevict(struct ipc * const __ipc, size_t const __value)
   if (-1 == ret)
     goto ERREXIT;
 
-  /*printf("[%5d] %s:%d -%zd,%zu,%zu\n", (int)getpid(), __func__, __LINE__,\
-    __value, vmm.curpages, __ipc->pmem[__ipc->id]);*/
-
   ret = sem_post(__ipc->mtx);
   if (-1 == ret)
     goto ERREXIT;
 
   ASSERT(0 == __ipc_is_eligible(__ipc));
+  /* Not sure if this is necessarily true. */
   ASSERT(vmm.curpages == vmm.ipc.pmem[vmm.ipc.id]);
 
   return 0;
 
   ERREXIT:
-  printf("[%5d] %s returned error\n", (int)getpid(), __func__);
   return -1;
 }
 SBMA_EXPORT(internal, int

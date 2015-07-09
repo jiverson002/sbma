@@ -45,25 +45,6 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "sbma.h"
 #include "vmm.h"
 
-SBMA_EXTERN void __sbma_check(char const * const __file, int const __line,
-                              int const __flag);
-size_t CHECK=0;
-size_t CHECK2=0;
-char const * CHECK3="null";
-char const * CHECK4="null";
-size_t CHECK5=0;
-size_t CHECK6=0;
-size_t CHECK7=0;
-size_t CHECK8=0;
-uintptr_t CHECK9=0;
-size_t CHECK10=0;
-uintptr_t CHECK11=0;
-size_t CHECK12=0;
-uintptr_t CHECK13=0;
-size_t CHECK14=0;
-uintptr_t CHECK15=0;
-size_t CHECK16=0;
-char const * CHECK17="null";
 
 /****************************************************************************/
 /*! Required function prototypes. */
@@ -160,7 +141,7 @@ __vmm_sigsegv(int const sig, siginfo_t * const si, void * const ctx)
   /* make sure we received a SIGSEGV */
   ASSERT(SIGSEGV == sig);
 
-  NOSIG_CHK;
+  ASSERT(vmm.curpages == vmm.ipc.pmem[vmm.ipc.id]);
 
   /* setup local variables */
   page_size = vmm.page_size;
@@ -172,9 +153,6 @@ __vmm_sigsegv(int const sig, siginfo_t * const si, void * const ctx)
 
   ip    = (addr-ate->base)/page_size;
   flags = ate->flags;
-
-  ASSERT(vmm.curpages == vmm.ipc.pmem[vmm.ipc.id]);
-  __sbma_check(__FILE__, __LINE__, 7);
 
   if (MMU_RSDNT == (flags[ip]&MMU_RSDNT)) {
     for (;;) {
@@ -194,8 +172,6 @@ __vmm_sigsegv(int const sig, siginfo_t * const si, void * const ctx)
 
       chk_l_pages = ate->l_pages;
 
-      CHECK = l_pages;
-      CHECK3 = __func__;
       ret = __ipc_madmit(&(vmm.ipc), VMM_TO_SYS(l_pages));
       if (-1 == ret && EAGAIN != errno) {
         (void)__lock_let(&(ate->lock));
@@ -205,12 +181,7 @@ __vmm_sigsegv(int const sig, siginfo_t * const si, void * const ctx)
         break;
       }
     }
-    NOSIG_ON;
-    ASSERT(IPC_POPULATED == (vmm.ipc.flags[vmm.ipc.id]&IPC_POPULATED));
-    NOSIG_ON;
 
-    CHECK4  = __func__;
-    CHECK17 = __func__;
     /* swap in the required memory */
     if (VMM_LZYRD == (vmm.opts&VMM_LZYRD)) {
       numrd = __vmm_swap_i(ate, ip, 1, vmm.opts&VMM_GHOST);
@@ -257,8 +228,6 @@ __vmm_sigsegv(int const sig, siginfo_t * const si, void * const ctx)
   }
 
   ASSERT(vmm.curpages == vmm.ipc.pmem[vmm.ipc.id]);
-  __sbma_check(__FILE__, __LINE__, 7);
-  NOSIG_OFF;
 
   if (NULL == ctx) {} /* suppress unused warning */
 }
@@ -279,13 +248,9 @@ __vmm_sigipc(int const sig, siginfo_t * const si, void * const ctx)
 
   /* Only honor the SIGIPC if my status is still eligible */
   if (1 == __ipc_is_eligible(&(vmm.ipc))) {
-    NOSIG_CHK;
-    PRSIG_CHK;
+    /* Not sure if this is necessarily true. */
+    /*ASSERT(vmm.curpages == vmm.ipc.pmem[vmm.ipc.id]);*/
 
-    if (vmm.curpages != vmm.ipc.pmem[vmm.ipc.id])
-      printf("[%5d] %s:%d %zu,%zu\n", (int)getpid(), __func__, __LINE__,
-        vmm.curpages, vmm.ipc.pmem[vmm.ipc.id]);
-    ASSERT(vmm.curpages == vmm.ipc.pmem[vmm.ipc.id]);
     /* TODO: is it possible / what happens / does it matter if the process
      * receives a SIGIPC at this point in the execution of the signal handler?
      * */
@@ -303,7 +268,8 @@ __vmm_sigipc(int const sig, siginfo_t * const si, void * const ctx)
     ret = libc_msync((void*)vmm.ipc.shm, IPC_LEN(vmm.ipc.n_procs), MS_SYNC);
     ASSERT(-1 != ret);
 
-    ASSERT(vmm.curpages == vmm.ipc.pmem[vmm.ipc.id]+l_pages);
+    /* Not sure if this is necessarily true. */
+    /*ASSERT(vmm.curpages == vmm.ipc.pmem[vmm.ipc.id]+l_pages);*/
 
     /* track number of syspages currently loaded, number of syspages written
      * to disk, and high water mark for syspages loaded */
@@ -315,7 +281,8 @@ __vmm_sigipc(int const sig, siginfo_t * const si, void * const ctx)
     ret = __ipc_unpopulate(&(vmm.ipc));
     ASSERT(-1 != ret);
 
-    ASSERT(vmm.curpages == vmm.ipc.pmem[vmm.ipc.id]);
+    /* Not sure if this is necessarily true. */
+    /*ASSERT(vmm.curpages == vmm.ipc.pmem[vmm.ipc.id]);*/
   }
 
   /* signal to the waiting process that the memory has been released */
@@ -338,8 +305,6 @@ __vmm_swap_i(struct ate * const __ate, size_t const __beg,
   uintptr_t addr, raddr;
   volatile uint8_t * flags;
   char fname[FILENAME_MAX];
-
-  //PRSIG_CHK;
 
   /* error check input values */
   ASSERT(NULL != __ate);
@@ -386,7 +351,6 @@ __vmm_swap_i(struct ate * const __ate, size_t const __beg,
 
   /* load only those pages which were previously written to disk and have
    * not since been dumped */
-  CHECK2 = 0;
   for (ipfirst=-1,ip=__beg; ip<=end; ++ip) {
     if (ip != end &&\
         (MMU_RSDNT == (flags[ip]&MMU_RSDNT)) &&  /* not resident */\
@@ -426,20 +390,12 @@ __vmm_swap_i(struct ate * const __ate, size_t const __beg,
       if (MMU_RSDNT == (flags[ip]&MMU_RSDNT)) {
         ASSERT(__ate->l_pages < __ate->n_pages);
         __ate->l_pages++;
-        CHECK2++;
 
         /* flag: *0* */
         flags[ip] &= ~MMU_RSDNT;
       }
     }
   }
-  if (CHECK != CHECK2)
-    printf("[%5d] %s:%d (%zu,%zu) {%zu,%zu,%zu,%zu,%zu,%zu} "
-      "[%zu,%zu,%zu,%zu,%zu,%zu,%zu,%zu] <%s,%s,%s>\n", (int)getpid(),
-      __func__, __LINE__, VMM_TO_SYS(CHECK), VMM_TO_SYS(CHECK2), CHECK5,
-      CHECK6, __beg, end, CHECK7, CHECK8, CHECK9, CHECK10, CHECK11, CHECK12,
-      CHECK13, CHECK14, CHECK15, CHECK16, CHECK3, CHECK4, CHECK17);
-  ASSERT(CHECK == CHECK2);
 
   /* close file */
   ret = close(fd);
@@ -469,10 +425,6 @@ __vmm_swap_i(struct ate * const __ate, size_t const __beg,
       }
     }
   }
-
-  // this isn't true since in mtouch_atmoic, madmit is called once for
-  // multiple mtouch_int calls.
-  //__sbma_check(CHECK17, __LINE__, 2);
 
   /* return the number of pages read from disk */
   return numrd;

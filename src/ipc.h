@@ -45,27 +45,6 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 
 /****************************************************************************/
-/*! Thread local variable for checking incorrect signaling. */
-/****************************************************************************/
-extern __thread int          _ipc_nosig;
-extern __thread int          _ipc_line;
-extern __thread char const * _ipc_str;
-#define NOSIG_ON  _ipc_nosig=1, _ipc_str=__func__, _ipc_line=__LINE__
-#define NOSIG_OFF _ipc_nosig=0
-#define NOSIG_CHK if (1 == _ipc_nosig)\
-  printf("[%5d] %s:%d (%s:%d)\n", (int)getpid(), __func__, __LINE__,\
-    _ipc_str, _ipc_line)
-extern __thread int          _ipc_prsig;
-extern __thread int          _ipc_prline;
-extern __thread char const * _ipc_prstr;
-#define PRSIG_ON  _ipc_prsig=1, _ipc_prstr=__func__, _ipc_prline=__LINE__
-#define PRSIG_OFF _ipc_prsig=0
-#define PRSIG_CHK if (1 == _ipc_prsig)\
-  printf("[%5d] %s:%d (%s:%d)\n", (int)getpid(), __func__, __LINE__,\
-    _ipc_prstr, _ipc_prline)
-
-
-/****************************************************************************/
 /*!
  * Inter-process communication process status bits:
  *

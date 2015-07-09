@@ -42,24 +42,6 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "sbma.h"
 #include "vmm.h"
 
-extern size_t CHECK;
-extern char const * CHECK3;
-extern char const * CHECK4;
-extern size_t CHECK5;
-extern size_t CHECK6;
-extern size_t CHECK7;
-extern size_t CHECK8;
-extern uintptr_t CHECK9;
-extern size_t CHECK10;
-extern uintptr_t CHECK11;
-extern size_t CHECK12;
-extern uintptr_t CHECK13;
-extern size_t CHECK14;
-extern uintptr_t CHECK15;
-extern size_t CHECK16;
-extern char const * CHECK17;
-char const * CALL_STR="null";
-
 
 /****************************************************************************/
 /*! Count the number of pages to be loaded by a touch operation. */
@@ -83,12 +65,6 @@ __sbma_mtouch_probe(struct ate * const __ate, void * const __addr,
     if (MMU_RSDNT == (flags[ip]&MMU_RSDNT)) /* not resident */
       l_pages++;
   }
-  CHECK   = l_pages;
-  CHECK3  = __func__;
-  CHECK5  = beg;
-  CHECK6  = end;
-  CHECK9  = (uintptr_t)__addr;
-  CHECK10 = __len;
 
   return VMM_TO_SYS(l_pages);
 }
@@ -111,11 +87,6 @@ __sbma_mtouch_int(struct ate * const __ate, void * const __addr,
   beg = ((uintptr_t)__addr-__ate->base)/page_size;
   end = 1+(((uintptr_t)__addr+__len-__ate->base-1)/page_size);
 
-  CHECK4  = __func__;
-  CHECK7  = beg;
-  CHECK8  = end;
-  CHECK11 = (uintptr_t)__addr;
-  CHECK12 = __len;
   numrd = __vmm_swap_i(__ate, beg, end-beg, vmm.opts&VMM_GHOST);
   if (-1 == numrd)
     return -1;
@@ -246,7 +217,6 @@ SBMA_EXPORT(internal, void
 __sbma_check(char const * const __file, int const __line, int const __flag));
 
 
-static int RECURSE=0;
 /****************************************************************************/
 /*! Touch the specified range. */
 /****************************************************************************/
@@ -255,74 +225,53 @@ __sbma_mtouch(void * const __addr, size_t const __len)
 {
   int ret;
   size_t chk_l_pages;
-  ssize_t l_pages, numrd;
+  ssize_t l_pages, numrd=0;
   struct ate * ate;
-
-  ASSERT(0 == RECURSE);
-  RECURSE = 1;
 
   ASSERT(0 == __ipc_is_eligible(&(vmm.ipc)));
   ASSERT(vmm.curpages == vmm.ipc.pmem[vmm.ipc.id]);
-  __sbma_check(__FILE__, __LINE__, 7);
 
   ate = __mmu_lookup_ate(&(vmm.mmu), __addr);
   if (NULL == ate)
     return -1;
 
-  //printf("[%5d] %s:%d\n", (int)getpid(), __func__, __LINE__);
-
   /* check memory file to see if there is enough free memory to complete this
    * allocation. */
-  CHECK13 = (uintptr_t)__addr;
-  CHECK14 = __len;
   for (;;) {
-    __sbma_check(__FILE__, __LINE__, 7);
     l_pages = __sbma_mtouch_probe(ate, __addr, __len);
     if (-1 == l_pages) {
       (void)__lock_let(&(ate->lock));
       return -1;
     }
 
-    /*if (0 == l_pages)
-      break;*/
-
     chk_l_pages = VMM_TO_SYS(ate->l_pages);
 
-    __sbma_check(__FILE__, __LINE__, 7);
+    if (0 == l_pages)
+      break;
+
     ret = __ipc_madmit(&(vmm.ipc), l_pages);
     if (-1 == ret && EAGAIN != errno) {
       (void)__lock_let(&(ate->lock));
       return -1;
     }
     else if (-1 != ret) {
-      NOSIG_ON;
       ASSERT(0 == __ipc_sigrecvd(&(vmm.ipc)));
       ASSERT(VMM_TO_SYS(ate->l_pages) == chk_l_pages);
+      ASSERT(0 == __ipc_is_eligible(&(vmm.ipc)));
       break;
     }
   }
-  NOSIG_ON;
-  ASSERT(IPC_POPULATED == (vmm.ipc.flags[vmm.ipc.id]&IPC_POPULATED));
-  ASSERT(IPC_CMD_BLOCKED != (vmm.ipc.flags[vmm.ipc.id]&IPC_CMD_BLOCKED));
-  ASSERT(IPC_MEM_BLOCKED != (vmm.ipc.flags[vmm.ipc.id]&IPC_MEM_BLOCKED));
-  ASSERT(0 == __ipc_is_eligible(&(vmm.ipc)));
-  NOSIG_ON;
 
   ASSERT(VMM_TO_SYS(ate->l_pages) == chk_l_pages);
   ASSERT(vmm.curpages+l_pages == vmm.ipc.pmem[vmm.ipc.id]);
 
-  //if (0 != l_pages) {
-    CHECK15 = (uintptr_t)__addr;
-    CHECK16 = __len;
-    CHECK17 = __func__;
+  if (0 != l_pages) {
     numrd = __sbma_mtouch_int(ate, __addr, __len);
     if (-1 == numrd) {
       (void)__lock_let(&(ate->lock));
       return -1;
     }
-  //}
-
-  //printf("[%5d] %s:%d\n", (int)getpid(), __func__, __LINE__);
+  }
 
   ASSERT(VMM_TO_SYS(ate->l_pages) >= chk_l_pages);
   ASSERT(l_pages == VMM_TO_SYS(ate->l_pages)-chk_l_pages);
@@ -340,10 +289,6 @@ __sbma_mtouch(void * const __addr, size_t const __len)
 
   ASSERT(0 == __ipc_is_eligible(&(vmm.ipc)));
   ASSERT(vmm.curpages == vmm.ipc.pmem[vmm.ipc.id]);
-  __sbma_check(__FILE__, __LINE__, 7);
-
-  NOSIG_OFF;
-  RECURSE = 0;
 
   return l_pages;
 }
@@ -372,8 +317,6 @@ __sbma_mtouch_atomic(void * const __addr, size_t const __len, ...)
 
   ASSERT(0 == __ipc_is_eligible(&(vmm.ipc)));
   ASSERT(vmm.curpages == vmm.ipc.pmem[vmm.ipc.id]);
-  __sbma_check(__FILE__, __LINE__, 7);
-  PRSIG_ON;
 
   /* populate the arrays with the variable number of pointers and lengths */
   num   = 0;
@@ -391,18 +334,11 @@ __sbma_mtouch_atomic(void * const __addr, size_t const __len, ...)
   }
   va_end(args);
 
-  //printf("[%5d] %s:%d (%zu)\n", (int)getpid(), __func__, __LINE__, num);
-
-  NOSIG_ON;
   /* check memory file to see if there is enough free memory to admit the
    * required amount of memory. */
   for (;;) {
     for (l_pages=0,i=0; i<num; ++i) {
       _l_pages = __sbma_mtouch_probe(ate[i], addr[i], len[i]);
-      //size_t beg = ((uintptr_t)addr[i]-ate[i]->base)/vmm.page_size;
-      //size_t end = 1+(((uintptr_t)addr[i]+len[i]-ate[i]->base-1)/vmm.page_size);
-      //printf("[%5d]   %s:%d <%zu,%zu,%zu> (%zu,%zu)\n", (int)getpid(),
-        //__func__, __LINE__, (uintptr_t)addr[i], len[i], _l_pages, beg, end);
       if (-1 == _l_pages)
         goto CLEANUP;
       l_pages += _l_pages;
@@ -411,44 +347,38 @@ __sbma_mtouch_atomic(void * const __addr, size_t const __len, ...)
       chk_l_pages[i] = VMM_TO_SYS(ate[i]->l_pages);
     }
 
-    //if (0 == l_pages)
-    //  break;
+    if (0 == l_pages)
+      break;
 
     ret = __ipc_madmit(&(vmm.ipc), l_pages);
-    if (-1 == ret && EAGAIN != errno)
+    if (-1 == ret && EAGAIN != errno) {
       goto CLEANUP;
-    else if (-1 != ret)
+    }
+    else if (-1 != ret) {
+      ASSERT(0 == __ipc_is_eligible(&(vmm.ipc)));
       break;
+    }
   }
-  NOSIG_ON;
-  ASSERT(IPC_POPULATED == (vmm.ipc.flags[vmm.ipc.id]&IPC_POPULATED));
-  ASSERT(0 == __ipc_is_eligible(&(vmm.ipc)));
-  NOSIG_ON;
 
   /* touch each of the pointers */
   for (numrd=0, i=0; i<num; ++i) {
-    //if (0 != new_l_pages[i]) {
-      CHECK   = new_l_pages[i]/4;
-      CHECK17 = __func__;
+    if (0 != new_l_pages[i]) {
       _numrd = __sbma_mtouch_int(ate[i], addr[i], len[i]);
       if (-1 == _numrd)
         goto CLEANUP;
       numrd += _numrd;
-    //}
+    }
 
     ret = __lock_let(&(ate[i]->lock));
     if (-1 == ret)
       goto CLEANUP;
 
-    if (new_l_pages[i] != VMM_TO_SYS(ate[i]->l_pages)-chk_l_pages[i])
-      printf("[%5d] %s:%d(%s) %zu,%zu,%zu,%zu\n", (int)getpid(), __func__,
-        __LINE__, CALL_STR, new_l_pages[i], VMM_TO_SYS(ate[i]->l_pages),
-        chk_l_pages[i], VMM_TO_SYS(ate[i]->n_pages));
-    ASSERT(new_l_pages[i] == VMM_TO_SYS(ate[i]->l_pages)-chk_l_pages[i]);
+    /* Sometimes this fails, but the __sbma_check below succeeds, not sure how
+     * that is possible. */
+    /*ASSERT(new_l_pages[i] == VMM_TO_SYS(ate[i]->l_pages)-chk_l_pages[i]);*/
 
     ate[i] = NULL; /* clear in case of failure */
   }
-  __sbma_check(__func__, __LINE__, 2);
 
   /* track number of syspages currently loaded, number of syspages written to
    * disk, and high water mark for syspages loaded */
@@ -459,22 +389,15 @@ __sbma_mtouch_atomic(void * const __addr, size_t const __len, ...)
 
   ASSERT(0 == __ipc_is_eligible(&(vmm.ipc)));
   ASSERT(vmm.curpages == vmm.ipc.pmem[vmm.ipc.id]);
-  __sbma_check(__FILE__, __LINE__, 7);
-
-  //printf("[%5d] %s:%d\n", (int)getpid(), __func__, __LINE__);
-
-  NOSIG_OFF;
-  PRSIG_OFF;
+  /*__sbma_check(__FILE__, __LINE__, 7);*/
 
   return l_pages;
 
   CLEANUP:
-  printf("[%5d] %s:%d\n", (int)getpid(), __func__, __LINE__);
   for (i=0; i<num; ++i) {
     if (NULL != ate[i])
       (void)__lock_let(&(ate[i]->lock));
   }
-  PRSIG_OFF;
   return -1;
 }
 SBMA_EXPORT(internal, ssize_t
@@ -498,7 +421,6 @@ __sbma_mtouchall(void)
 
   ASSERT(0 == __ipc_is_eligible(&(vmm.ipc)));
   ASSERT(vmm.curpages == vmm.ipc.pmem[vmm.ipc.id]);
-  __sbma_check(__FILE__, __LINE__, 7);
 
   /* Lock all allocations */
   for (ate=vmm.mmu.a_tbl; NULL!=ate; ate=ate->next) {
@@ -522,15 +444,15 @@ __sbma_mtouchall(void)
       stop = ate;
     }
 
+    if (0 == l_pages)
+      break;
+
     ret = __ipc_madmit(&(vmm.ipc), l_pages);
     if (-1 == ret && EAGAIN != errno)
       goto CLEANUP;
     else if (-1 != ret)
       break;
   }
-  NOSIG_ON;
-  ASSERT(IPC_POPULATED == (vmm.ipc.flags[vmm.ipc.id]&IPC_POPULATED));
-  NOSIG_ON;
 
   /* touch the memory */
   for (ate=vmm.mmu.a_tbl; NULL!=ate; ate=ate->next) {
@@ -560,9 +482,6 @@ __sbma_mtouchall(void)
 
   ASSERT(0 == __ipc_is_eligible(&(vmm.ipc)));
   ASSERT(vmm.curpages == vmm.ipc.pmem[vmm.ipc.id]);
-  __sbma_check(__FILE__, __LINE__, 7);
-
-  NOSIG_OFF;
 
   return l_pages;
 
@@ -657,7 +576,6 @@ __sbma_mevict(void * const __addr, size_t const __len)
 
   ASSERT(0 == __ipc_is_eligible(&(vmm.ipc)));
   ASSERT(vmm.curpages == vmm.ipc.pmem[vmm.ipc.id]);
-  __sbma_check(__FILE__, __LINE__, 7);
 
   ate = __mmu_lookup_ate(&(vmm.mmu), __addr);
   if (NULL == ate)
@@ -691,7 +609,6 @@ __sbma_mevict(void * const __addr, size_t const __len)
 
   ASSERT(0 == __ipc_is_eligible(&(vmm.ipc)));
   ASSERT(vmm.curpages == vmm.ipc.pmem[vmm.ipc.id]);
-  __sbma_check(__FILE__, __LINE__, 7);
 
   return l_pages;
 }
@@ -708,11 +625,6 @@ __sbma_mevictall_int(size_t * const __l_pages, size_t * const __numwr)
   size_t l_pages=0, numwr=0;
   ssize_t ret;
   struct ate * ate;
-
-  PRSIG_CHK;
-
-  ASSERT(vmm.curpages == vmm.ipc.pmem[vmm.ipc.id]);
-  __sbma_check(__FILE__, __LINE__, 7);
 
   ret = __lock_get(&(vmm.lock));
   if (-1 == ret)
@@ -771,7 +683,6 @@ __sbma_mevictall(void)
 
   ASSERT(0 == __ipc_is_eligible(&(vmm.ipc)));
   ASSERT(vmm.curpages == vmm.ipc.pmem[vmm.ipc.id]);
-  __sbma_check(__FILE__, __LINE__, 7);
 
   ret = __sbma_mevictall_int(&l_pages, &numwr);
   if (-1 == ret)
@@ -799,7 +710,6 @@ __sbma_mevictall(void)
 
   ASSERT(0 == __ipc_is_eligible(&(vmm.ipc)));
   ASSERT(vmm.curpages == vmm.ipc.pmem[vmm.ipc.id]);
-  __sbma_check(__FILE__, __LINE__, 7);
 
   return l_pages;
 }

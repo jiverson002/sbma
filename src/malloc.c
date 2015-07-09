@@ -49,10 +49,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 /****************************************************************************/
 /*! mtouch function prototype. */
 /****************************************************************************/
-SBMA_EXTERN void    __sbma_check(char const * const __file, int const __line,
-                                 int const __flag);
 SBMA_EXTERN ssize_t __sbma_mtouch(void * const __addr, size_t const __len);
-extern char const * CALL_STR;
 
 
 /****************************************************************************/
@@ -67,21 +64,12 @@ __sbma_malloc(size_t const __size)
   struct ate * ate;
   char fname[FILENAME_MAX];
 
-  __sbma_check(__FILE__, __LINE__, 7);
-  if (vmm.curpages != vmm.ipc.pmem[vmm.ipc.id]) {
-    printf("[%5d,%d] %zu,%zu (%d,%d) <%zu>\n", (int)getpid(), vmm.ipc.id,
-      vmm.curpages, vmm.ipc.pmem[vmm.ipc.id], __ipc_is_eligible(&(vmm.ipc)),
-      vmm.ipc.flags[vmm.ipc.id], __size);
-  }
   ASSERT(0 == __ipc_is_eligible(&(vmm.ipc)));
   ASSERT(vmm.curpages == vmm.ipc.pmem[vmm.ipc.id]);
-  __sbma_check(__FILE__, __LINE__, 7);
 
   /* shortcut */
   if (0 == __size)
     return NULL;
-
-  ASSERT(__size > 0);
 
   /* compute allocation sizes */
   page_size = vmm.page_size;
@@ -98,9 +86,6 @@ __sbma_malloc(size_t const __size)
     else if (-1 != ret)
       break;
   }
-  NOSIG_ON;
-  ASSERT(IPC_POPULATED == (vmm.ipc.flags[vmm.ipc.id]&IPC_POPULATED));
-  NOSIG_ON;
 
   /* allocate memory */
   addr = (uintptr_t)mmap(NULL, (s_pages+n_pages+f_pages)*page_size,
@@ -156,10 +141,6 @@ __sbma_malloc(size_t const __size)
 
   ASSERT(0 == __ipc_is_eligible(&(vmm.ipc)));
   ASSERT(vmm.curpages == vmm.ipc.pmem[vmm.ipc.id]);
-  __sbma_check(__FILE__, __LINE__, 7);
-
-  NOSIG_OFF;
-
   return (void*)ate->base;
 
   CLEANUP:
@@ -172,7 +153,6 @@ __sbma_malloc(size_t const __size)
   }
   ASSERT(0 == __ipc_is_eligible(&(vmm.ipc)));
   ASSERT(vmm.curpages == vmm.ipc.pmem[vmm.ipc.id]);
-  __sbma_check(__FILE__, __LINE__, 7);
   return NULL;
 }
 SBMA_EXPORT(default, void *
@@ -204,7 +184,6 @@ __sbma_free(void * const __ptr)
 
   ASSERT(0 == __ipc_is_eligible(&(vmm.ipc)));
   ASSERT(vmm.curpages == vmm.ipc.pmem[vmm.ipc.id]);
-  __sbma_check(__FILE__, __LINE__, 7);
 
   page_size = vmm.page_size;
   s_pages   = 1+((sizeof(struct ate)-1)/page_size);
@@ -253,7 +232,6 @@ __sbma_free(void * const __ptr)
 
   ASSERT(0 == __ipc_is_eligible(&(vmm.ipc)));
   ASSERT(vmm.curpages == vmm.ipc.pmem[vmm.ipc.id]);
-  __sbma_check(__FILE__, __LINE__, 7);
 
   return 0;
 }
@@ -284,10 +262,8 @@ __sbma_realloc(void * const __ptr, size_t const __size)
   if (0 == __size)
     return NULL;
 
-  ASSERT(__size > 0);
   ASSERT(0 == __ipc_is_eligible(&(vmm.ipc)));
   ASSERT(vmm.curpages == vmm.ipc.pmem[vmm.ipc.id]);
-  __sbma_check(__FILE__, __LINE__, 7);
 
   page_size = vmm.page_size;
   s_pages   = 1+((sizeof(struct ate)-1)/page_size);
@@ -324,10 +300,8 @@ __sbma_realloc(void * const __ptr, size_t const __size)
       return NULL;
 
     /* copy page flags to new location */
-    //printf("[%5d] %s:%d\n", (int)getpid(), __func__, __LINE__);
     libc_memmove((void*)(oaddr+((s_pages+nn_pages)*page_size)),\
       (void*)(oaddr+((s_pages+on_pages)*page_size)), nf_pages*page_size);
-    //printf("[%5d] %s:%d\n", (int)getpid(), __func__, __LINE__);
 
     /* unmap unused section of memory */
     ret = munmap((void*)(oaddr+((s_pages+nn_pages+nf_pages)*page_size)),\
@@ -362,9 +336,6 @@ __sbma_realloc(void * const __ptr, size_t const __size)
       else if (-1 != ret)
         break;
     }
-    NOSIG_ON;
-    ASSERT(IPC_POPULATED == (vmm.ipc.flags[vmm.ipc.id]&IPC_POPULATED));
-    NOSIG_ON;
 
     /* resize allocation */
 #if 1
@@ -380,10 +351,8 @@ __sbma_realloc(void * const __ptr, size_t const __size)
       goto CLEANUP;
 
     /* copy page flags to new location */
-    //printf("[%5d] %s:%d\n", (int)getpid(), __func__, __LINE__);
     libc_memmove((void*)(naddr+((s_pages+nn_pages)*page_size)),\
       (void*)(naddr+((s_pages+on_pages)*page_size)), of_pages*page_size);
-    //printf("[%5d] %s:%d\n", (int)getpid(), __func__, __LINE__);
 
     /* grant read-only permission to extended area of application memory */
     ret = mprotect((void*)(naddr+((s_pages+on_pages)*page_size)),\
@@ -442,7 +411,7 @@ __sbma_realloc(void * const __ptr, size_t const __size)
     VMM_TRACK(maxpages,\
       vmm.curpages>vmm.maxpages?vmm.curpages-vmm.maxpages:0);
 
-    NOSIG_OFF;
+    goto DONE;
 
     CLEANUP:
     for (;;) {
@@ -455,14 +424,12 @@ __sbma_realloc(void * const __ptr, size_t const __size)
     }
     ASSERT(0 == __ipc_is_eligible(&(vmm.ipc)));
     ASSERT(vmm.curpages == vmm.ipc.pmem[vmm.ipc.id]);
-    __sbma_check(__FILE__, __LINE__, 7);
     return NULL;
   }
 
+  DONE:
   ASSERT(0 == __ipc_is_eligible(&(vmm.ipc)));
   ASSERT(vmm.curpages == vmm.ipc.pmem[vmm.ipc.id]);
-  __sbma_check(__FILE__, __LINE__, 7);
-
   return (void*)ate->base;
 }
 SBMA_EXPORT(default, void *
@@ -486,7 +453,6 @@ __sbma_remap(void * const __nbase, void * const __obase, size_t const __size,
 
   ASSERT(0 == __ipc_is_eligible(&(vmm.ipc)));
   ASSERT(vmm.curpages == vmm.ipc.pmem[vmm.ipc.id]);
-  __sbma_check(__FILE__, __LINE__, 7);
 
   page_size = vmm.page_size;
   s_pages   = 1+((sizeof(struct ate)-1)/page_size);
@@ -509,8 +475,6 @@ __sbma_remap(void * const __nbase, void * const __obase, size_t const __size,
   end = 1+(((uintptr_t)nptr+__size-nate->base-1)/page_size);
 
   /* load new and old memory */
-  CALL_STR = __func__;
-  //printf("[%5d] %s:%d\n", (int)getpid(), __func__, __LINE__);
   ret = __sbma_mtouch_atomic(nptr, __size, optr, __size, SBMA_ATOMIC_END);
   if (-1 == ret)
     return -1;
@@ -563,8 +527,6 @@ __sbma_remap(void * const __nbase, void * const __obase, size_t const __size,
 
   ASSERT(0 == __ipc_is_eligible(&(vmm.ipc)));
   ASSERT(vmm.curpages == vmm.ipc.pmem[vmm.ipc.id]);
-  __sbma_check(__FILE__, __LINE__, 7);
-
   return 0;
 }
 SBMA_EXPORT(internal, int

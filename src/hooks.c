@@ -55,7 +55,6 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "sbma.h"
 #include "vmm.h"
 
-extern char const * CALL_STR;
 
 /****************************************************************************/
 /* need to provide temporary calloc function for dlsym */
@@ -625,7 +624,6 @@ memcpy(void * const dst, void const * const src, size_t const num)
   HOOK_INIT(calloc); /* Why is this here? */
 
   if (1 == SBMA_mexist(dst) && 1 == SBMA_mexist(src)) {
-    CALL_STR = __func__;
     ret = SBMA_mtouch_atomic(dst, num, src, num);
     ASSERT(-1 != ret);
   }
@@ -657,7 +655,6 @@ memmove(void * const dst, void const * const src, size_t const num)
   HOOK_INIT(calloc); /* Why is this here? */
 
   if (1 == SBMA_mexist(dst) && 1 == SBMA_mexist(src)) {
-    CALL_STR = __func__;
     ret = SBMA_mtouch_atomic(dst, num, src, num);
     ASSERT(-1 != ret);
   }
