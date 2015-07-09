@@ -55,6 +55,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "sbma.h"
 #include "vmm.h"
 
+extern char const * CALL_STR;
 
 /****************************************************************************/
 /* need to provide temporary calloc function for dlsym */
@@ -619,16 +620,24 @@ free(void * const ptr));
 SBMA_EXTERN void *
 memcpy(void * const dst, void const * const src, size_t const num)
 {
+  int ret;
+
   HOOK_INIT(calloc); /* Why is this here? */
 
   if (1 == SBMA_mexist(dst) && 1 == SBMA_mexist(src)) {
-    (void)SBMA_mtouch_atomic(dst, num, src, num);
+    CALL_STR = __func__;
+    ret = SBMA_mtouch_atomic(dst, num, src, num);
+    ASSERT(-1 != ret);
   }
   else {
-    if (1 == SBMA_mexist(dst))
-      (void)SBMA_mtouch(dst, num);
-    if (1 == SBMA_mexist(src))
-      (void)SBMA_mtouch((void*)src, num);
+    if (1 == SBMA_mexist(dst)) {
+      ret = SBMA_mtouch(dst, num);
+      ASSERT(-1 != ret);
+    }
+    if (1 == SBMA_mexist(src)) {
+      ret = SBMA_mtouch((void*)src, num);
+      ASSERT(-1 != ret);
+    }
   }
 
   return libc_memcpy(dst, src, num);
@@ -643,16 +652,24 @@ memcpy(void * const dst, void const * const src, size_t const num));
 SBMA_EXTERN void *
 memmove(void * const dst, void const * const src, size_t const num)
 {
+  int ret;
+
   HOOK_INIT(calloc); /* Why is this here? */
 
   if (1 == SBMA_mexist(dst) && 1 == SBMA_mexist(src)) {
-    (void)SBMA_mtouch_atomic(dst, num, src, num);
+    CALL_STR = __func__;
+    ret = SBMA_mtouch_atomic(dst, num, src, num);
+    ASSERT(-1 != ret);
   }
   else {
-    if (1 == SBMA_mexist(dst))
-      (void)SBMA_mtouch(dst, num);
-    if (1 == SBMA_mexist(src))
-      (void)SBMA_mtouch((void*)src, num);
+    if (1 == SBMA_mexist(dst)) {
+      ret = SBMA_mtouch(dst, num);
+      ASSERT(-1 != ret);
+    }
+    if (1 == SBMA_mexist(src)) {
+      ret = SBMA_mtouch((void*)src, num);
+      ASSERT(-1 != ret);
+    }
   }
 
   return libc_memmove(dst, src, num);
@@ -681,10 +698,16 @@ mallinfo(void));
 SBMA_EXTERN int
 stat(char const * path, struct stat * buf)
 {
-  if (1 == SBMA_mexist(path))
-    (void)SBMA_mtouch((void*)path, strlen(path));
-  if (1 == SBMA_mexist(buf))
-    (void)SBMA_mtouch((void*)buf, sizeof(struct stat));
+  int ret;
+
+  if (1 == SBMA_mexist(path)) {
+    ret = SBMA_mtouch((void*)path, strlen(path));
+    ASSERT(-1 != ret);
+  }
+  if (1 == SBMA_mexist(buf)) {
+    ret = SBMA_mtouch((void*)buf, sizeof(struct stat));
+    ASSERT(-1 != ret);
+  }
 
   return libc_stat(path, buf);
 }
@@ -698,10 +721,16 @@ stat(char const * path, struct stat * buf));
 SBMA_EXTERN int
 __xstat(int ver, const char * path, struct stat * buf)
 {
-  if (1 == SBMA_mexist(path))
-    (void)SBMA_mtouch((void*)path, strlen(path));
-  if (1 == SBMA_mexist(buf))
-    (void)SBMA_mtouch((void*)buf, sizeof(struct stat));
+  int ret;
+
+  if (1 == SBMA_mexist(path)) {
+    ret = SBMA_mtouch((void*)path, strlen(path));
+    ASSERT(-1 != ret);
+  }
+  if (1 == SBMA_mexist(buf)) {
+    ret = SBMA_mtouch((void*)buf, sizeof(struct stat));
+    ASSERT(-1 != ret);
+  }
 
   return libc___xstat(ver, path, buf);
 }
@@ -734,11 +763,14 @@ __xstat64(int ver, const char * path, struct stat64 * buf));
 SBMA_EXTERN int
 open(char const * path, int flags, ...)
 {
+  int ret;
   va_list list;
   mode_t mode=0;
 
-  if (1 == SBMA_mexist(path))
-    (void)SBMA_mtouch((void*)path, strlen(path));
+  if (1 == SBMA_mexist(path)) {
+    ret = SBMA_mtouch((void*)path, strlen(path));
+    ASSERT(-1 != ret);
+  }
 
   if (O_CREAT == (flags&O_CREAT)) {
     va_start(list, flags);
@@ -757,6 +789,8 @@ open(char const * path, int flags, ...));
 SBMA_EXTERN ssize_t
 read(int const fd, void * const buf, size_t const count)
 {
+  int ret;
+
   /* NOTE: Consider the following execution sequence. During the call to
    * memset, the first n pages of buf are loaded, then the process must wait
    * because the system cannot support any additional memory. While waiting,
@@ -773,7 +807,8 @@ read(int const fd, void * const buf, size_t const count)
      * cause the page not be read from disk. This is incorrect if the page is
      * a shared page, since then any data that was in the shared page, but not
      * part of the relevant memory, will be lost. */
-    (void)SBMA_mtouch(buf, count);
+    ret = SBMA_mtouch(buf, count);
+    ASSERT(-1 != ret);
     memset(buf, 0, count);
   }
 
@@ -789,8 +824,12 @@ read(int const fd, void * const buf, size_t const count));
 SBMA_EXTERN ssize_t
 write(int const fd, void const * const buf, size_t const count)
 {
-  if (1 == SBMA_mexist(buf))
-    (void)SBMA_mtouch((void*)buf, count);
+  int ret;
+
+  if (1 == SBMA_mexist(buf)) {
+    ret = SBMA_mtouch((void*)buf, count);
+    ASSERT(-1 != ret);
+  }
 
   return libc_write(fd, buf, count);
 }
@@ -805,10 +844,13 @@ SBMA_EXTERN size_t
 fread(void * const buf, size_t const size, size_t const num,
       FILE * const stream)
 {
+  int ret;
+
   if (1 == SBMA_mexist(buf)) {
     /* NOTE: For an explaination of why memset() must be used instead of
      * SBMA_mtouch(), see discussion in read(). */
-    (void)SBMA_mtouch(buf, size*num);
+    ret = SBMA_mtouch(buf, size*num);
+    ASSERT(-1 != ret);
     memset(buf, 0, size*num);
   }
 
@@ -826,8 +868,12 @@ SBMA_EXTERN size_t
 fwrite(void const * const buf, size_t const size, size_t const num,
        FILE * const stream)
 {
-  if (1 == SBMA_mexist(buf))
-    (void)SBMA_mtouch((void*)buf, size);
+  int ret;
+
+  if (1 == SBMA_mexist(buf)) {
+    ret = SBMA_mtouch((void*)buf, size);
+    ASSERT(-1 != ret);
+  }
 
   return libc_fwrite(buf, size, num, stream);
 }
@@ -842,7 +888,9 @@ fwrite(void const * const buf, size_t const size, size_t const num,
 SBMA_EXTERN int
 mlock(void const * const addr, size_t const len)
 {
-  (void)SBMA_mtouch((void*)addr, len);
+  int ret;
+  ret = SBMA_mtouch((void*)addr, len);
+  ASSERT(-1 != ret);
   return libc_mlock(addr, len);
 }
 SBMA_EXPORT(default, int
@@ -855,7 +903,9 @@ mlock(void const * const addr, size_t const len));
 SBMA_EXTERN int
 mlockall(int flags)
 {
-  (void)SBMA_mtouchall();
+  int ret;
+  ret = SBMA_mtouchall();
+  ASSERT(-1 != ret);
   return libc_mlockall(flags);
 }
 SBMA_EXPORT(default, int

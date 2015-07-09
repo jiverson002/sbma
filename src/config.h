@@ -76,18 +76,20 @@ do {                                                                        \
 /****************************************************************************/
 /*! Process deadlock check functions. */
 /****************************************************************************/
-//#define DEADLOCK_ALARM_TIME  25
+#define DEADLOCK_ALARM_TIME  10000
 #ifdef DEADLOCK_ALARM_TIME
 # define DEADLOCK_ALARM_ON()\
 do {\
-  printf("[%5d] %s:%d alarm on\n", (int)getpid(), basename(__FILE__),\
-    __LINE__);\
+  ASSERT(0 == vmm.ipc.init || vmm.curpages == vmm.ipc.pmem[vmm.ipc.id]);\
+  /*printf("[%5d] %s:%d alarm on\n", (int)getpid(), basename(__FILE__),\
+    __LINE__);*/\
   alarm(DEADLOCK_ALARM_TIME);\
 } while (0)
 # define DEADLOCK_ALARM_OFF()\
 do {\
-  printf("[%5d] %s:%d alarm off\n", (int)getpid(), basename(__FILE__),\
-    __LINE__);\
+  ASSERT(0 == vmm.ipc.init || vmm.curpages == vmm.ipc.pmem[vmm.ipc.id]);\
+  /*printf("[%5d] %s:%d alarm off\n", (int)getpid(), basename(__FILE__),\
+    __LINE__);*/\
   alarm(0);\
 } while (0)
 #else
@@ -109,11 +111,10 @@ int     libc_open(char const *, int, ...);
 ssize_t libc_read(int const, void * const, size_t const);
 ssize_t libc_write(int const, void const * const, size_t const);
 int     libc_mlock(void const * const, size_t const);
-int     libc_nanosleep(struct timespec const * const req,
-                       struct timespec * const rem);
-int     libc_sem_wait(sem_t * const sem);
-int     libc_sem_timedwait(sem_t * const sem,
-                           struct timespec const * const ts);
+int     libc_msync(void * const, size_t const, int const);
+int     libc_nanosleep(struct timespec const * const, struct timespec * const);
+int     libc_sem_wait(sem_t * const);
+int     libc_sem_timedwait(sem_t * const, struct timespec const * const);
 
 #ifdef __cplusplus
 }

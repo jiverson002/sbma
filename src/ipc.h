@@ -37,10 +37,40 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 
 /****************************************************************************/
+/*! Compute the length of the IPC shared memory segment. */
+/****************************************************************************/
+#define IPC_LEN(__N_PROCS)\
+  (sizeof(size_t)+(__N_PROCS)*(sizeof(size_t)+sizeof(int)+sizeof(uint8_t))+\
+    sizeof(int))
+
+
+/****************************************************************************/
+/*! Thread local variable for checking incorrect signaling. */
+/****************************************************************************/
+extern __thread int          _ipc_nosig;
+extern __thread int          _ipc_line;
+extern __thread char const * _ipc_str;
+#define NOSIG_ON  _ipc_nosig=1, _ipc_str=__func__, _ipc_line=__LINE__
+#define NOSIG_OFF _ipc_nosig=0
+#define NOSIG_CHK if (1 == _ipc_nosig)\
+  printf("[%5d] %s:%d (%s:%d)\n", (int)getpid(), __func__, __LINE__,\
+    _ipc_str, _ipc_line)
+extern __thread int          _ipc_prsig;
+extern __thread int          _ipc_prline;
+extern __thread char const * _ipc_prstr;
+#define PRSIG_ON  _ipc_prsig=1, _ipc_prstr=__func__, _ipc_prline=__LINE__
+#define PRSIG_OFF _ipc_prsig=0
+#define PRSIG_CHK if (1 == _ipc_prsig)\
+  printf("[%5d] %s:%d (%s:%d)\n", (int)getpid(), __func__, __LINE__,\
+    _ipc_prstr, _ipc_prline)
+
+
+/****************************************************************************/
 /*!
  * Inter-process communication process status bits:
  *
- *   bit 0 ==    0: running       1: blocked
+ *   bit 0 ==    0: running       1: blocked on function call
+ *   bit 0 ==    0: running       1: blocked on memory request
  *   bit 1 ==    0: unpopulated   1: populated
  */
 /****************************************************************************/
@@ -72,11 +102,11 @@ struct ipc
   sem_t * trn2;  /*!< ... */
 
   void * shm;    /*!< shared memory region */
-  size_t * smem; /*!< pointer into shm for smem scalar */
-  size_t * pmem; /*!< pointer into shm for pmem array */
+  volatile size_t * smem; /*!< pointer into shm for smem scalar */
+  volatile size_t * pmem; /*!< pointer into shm for pmem array */
   int * pid;     /*!< pointer into shm for pid array */
 
-  uint8_t * flags; /*!< pointer into shm for flags array */
+  volatile uint8_t * flags; /*!< pointer into shm for flags array */
 };
 
 

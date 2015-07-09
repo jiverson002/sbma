@@ -54,9 +54,9 @@ enum mmu_status_code
 struct ate
 {
   size_t n_pages;       /*!< number of pages allocated */
-  size_t l_pages;       /*!< number of pages loaded */
+  volatile size_t l_pages;       /*!< number of pages loaded */
   uintptr_t base;       /*!< starting address fro the allocation */
-  uint8_t * flags;      /*!< status flags for pages */
+  volatile uint8_t * flags;      /*!< status flags for pages */
   struct ate * prev;    /*!< doubly linked list pointer */
   struct ate * next;    /*!< doubly linked list pointer */
 #ifdef USE_THREAD
