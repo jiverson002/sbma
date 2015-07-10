@@ -46,15 +46,15 @@ struct vmm
 
   size_t page_size;             /*!< bytes per page */
 
-  volatile size_t numipc;                /*!< total number of SIGIPC received */
+  volatile size_t numipc;       /*!< total number of SIGIPC received */
+  volatile size_t numhipc;      /*!< total number of SIGIPC honored */
 
-  volatile size_t numrf;                 /*!< total number of read segfaults */
-  volatile size_t numwf;                 /*!< total number of write segfaults */
-  volatile size_t numrd;                 /*!< total number of pages read */
-  volatile size_t numwr;                 /*!< total number of pages written */
-  volatile size_t curpages;              /*!< current pages loaded */
-  volatile size_t maxpages;              /*!< maximum number of pages allocated */
-  volatile size_t numpages;              /*!< current pages allocated */
+  volatile size_t numrf;        /*!< total number of read segfaults */
+  volatile size_t numwf;        /*!< total number of write segfaults */
+  volatile size_t numrd;        /*!< total number of pages read */
+  volatile size_t numwr;        /*!< total number of pages written */
+
+  size_t numpages;              /*!< current pages allocated */
 
   char fstem[FILENAME_MAX];     /*!< the file stem where the data is stored */
 
@@ -92,9 +92,6 @@ extern struct vmm vmm;
 do {\
   if (0 != (__VAL) && 0 == __lock_get(&(vmm.lock))) {\
     vmm.__FIELD += (__VAL);\
-    /*if (0 == memcmp("curpages", #__FIELD, 9) && 0 != (__VAL))\
-      printf("[%5d] %s:%d %zd,%zu,%zu\n", (int)getpid(), __func__, __LINE__,\
-        (ssize_t)(__VAL), vmm.curpages, vmm.ipc.pmem[vmm.ipc.id]);*/\
     (void)__lock_let(&(vmm.lock));\
   }\
 } while (0)

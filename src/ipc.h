@@ -68,23 +68,25 @@ enum ipc_code
 /****************************************************************************/
 struct ipc
 {
-  int init;      /*!< initialized indicator */
+  int init;         /*!< initialized indicator */
 
-  int id;        /*!< ipc id of process amoung the n_procs */
-  int n_procs;   /*!< number of processes in coordination */
+  int id;           /*!< ipc id of process amoung the n_procs */
+  int n_procs;      /*!< number of processes in coordination */
 
-  int uniq;      /*!< unique identifier for shared mem and semaphores */
+  int uniq;         /*!< unique identifier for shared mem and semaphores */
 
-  sem_t * mtx;   /*!< critical section semaphores */
-  sem_t * cnt;   /*!< ... */
-  sem_t * trn1;  /*!< ... */
-  sem_t * trn2;  /*!< ... */
+  size_t curpages;  /*!< current pages loaded */
+  size_t maxpages;  /*!< maximum number of pages loaded */
 
-  void * shm;    /*!< shared memory region */
-  volatile size_t * smem; /*!< pointer into shm for smem scalar */
-  volatile size_t * pmem; /*!< pointer into shm for pmem array */
-  int * pid;     /*!< pointer into shm for pid array */
+  sem_t * mtx;      /*!< critical section semaphores */
+  sem_t * cnt;      /*!< ... */
+  sem_t * trn1;     /*!< ... */
+  sem_t * trn2;     /*!< ... */
 
+  void * shm;               /*!< shared memory region */
+  int * pid;                /*!< pointer into shm for pid array */
+  volatile size_t * smem;   /*!< pointer into shm for smem scalar */
+  volatile size_t * pmem;   /*!< pointer into shm for pmem array */
   volatile uint8_t * flags; /*!< pointer into shm for flags array */
 };
 

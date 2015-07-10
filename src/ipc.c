@@ -86,7 +86,7 @@ __ipc_init(struct ipc * const __ipc, int const __uniq, int const __n_procs,
 {
   int ret, shm_fd, id;
   void * shm;
-  sem_t * mtx, * cnt, * trn1, * trn2, * sid;
+  sem_t * mtx, * cnt, * trn1, * sid;
   int * idp;
   char fname[FILENAME_MAX];
 
@@ -105,11 +105,6 @@ __ipc_init(struct ipc * const __ipc, int const __uniq, int const __n_procs,
     return -1;
   trn1 = sem_open(fname, O_RDWR|O_CREAT, S_IRUSR|S_IWUSR, 0);
   if (SEM_FAILED == trn1)
-    return -1;
-  if (0 > snprintf(fname, FILENAME_MAX, "/ipc-trn2-%d", __uniq))
-    return -1;
-  trn2 = sem_open(fname, O_RDWR|O_CREAT, S_IRUSR|S_IWUSR, 1);
-  if (SEM_FAILED == trn2)
     return -1;
   if (0 > snprintf(fname, FILENAME_MAX, "/ipc-sid-%d", __uniq))
     return -1;
@@ -180,19 +175,20 @@ __ipc_init(struct ipc * const __ipc, int const __uniq, int const __n_procs,
     return -1;
 
   /* setup ipc struct */
-  __ipc->init    = 1;
-  __ipc->id      = id;
-  __ipc->n_procs = __n_procs;
-  __ipc->uniq    = __uniq;
-  __ipc->shm     = shm;
-  __ipc->mtx     = mtx;
-  __ipc->cnt     = cnt;
-  __ipc->trn1    = trn1;
-  __ipc->trn2    = trn2;
-  __ipc->smem    = (size_t*)shm;
-  __ipc->pmem    = (size_t*)((uintptr_t)__ipc->smem+sizeof(size_t));
-  __ipc->pid     = (int*)((uintptr_t)__ipc->pmem+(__n_procs*sizeof(size_t)));
-  __ipc->flags   = (uint8_t*)((uintptr_t)__ipc->pid+sizeof(int)+(__n_procs*sizeof(int)));
+  __ipc->init     = 1;
+  __ipc->id       = id;
+  __ipc->n_procs  = __n_procs;
+  __ipc->uniq     = __uniq;
+  __ipc->curpages = 0;
+  __ipc->maxpages = 0;
+  __ipc->shm      = shm;
+  __ipc->mtx      = mtx;
+  __ipc->cnt      = cnt;
+  __ipc->trn1     = trn1;
+  __ipc->smem     = (size_t*)shm;
+  __ipc->pmem     = (size_t*)((uintptr_t)__ipc->smem+sizeof(size_t));
+  __ipc->pid      = (int*)((uintptr_t)__ipc->pmem+(__n_procs*sizeof(size_t)));
+  __ipc->flags    = (uint8_t*)((uintptr_t)__ipc->pid+sizeof(int)+(__n_procs*sizeof(int)));
 
   /* set my process id */
   __ipc->pid[id] = (int)getpid();
@@ -211,6 +207,8 @@ __ipc_destroy(struct ipc * const __ipc)
   char fname[FILENAME_MAX];
 
   __ipc->init = 0;
+
+  __ipc->curpages = __ipc->pmem[__ipc->id];
 
   ret = munmap(__ipc->shm, IPC_LEN(__ipc->n_procs));
   if (-1 == ret)
@@ -243,15 +241,6 @@ __ipc_destroy(struct ipc * const __ipc)
   if (0 > snprintf(fname, FILENAME_MAX, "/ipc-trn1-%d", __ipc->uniq))
     return -1;
   ret = sem_close(__ipc->trn1);
-  if (-1 == ret)
-    return -1;
-  ret = sem_unlink(fname);
-  if (-1 == ret && ENOENT != errno)
-    return -1;
-
-  if (0 > snprintf(fname, FILENAME_MAX, "/ipc-trn2-%d", __ipc->uniq))
-    return -1;
-  ret = sem_close(__ipc->trn2);
   if (-1 == ret)
     return -1;
   ret = sem_unlink(fname);
@@ -501,15 +490,14 @@ __ipc_madmit(struct ipc * const __ipc, size_t const __value)
     return -1;
   }
   else {
-    ASSERT(vmm.curpages == vmm.ipc.pmem[vmm.ipc.id]);
-
     *__ipc->smem -= __value;
     __ipc->pmem[id] += __value;
     ret = libc_msync(__ipc->shm, IPC_LEN(__ipc->n_procs), MS_SYNC);
     if (-1 == ret)
       goto ERREXIT;
 
-    ASSERT(vmm.curpages == vmm.ipc.pmem[vmm.ipc.id]-__value);
+    if (__ipc->pmem[id] > __ipc->maxpages)
+      __ipc->maxpages = __ipc->pmem[id];
 
     ret = sem_post(__ipc->mtx);
     if (-1 == ret)
@@ -540,8 +528,6 @@ __ipc_mevict(struct ipc * const __ipc, size_t const __value)
     return 0;
 
   ASSERT(0 == __ipc_is_eligible(__ipc));
-  /* Not sure if this is necessarily true. */
-  ASSERT(vmm.curpages+__value == __ipc->pmem[__ipc->id]);
 
 #if 1
   CALL_LIBC(__ipc, sem_wait(__ipc->mtx), sem_post(__ipc->mtx));
@@ -573,9 +559,6 @@ __ipc_mevict(struct ipc * const __ipc, size_t const __value)
     goto ERREXIT;
 
   ASSERT(0 == __ipc_is_eligible(__ipc));
-  /* Not sure if this is necessarily true. */
-  ASSERT(vmm.curpages == vmm.ipc.pmem[vmm.ipc.id]);
-
   return 0;
 
   ERREXIT:

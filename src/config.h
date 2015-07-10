@@ -80,14 +80,12 @@ do {                                                                        \
 #ifdef DEADLOCK_ALARM_TIME
 # define DEADLOCK_ALARM_ON()\
 do {\
-  ASSERT(0 == vmm.ipc.init || vmm.curpages == vmm.ipc.pmem[vmm.ipc.id]);\
   /*printf("[%5d] %s:%d alarm on\n", (int)getpid(), basename(__FILE__),\
     __LINE__);*/\
   alarm(DEADLOCK_ALARM_TIME);\
 } while (0)
 # define DEADLOCK_ALARM_OFF()\
 do {\
-  ASSERT(0 == vmm.ipc.init || vmm.curpages == vmm.ipc.pmem[vmm.ipc.id]);\
   /*printf("[%5d] %s:%d alarm off\n", (int)getpid(), basename(__FILE__),\
     __LINE__);*/\
   alarm(0);\

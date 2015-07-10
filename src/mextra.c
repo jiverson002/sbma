@@ -75,34 +75,24 @@ __sbma_mallopt(int const __param, int const __value));
 SBMA_EXTERN struct mallinfo
 __sbma_mallinfo(void)
 {
-  /*int ret;*/
   struct mallinfo mi;
 
   memset(&mi, 0, sizeof(struct mallinfo));
 
-  /* Not checking the return value here is a hack which allows this function
-   * to be called even after __vmm_destroy() has been called. */
-  /*ret = __lock_get(&(vmm.lock));
-  if (-1 == ret)
-    return mi;*/
-  (void)__lock_get(&(vmm.lock));
+  mi.smblks   = vmm.numipc;  /* received SIGIPC faults */
+  mi.ordblks  = vmm.numhipc; /* honored SIGIPC faults */
 
-  mi.smblks  = vmm.numrf; /* read faults */
-  mi.ordblks = vmm.numwf; /* write faults */
+  mi.usmblks  = vmm.numrd; /* syspages read from disk */
+  mi.fsmblks  = vmm.numwr; /* syspages wrote to disk */
+  mi.uordblks = vmm.numrf; /* read faults */
+  mi.fordblks = vmm.numwf; /* write faults */
 
-  mi.usmblks = vmm.numrd; /* syspages read from disk */
-  mi.fsmblks = vmm.numwr; /* syspages wrote to disk */
-
-  mi.uordblks = vmm.curpages; /* syspages loaded */
-  mi.fordblks = vmm.maxpages; /* high water mark for loaded syspages */
-  mi.keepcost = vmm.numpages; /* syspages allocated */
-
-  /* Not checking the return value here is a hack which allows this function
-   * to be called even after __vmm_destroy() has been called. */
-  /*ret = __lock_let(&(vmm.lock));
-  if (-1 == ret)
-    return mi;*/
-  (void)__lock_let(&(vmm.lock));
+  if (0 == vmm.ipc.init)
+    mi.hblks = vmm.ipc.curpages;  /* syspages loaded */
+  else
+    mi.hblks = vmm.ipc.pmem[vmm.ipc.id]; /* ... */
+  mi.hblkhd   = vmm.ipc.maxpages; /* high water mark for loaded syspages */
+  mi.keepcost = vmm.numpages;     /* syspages allocated */
 
   return mi;
 }

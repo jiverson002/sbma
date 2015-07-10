@@ -47,12 +47,6 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 
 /****************************************************************************/
-/*! mtouch function prototype. */
-/****************************************************************************/
-SBMA_EXTERN ssize_t __sbma_mtouch(void * const __addr, size_t const __len);
-
-
-/****************************************************************************/
 /*! Allocate memory via anonymous mmap. */
 /****************************************************************************/
 SBMA_EXTERN void *
@@ -66,7 +60,6 @@ __sbma_malloc(size_t const __size)
   char fname[FILENAME_MAX];
 
   ASSERT(0 == __ipc_is_eligible(&(vmm.ipc)));
-  ASSERT(vmm.curpages == vmm.ipc.pmem[vmm.ipc.id]);
 
   /* Shortcut. */
   if (0 == __size)
@@ -142,12 +135,6 @@ __sbma_malloc(size_t const __size)
   if (-1 == ret)
     goto CLEANUP4;
 
-  /* Track number of syspages currently loaded, currently allocated, and high
-   * water mark number of syspages. */
-  VMM_TRACK(curpages, VMM_TO_SYS(s_pages+n_pages+f_pages));
-  VMM_TRACK(numpages, VMM_TO_SYS(s_pages+n_pages+f_pages));
-  VMM_TRACK(maxpages, vmm.curpages>vmm.maxpages?vmm.curpages-vmm.maxpages:0);
-
   /**************************************************************************/
   /* Successful exit -- return pointer to appliction memory. */
   /**************************************************************************/
@@ -184,7 +171,6 @@ __sbma_malloc(size_t const __size)
   /**************************************************************************/
   RETURN:
   ASSERT(0 == __ipc_is_eligible(&(vmm.ipc)));
-  ASSERT(vmm.curpages == vmm.ipc.pmem[vmm.ipc.id]);
   return retval;
 }
 SBMA_EXPORT(default, void *
@@ -215,7 +201,6 @@ __sbma_free(void * const __ptr)
   char fname[FILENAME_MAX];
 
   ASSERT(0 == __ipc_is_eligible(&(vmm.ipc)));
-  ASSERT(vmm.curpages == vmm.ipc.pmem[vmm.ipc.id]);
 
   /* Default return value. */
   retval = 0;
@@ -251,10 +236,6 @@ __sbma_free(void * const __ptr)
   if (-1 == ret)
     retval = -1;
 
-  /* Track number of syspages currently loaded and allocated. */
-  VMM_TRACK(curpages, -VMM_TO_SYS(s_pages+l_pages+f_pages));
-  VMM_TRACK(numpages, -VMM_TO_SYS(s_pages+n_pages+f_pages));
-
   /* Update memory file. */
   for (;;) {
     ret = __ipc_mevict(&(vmm.ipc), VMM_TO_SYS(s_pages+l_pages+f_pages));
@@ -271,7 +252,6 @@ __sbma_free(void * const __ptr)
   /* Return point -- make sure vmm is in valid state and return. */
   /**************************************************************************/
   ASSERT(0 == __ipc_is_eligible(&(vmm.ipc)));
-  ASSERT(vmm.curpages == vmm.ipc.pmem[vmm.ipc.id]);
   return retval;
 }
 SBMA_EXPORT(default, int
@@ -302,7 +282,6 @@ __sbma_realloc(void * const __ptr, size_t const __size)
     return NULL;
 
   ASSERT(0 == __ipc_is_eligible(&(vmm.ipc)));
-  ASSERT(vmm.curpages == vmm.ipc.pmem[vmm.ipc.id]);
 
   page_size = vmm.page_size;
   s_pages   = 1+((sizeof(struct ate)-1)/page_size);
@@ -347,12 +326,6 @@ __sbma_realloc(void * const __ptr, size_t const __size)
       ((on_pages-nn_pages)+(of_pages-nf_pages))*page_size);
     if (-1 == ret)
       return NULL;
-
-    /* track number of syspages currently loaded and allocated */
-    VMM_TRACK(curpages,\
-      -VMM_TO_SYS((ol_pages-ate->l_pages)+(of_pages-nf_pages)));
-    VMM_TRACK(numpages,\
-      -VMM_TO_SYS((on_pages-nn_pages)+(of_pages-nf_pages)));
 
     /* update memory file */
     for (;;) {
@@ -443,13 +416,6 @@ __sbma_realloc(void * const __ptr, size_t const __size)
     ate->base    = naddr+(s_pages*page_size);
     ate->flags   = (uint8_t*)(naddr+((s_pages+nn_pages)*page_size));
 
-    /* track number of syspages currently loaded, currently allocated, and
-     * high water mark number of syspages */
-    VMM_TRACK(curpages, VMM_TO_SYS((nn_pages-on_pages)+(nf_pages-of_pages)));
-    VMM_TRACK(numpages, VMM_TO_SYS((nn_pages-on_pages)+(nf_pages-of_pages)));
-    VMM_TRACK(maxpages,\
-      vmm.curpages>vmm.maxpages?vmm.curpages-vmm.maxpages:0);
-
     goto DONE;
 
     CLEANUP:
@@ -462,13 +428,11 @@ __sbma_realloc(void * const __ptr, size_t const __size)
         break;
     }
     ASSERT(0 == __ipc_is_eligible(&(vmm.ipc)));
-    ASSERT(vmm.curpages == vmm.ipc.pmem[vmm.ipc.id]);
     return NULL;
   }
 
   DONE:
   ASSERT(0 == __ipc_is_eligible(&(vmm.ipc)));
-  ASSERT(vmm.curpages == vmm.ipc.pmem[vmm.ipc.id]);
   return (void*)ate->base;
 }
 SBMA_EXPORT(default, void *
@@ -491,7 +455,6 @@ __sbma_remap(void * const __nbase, void * const __obase, size_t const __size,
   char ofname[FILENAME_MAX], nfname[FILENAME_MAX];
 
   ASSERT(0 == __ipc_is_eligible(&(vmm.ipc)));
-  ASSERT(vmm.curpages == vmm.ipc.pmem[vmm.ipc.id]);
 
   page_size = vmm.page_size;
   s_pages   = 1+((sizeof(struct ate)-1)/page_size);
@@ -565,7 +528,6 @@ __sbma_remap(void * const __nbase, void * const __obase, size_t const __size,
     return -1;*/
 
   ASSERT(0 == __ipc_is_eligible(&(vmm.ipc)));
-  ASSERT(vmm.curpages == vmm.ipc.pmem[vmm.ipc.id]);
   return 0;
 }
 SBMA_EXPORT(internal, int

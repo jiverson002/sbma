@@ -141,8 +141,6 @@ __vmm_sigsegv(int const sig, siginfo_t * const si, void * const ctx)
   /* make sure we received a SIGSEGV */
   ASSERT(SIGSEGV == sig);
 
-  ASSERT(vmm.curpages == vmm.ipc.pmem[vmm.ipc.id]);
-
   /* setup local variables */
   page_size = vmm.page_size;
   addr      = (uintptr_t)si->si_addr;
@@ -203,9 +201,6 @@ __vmm_sigsegv(int const sig, siginfo_t * const si, void * const ctx)
      * currently loaded, and high water mark for syspages loaded */
     VMM_TRACK(numrf, 1);
     VMM_TRACK(numrd, numrd);
-    VMM_TRACK(curpages, VMM_TO_SYS(l_pages));
-    VMM_TRACK(maxpages,
-      vmm.curpages>vmm.maxpages?vmm.curpages-vmm.maxpages:0);
   }
   else {
     /* sanity check */
@@ -227,8 +222,6 @@ __vmm_sigsegv(int const sig, siginfo_t * const si, void * const ctx)
     VMM_TRACK(numwf, 1);
   }
 
-  ASSERT(vmm.curpages == vmm.ipc.pmem[vmm.ipc.id]);
-
   if (NULL == ctx) {} /* suppress unused warning */
 }
 
@@ -248,9 +241,6 @@ __vmm_sigipc(int const sig, siginfo_t * const si, void * const ctx)
 
   /* Only honor the SIGIPC if my status is still eligible */
   if (1 == __ipc_is_eligible(&(vmm.ipc))) {
-    /* Not sure if this is necessarily true. */
-    /*ASSERT(vmm.curpages == vmm.ipc.pmem[vmm.ipc.id]);*/
-
     /* TODO: is it possible / what happens / does it matter if the process
      * receives a SIGIPC at this point in the execution of the signal handler?
      * */
@@ -268,21 +258,15 @@ __vmm_sigipc(int const sig, siginfo_t * const si, void * const ctx)
     ret = libc_msync((void*)vmm.ipc.shm, IPC_LEN(vmm.ipc.n_procs), MS_SYNC);
     ASSERT(-1 != ret);
 
-    /* Not sure if this is necessarily true. */
-    /*ASSERT(vmm.curpages == vmm.ipc.pmem[vmm.ipc.id]+l_pages);*/
-
     /* track number of syspages currently loaded, number of syspages written
      * to disk, and high water mark for syspages loaded */
-    VMM_TRACK(curpages, -l_pages);
     VMM_TRACK(numwr, numwr);
+    VMM_TRACK(numhipc, 1);
 
     /* change my status to unpopulated - must be before any potential waiting,
      * since SIGIPC could be raised again then. */
     ret = __ipc_unpopulate(&(vmm.ipc));
     ASSERT(-1 != ret);
-
-    /* Not sure if this is necessarily true. */
-    /*ASSERT(vmm.curpages == vmm.ipc.pmem[vmm.ipc.id]);*/
   }
 
   /* signal to the waiting process that the memory has been released */
@@ -607,12 +591,11 @@ __vmm_init(struct vmm * const __vmm, char const * const __fstem,
 
   /* initialize statistics */
   __vmm->numipc   = 0;
+  __vmm->numhipc  = 0;
   __vmm->numrf    = 0;
   __vmm->numwf    = 0;
   __vmm->numrd    = 0;
   __vmm->numwr    = 0;
-  __vmm->curpages = 0;
-  __vmm->maxpages = 0;
   __vmm->numpages = 0;
 
   /* copy file stem */

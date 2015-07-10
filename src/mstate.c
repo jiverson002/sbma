@@ -184,24 +184,13 @@ __sbma_check(char const * const __file, int const __line, int const __flag)
   }
   l_pages = VMM_TO_SYS(l_pages);
 
-  if ((1<<0) == (__flag&(1<<0)) && l_pages != vmm.curpages) {
-    printf("[%5d] %s:%d l_pages != vmm.curpages (%zu,%zu)\n", (int)getpid(),
-      basename(__file), __line, l_pages, vmm.curpages);
-    FAILED = 1;
-  }
   if ((1<<1) == (__flag&(1<<1)) && l_pages != vmm.ipc.pmem[vmm.ipc.id]) {
     printf("[%5d] %s:%d l_pages != vmm.ipc.pmem[vmm.ipc.id] (%zu,%zu)\n",
       (int)getpid(), basename(__file), __line, l_pages,
       vmm.ipc.pmem[vmm.ipc.id]);
     FAILED = 1;
   }
-  if ((1<<2) == (__flag&(1<<2)) && vmm.curpages != vmm.ipc.pmem[vmm.ipc.id]) {
-    printf("[%5d] %s:%d vmm.curpages != vmm.ipc.pmem[vmm.ipc.id] (%zu,%zu)\n",
-      (int)getpid(), basename(__file), __line, vmm.curpages,
-      vmm.ipc.pmem[vmm.ipc.id]);
-    FAILED = 1;
-  }
-  /*if (l_pages == vmm.curpages && l_pages == vmm.ipc.pmem[vmm.ipc.id])
+  /*if (l_pages == vmm.ipc.pmem[vmm.ipc.id])
     printf("[%5d] %s:%d success\n", (int)getpid(), basename(__file), __line);*/
 
   ret = __lock_let(&(vmm.lock));
@@ -229,7 +218,6 @@ __sbma_mtouch(void * const __addr, size_t const __len)
   struct ate * ate;
 
   ASSERT(0 == __ipc_is_eligible(&(vmm.ipc)));
-  ASSERT(vmm.curpages == vmm.ipc.pmem[vmm.ipc.id]);
 
   ate = __mmu_lookup_ate(&(vmm.mmu), __addr);
   if (NULL == ate)
@@ -263,7 +251,6 @@ __sbma_mtouch(void * const __addr, size_t const __len)
   }
 
   ASSERT(VMM_TO_SYS(ate->l_pages) == chk_l_pages);
-  ASSERT(vmm.curpages+l_pages == vmm.ipc.pmem[vmm.ipc.id]);
 
   if (0 != l_pages) {
     numrd = __sbma_mtouch_int(ate, __addr, __len);
@@ -282,14 +269,9 @@ __sbma_mtouch(void * const __addr, size_t const __len)
 
   /* track number of syspages currently loaded, number of syspages written to
    * disk, and high water mark for syspages loaded */
-  VMM_TRACK(curpages, l_pages);
   VMM_TRACK(numrd, numrd);
-  VMM_TRACK(maxpages,\
-    vmm.curpages>vmm.maxpages?vmm.curpages-vmm.maxpages:0);
 
   ASSERT(0 == __ipc_is_eligible(&(vmm.ipc)));
-  ASSERT(vmm.curpages == vmm.ipc.pmem[vmm.ipc.id]);
-
   return l_pages;
 }
 SBMA_EXPORT(internal, ssize_t
@@ -316,7 +298,6 @@ __sbma_mtouch_atomic(void * const __addr, size_t const __len, ...)
     return 0;
 
   ASSERT(0 == __ipc_is_eligible(&(vmm.ipc)));
-  ASSERT(vmm.curpages == vmm.ipc.pmem[vmm.ipc.id]);
 
   /* populate the arrays with the variable number of pointers and lengths */
   num   = 0;
@@ -382,15 +363,9 @@ __sbma_mtouch_atomic(void * const __addr, size_t const __len, ...)
 
   /* track number of syspages currently loaded, number of syspages written to
    * disk, and high water mark for syspages loaded */
-  VMM_TRACK(curpages, l_pages);
   VMM_TRACK(numrd, numrd);
-  VMM_TRACK(maxpages,\
-    vmm.curpages>vmm.maxpages?vmm.curpages-vmm.maxpages:0);
 
   ASSERT(0 == __ipc_is_eligible(&(vmm.ipc)));
-  ASSERT(vmm.curpages == vmm.ipc.pmem[vmm.ipc.id]);
-  /*__sbma_check(__FILE__, __LINE__, 7);*/
-
   return l_pages;
 
   CLEANUP:
@@ -420,7 +395,6 @@ __sbma_mtouchall(void)
     return -1;
 
   ASSERT(0 == __ipc_is_eligible(&(vmm.ipc)));
-  ASSERT(vmm.curpages == vmm.ipc.pmem[vmm.ipc.id]);
 
   /* Lock all allocations */
   for (ate=vmm.mmu.a_tbl; NULL!=ate; ate=ate->next) {
@@ -475,14 +449,9 @@ __sbma_mtouchall(void)
 
   /* track number of syspages currently loaded, number of syspages written to
    * disk, and high water mark for syspages loaded */
-  VMM_TRACK(curpages, l_pages);
   VMM_TRACK(numrd, numrd);
-  VMM_TRACK(maxpages,\
-    vmm.curpages>vmm.maxpages?vmm.curpages-vmm.maxpages:0);
 
   ASSERT(0 == __ipc_is_eligible(&(vmm.ipc)));
-  ASSERT(vmm.curpages == vmm.ipc.pmem[vmm.ipc.id]);
-
   return l_pages;
 
   CLEANUP:
@@ -575,7 +544,6 @@ __sbma_mevict(void * const __addr, size_t const __len)
   struct ate * ate;
 
   ASSERT(0 == __ipc_is_eligible(&(vmm.ipc)));
-  ASSERT(vmm.curpages == vmm.ipc.pmem[vmm.ipc.id]);
 
   ate = __mmu_lookup_ate(&(vmm.mmu), __addr);
   if (NULL == ate)
@@ -595,7 +563,6 @@ __sbma_mevict(void * const __addr, size_t const __len)
 
   /* track number of syspages currently loaded, number of syspages written to
    * disk, and high water mark for syspages loaded */
-  VMM_TRACK(curpages, -l_pages);
   VMM_TRACK(numwr, numwr);
 
   /* update memory file */
@@ -608,8 +575,6 @@ __sbma_mevict(void * const __addr, size_t const __len)
   }
 
   ASSERT(0 == __ipc_is_eligible(&(vmm.ipc)));
-  ASSERT(vmm.curpages == vmm.ipc.pmem[vmm.ipc.id]);
-
   return l_pages;
 }
 SBMA_EXPORT(internal, ssize_t
@@ -682,7 +647,6 @@ __sbma_mevictall(void)
   size_t l_pages, numwr;
 
   ASSERT(0 == __ipc_is_eligible(&(vmm.ipc)));
-  ASSERT(vmm.curpages == vmm.ipc.pmem[vmm.ipc.id]);
 
   ret = __sbma_mevictall_int(&l_pages, &numwr);
   if (-1 == ret)
@@ -690,7 +654,6 @@ __sbma_mevictall(void)
 
   /* track number of syspages currently loaded, number of syspages written to
    * disk, and high water mark for syspages loaded */
-  VMM_TRACK(curpages, -l_pages);
   VMM_TRACK(numwr, numwr);
 
   /* update memory file */
@@ -709,8 +672,6 @@ __sbma_mevictall(void)
     return -1;
 
   ASSERT(0 == __ipc_is_eligible(&(vmm.ipc)));
-  ASSERT(vmm.curpages == vmm.ipc.pmem[vmm.ipc.id]);
-
   return l_pages;
 }
 SBMA_EXPORT(internal, ssize_t
