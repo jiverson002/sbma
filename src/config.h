@@ -69,7 +69,7 @@ do {                                                                        \
   }                                                                         \
 } while (0)
 //#else
-//# define ASSERT(COND)
+//# define ASSERT(COND) (void)0
 //#endif
 
 

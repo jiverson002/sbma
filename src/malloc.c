@@ -61,99 +61,131 @@ __sbma_malloc(size_t const __size)
   int ret, fd;
   size_t page_size, s_pages, n_pages, f_pages;
   uintptr_t addr;
+  void * retval;
   struct ate * ate;
   char fname[FILENAME_MAX];
 
   ASSERT(0 == __ipc_is_eligible(&(vmm.ipc)));
   ASSERT(vmm.curpages == vmm.ipc.pmem[vmm.ipc.id]);
 
-  /* shortcut */
+  /* Shortcut. */
   if (0 == __size)
     return NULL;
 
-  /* compute allocation sizes */
-  page_size = vmm.page_size;
-  s_pages   = 1+((sizeof(struct ate)-1)/page_size);
-  n_pages   = 1+((__size-1)/page_size);
-  f_pages   = 1+((n_pages*sizeof(uint8_t)-1)/page_size);
+  /* Default return value. */
+  retval = NULL;
 
-  /* check memory file to see if there is enough free memory to complete this
+  /* Compute allocation sizes. */
+  page_size = vmm.page_size;
+  s_pages   = 1+((sizeof(struct ate)-1)/page_size);      /* struct pages */
+  n_pages   = 1+((__size-1)/page_size);                  /* app pages */
+  f_pages   = 1+((n_pages*sizeof(uint8_t)-1)/page_size); /* flag pages */
+
+  /* Check memory file to see if there is enough free memory to complete this
    * allocation. */
   for (;;) {
     ret = __ipc_madmit(&(vmm.ipc), VMM_TO_SYS(s_pages+n_pages+f_pages));
     if (-1 == ret && EAGAIN != errno)
-      return NULL;
+      goto RETURN;
     else if (-1 != ret)
       break;
   }
 
-  /* allocate memory */
+  /* Allocate memory with read/write permission and locked into memory.
+   * Since the SBMA library bypasses the OS swap space, MAP_NORESERVE is used
+   * here to prevent the system for reserving swap space. */
   addr = (uintptr_t)mmap(NULL, (s_pages+n_pages+f_pages)*page_size,
     PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS|MAP_NORESERVE|MAP_LOCKED,\
     -1, 0);
   if ((uintptr_t)MAP_FAILED == addr)
-    goto CLEANUP;
+    goto CLEANUP1;
 
-  /* read-only protect application pages -- this will avoid the double SIGSEGV
-   * for new allocations */
+  /* Read-only protect application pages -- this will avoid the double SIGSEGV
+   * for new allocations. */
   ret = mprotect((void*)(addr+(s_pages*page_size)), n_pages*page_size,\
     PROT_READ);
   if (-1 == ret)
-    goto CLEANUP;
+    goto CLEANUP2;
 
-  /* create and truncate the file to size */
-  if (0 > snprintf(fname, FILENAME_MAX, "%s%d-%zx", vmm.fstem, (int)getpid(),\
-    addr))
-  {
-    goto CLEANUP;
-  }
-  if (-1 == (fd=libc_open(fname, O_WRONLY|O_CREAT|O_EXCL, S_IRUSR|S_IWUSR)))
-    goto CLEANUP;
-  /*if (-1 == ftruncate(fd, n_pages*page_size))
+  /* Create the file */
+  ret = snprintf(fname, FILENAME_MAX, "%s%d-%zx", vmm.fstem, (int)getpid(),\
+    addr);
+  if (0 > ret)
+    goto CLEANUP2;
+  fd = libc_open(fname, O_WRONLY|O_CREAT|O_EXCL, S_IRUSR|S_IWUSR);
+  if (-1 == fd)
+    goto CLEANUP3;
+  ret = close(fd);
+  if (-1 == ret)
+    goto CLEANUP3;
+  /* Truncating file to size is unnecessary as it will be resized when writes
+   * are made to it. Doing this now however, will let the application know if
+   * the filesystem has room to support all allocations up to this point. */
+  /*ret = truncate(fname, n_pages*page_size);
+  if (-1 == ret)
     return NULL;*/
-  if (-1 == close(fd))
-    goto CLEANUP;
 
-  /* set pointer for the allocation table entry */
-  ate = (struct ate*)addr;
-
-  /* populate ate structure */
+  /* Set and populate ate structure. */
+  ate          = (struct ate*)addr;
   ate->n_pages = n_pages;
   ate->l_pages = n_pages;
   ate->base    = addr+(s_pages*page_size);
   ate->flags   = (uint8_t*)(addr+((s_pages+n_pages)*page_size));
 
-  /* initialize ate lock */
+  /* Initialize ate lock. */
   ret = __lock_init(&(ate->lock));
   if (-1 == ret)
-    goto CLEANUP;
+    goto CLEANUP3;
 
-  /* insert ate into mmu */
+  /* Insert ate into mmu. */
   ret = __mmu_insert_ate(&(vmm.mmu), ate);
   if (-1 == ret)
-    goto CLEANUP;
+    goto CLEANUP4;
 
-  /* track number of syspages currently loaded, currently allocated, and high
-   * water mark number of syspages */
+  /* Track number of syspages currently loaded, currently allocated, and high
+   * water mark number of syspages. */
   VMM_TRACK(curpages, VMM_TO_SYS(s_pages+n_pages+f_pages));
   VMM_TRACK(numpages, VMM_TO_SYS(s_pages+n_pages+f_pages));
   VMM_TRACK(maxpages, vmm.curpages>vmm.maxpages?vmm.curpages-vmm.maxpages:0);
 
-  ASSERT(0 == __ipc_is_eligible(&(vmm.ipc)));
-  ASSERT(vmm.curpages == vmm.ipc.pmem[vmm.ipc.id]);
-  return (void*)ate->base;
+  /**************************************************************************/
+  /* Successful exit -- return pointer to appliction memory. */
+  /**************************************************************************/
+  retval = (void*)ate->base;
+  goto RETURN;
 
-  CLEANUP:
+  /**************************************************************************/
+  /* Error exit -- revert changes to vmm state, release any memory, and
+   * remove any files created, then return NULL. */
+  /**************************************************************************/
+  CLEANUP4:
+  ret = __mmu_invalidate_ate(&(vmm.mmu), ate);
+  ASSERT(-1 != ret);
+  CLEANUP3:
+  ret = close(fd);
+  ASSERT(-1 != ret);
+  ret = unlink(fname);
+  ASSERT(-1 != ret);
+  CLEANUP2:
+  ret = munmap((void*)addr, (s_pages+n_pages+f_pages)*page_size);
+  ASSERT(-1 != ret);
+  CLEANUP1:
   for (;;) {
     ret = __ipc_mevict(&(vmm.ipc), VMM_TO_SYS(s_pages+n_pages+f_pages));
     if (-1 == ret && EAGAIN != errno)
-      return NULL;
+      goto RETURN;
     else if (-1 != ret)
       break;
   }
+  retval = NULL;
+
+  /**************************************************************************/
+  /* Return point -- make sure vmm is in valid state and return. */
+  /**************************************************************************/
+  RETURN:
   ASSERT(0 == __ipc_is_eligible(&(vmm.ipc)));
   ASSERT(vmm.curpages == vmm.ipc.pmem[vmm.ipc.id]);
-  return NULL;
+  return retval;
 }
 SBMA_EXPORT(default, void *
 __sbma_malloc(size_t const __size));
@@ -177,13 +209,16 @@ __sbma_calloc(size_t const __num, size_t const __size));
 SBMA_EXTERN int
 __sbma_free(void * const __ptr)
 {
-  int ret;
+  int ret, retval;
   size_t page_size, s_pages, n_pages, f_pages, l_pages;
   struct ate * ate;
   char fname[FILENAME_MAX];
 
   ASSERT(0 == __ipc_is_eligible(&(vmm.ipc)));
   ASSERT(vmm.curpages == vmm.ipc.pmem[vmm.ipc.id]);
+
+  /* Default return value. */
+  retval = 0;
 
   page_size = vmm.page_size;
   s_pages   = 1+((sizeof(struct ate)-1)/page_size);
@@ -192,48 +227,52 @@ __sbma_free(void * const __ptr)
   l_pages   = ate->l_pages;
   f_pages   = 1+((n_pages*sizeof(uint8_t)-1)/page_size);
 
-  /* remove the file */
-  if (0 > snprintf(fname, FILENAME_MAX, "%s%d-%zx", vmm.fstem, (int)getpid(),\
-    (uintptr_t)ate))
-  {
-    return -1;
-  }
+  /* Remove the file. */
+  ret = snprintf(fname, FILENAME_MAX, "%s%d-%zx", vmm.fstem, (int)getpid(),\
+    (uintptr_t)ate);
+  if (0 > ret)
+    retval = -1;
   ret = unlink(fname);
   if (-1 == ret && ENOENT != errno)
-    return -1;
+    retval = -1;
 
-  /* invalidate ate */
+  /* Invalidate ate. */
   ret = __mmu_invalidate_ate(&(vmm.mmu), ate);
   if (-1 == ret)
-    return -1;
+    retval = -1;
 
-  /* destory ate lock */
+  /* Destory ate lock. */
   ret = __lock_free(&(ate->lock));
   if (-1 == ret)
-    return -1;
+    retval = -1;
 
-  /* free resources */
+  /* Free resources. */
   ret = munmap((void*)ate, (s_pages+n_pages+f_pages)*page_size);
   if (-1 == ret)
-    return -1;
+    retval = -1;
 
-  /* track number of syspages currently loaded and allocated */
+  /* Track number of syspages currently loaded and allocated. */
   VMM_TRACK(curpages, -VMM_TO_SYS(s_pages+l_pages+f_pages));
   VMM_TRACK(numpages, -VMM_TO_SYS(s_pages+n_pages+f_pages));
 
-  /* update memory file */
+  /* Update memory file. */
   for (;;) {
     ret = __ipc_mevict(&(vmm.ipc), VMM_TO_SYS(s_pages+l_pages+f_pages));
-    if (-1 == ret && EAGAIN != errno)
-      return -1;
-    else if (-1 != ret)
+    if (-1 == ret && EAGAIN != errno) {
+      retval = -1;
       break;
+    }
+    else if (-1 != ret) {
+      break;
+    }
   }
 
+  /**************************************************************************/
+  /* Return point -- make sure vmm is in valid state and return. */
+  /**************************************************************************/
   ASSERT(0 == __ipc_is_eligible(&(vmm.ipc)));
   ASSERT(vmm.curpages == vmm.ipc.pmem[vmm.ipc.id]);
-
-  return 0;
+  return retval;
 }
 SBMA_EXPORT(default, int
 __sbma_free(void * const __ptr));

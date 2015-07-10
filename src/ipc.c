@@ -452,12 +452,12 @@ __ipc_madmit(struct ipc * const __ipc, size_t const __value)
 
     /* no such process exists, break loop */
     if (-1 == ii) {
-      /*if (dlctr == __ipc->n_procs-1) {
+      if (dlctr == __ipc->n_procs-1) {
         printf("[%5d] {%zu,%zu} (", (int)getpid(), __value, *__ipc->smem);
         for (i=0; i<__ipc->n_procs; ++i)
           printf(" <%d,%d,%zu>", pid[i], flags[i], pmem[i]);
         printf(" )\n");
-      }*/
+      }
       ASSERT(dlctr != __ipc->n_procs-1);
       break;
     }
