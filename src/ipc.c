@@ -366,22 +366,7 @@ __ipc_madmit(struct ipc * const __ipc, size_t const __value)
   if (0 == __value)
     return 0;
 
-#if 1
   CALL_LIBC(__ipc, sem_wait(__ipc->mtx), sem_post(__ipc->mtx));
-#else
-  ret = sem_wait(__ipc->mtx);
-  if (-1 == ret) {
-    if (EINTR == errno)
-      errno = EAGAIN;
-    return -1;
-  }
-  else if (1 == __ipc_sigrecvd(__ipc)) {
-    /* Need to release semaphore since this is returning an error. */
-    (void)sem_post(__ipc->mtx);
-    errno = EAGAIN;
-    return -1;
-  }
-#endif
 
   id    = __ipc->id;
   smem  = *__ipc->smem;
@@ -422,15 +407,6 @@ __ipc_madmit(struct ipc * const __ipc, size_t const __value)
       if (IPC_CMD_ELIGIBLE == (flags[i]&IPC_CMD_ELIGIBLE) ||\
         IPC_MEM_ELIGIBLE == (flags[i]&IPC_MEM_ELIGIBLE))
       {
-        /* Choose this process if it has more resident memory than the
-         * candidate process AND my resident memory is larger than theirs.
-         * This should eliminate a lot of the thrashing otherwise present,
-         * since there will be a well defined order to which processes can
-         * request that other processes release memory. -- This strategy could
-         * lead to deadlock, since a blocked process might have the most
-         * resident memory, in which case, no other process could ask it to
-         * evict memory and thus never make progress. */
-        /*if (pmem[i] > mxmem && pmem[id] >= pmem[i]) {*/
         if (pmem[i] > mxmem) {
           ii = i;
           mxmem = pmem[i];
@@ -453,17 +429,14 @@ __ipc_madmit(struct ipc * const __ipc, size_t const __value)
 
     /* such a process is available, tell it to free memory */
     ret = kill(pid[ii], SIGIPC);
-    if (-1 == ret) {
-      (void)sem_post(__ipc->mtx);
-      goto ERREXIT;
-    }
+    if (-1 == ret)
+      goto CLEANUP1;
 
     /* wait for it to signal it has finished */
     ret = libc_sem_wait(__ipc->trn1);
     if (-1 == ret) {
       ASSERT(EINTR != errno);
-      (void)sem_post(__ipc->mtx);
-      goto ERREXIT;
+      goto CLEANUP1;
     }
 
     smem = *__ipc->smem;
@@ -473,22 +446,16 @@ __ipc_madmit(struct ipc * const __ipc, size_t const __value)
   if (smem < __value) {
     ret = sem_post(__ipc->mtx);
     if (-1 == ret)
-      goto ERREXIT;
+      goto CLEANUP1;
 
     ts.tv_sec  = 0;
     ts.tv_nsec = 250000000;
 
-#if 1
     CALL_LIBC(__ipc, nanosleep(&ts, NULL), 0);
-#else
-    ret = nanosleep(&ts, NULL);
-    if (-1 == ret && EINTR != errno)
-      return -1;
-#endif
 
     ASSERT(0 == __ipc_is_eligible(__ipc));
     errno = EAGAIN;
-    return -1;
+    goto ERREXIT;
   }
   else {
 #endif
@@ -496,18 +463,18 @@ __ipc_madmit(struct ipc * const __ipc, size_t const __value)
     __ipc->pmem[id] += __value;
     ret = libc_msync(__ipc->shm, IPC_LEN(__ipc->n_procs), MS_SYNC);
     if (-1 == ret)
-      goto ERREXIT;
+      goto CLEANUP2;
 
     if (__ipc->pmem[id] > __ipc->maxpages)
       __ipc->maxpages = __ipc->pmem[id];
 
-    ret = sem_post(__ipc->mtx);
-    if (-1 == ret)
-      goto ERREXIT;
-
     ret = __ipc_populate(__ipc);
     if (-1 == ret)
-      goto ERREXIT;
+      goto CLEANUP2;
+
+    ret = sem_post(__ipc->mtx);
+    if (-1 == ret)
+      goto CLEANUP1;
 
     ASSERT(smem >= __value);
     ASSERT(0 == __ipc_is_eligible(__ipc));
@@ -516,6 +483,14 @@ __ipc_madmit(struct ipc * const __ipc, size_t const __value)
   }
 #endif
 
+  CLEANUP2:
+  *__ipc->smem += __value;
+  __ipc->pmem[id] -= __value;
+  ret = libc_msync(__ipc->shm, IPC_LEN(__ipc->n_procs), MS_SYNC);
+  ASSERT(-1 != ret);
+  CLEANUP1:
+  ret = sem_post(__ipc->mtx);
+  ASSERT(-1 != ret);
   ERREXIT:
   return -1;
 }
