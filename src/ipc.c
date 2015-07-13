@@ -469,6 +469,7 @@ __ipc_madmit(struct ipc * const __ipc, size_t const __value)
     smem = *__ipc->smem;
   }
 
+#if SBMA_VERSION >= 200
   if (smem < __value) {
     ret = sem_post(__ipc->mtx);
     if (-1 == ret)
@@ -490,6 +491,7 @@ __ipc_madmit(struct ipc * const __ipc, size_t const __value)
     return -1;
   }
   else {
+#endif
     *__ipc->smem -= __value;
     __ipc->pmem[id] += __value;
     ret = libc_msync(__ipc->shm, IPC_LEN(__ipc->n_procs), MS_SYNC);
@@ -510,7 +512,9 @@ __ipc_madmit(struct ipc * const __ipc, size_t const __value)
     ASSERT(smem >= __value);
     ASSERT(0 == __ipc_is_eligible(__ipc));
     return 0;
+#if SBMA_VERSION >= 200
   }
+#endif
 
   ERREXIT:
   return -1;
