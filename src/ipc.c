@@ -270,7 +270,9 @@ __ipc_destroy(struct ipc * const __ipc));
 SBMA_EXTERN int
 __ipc_block(struct ipc * const __ipc, int const __flag)
 {
+#if SBMA_VERSION >= 200
   int ret, sval;
+#endif
 
   if (0 == __ipc->init)
     return 0;
@@ -400,10 +402,12 @@ __ipc_madmit(struct ipc * const __ipc, size_t const __value)
 
   int ret, i, ii, id, dlctr;
   size_t mxmem, smem;
-  struct timespec ts;
   volatile uint8_t * flags;
   int * pid;
   volatile size_t * pmem;
+#if SBMA_VERSION >= 200
+  struct timespec ts;
+#endif
 
   if (0 == __value)
     return 0;
@@ -556,7 +560,9 @@ __ipc_madmit(struct ipc * const __ipc, size_t const __value)
   CLEANUP1:
   ret = sem_post(__ipc->mtx);
   ASSERT(-1 != ret);
+#if SBMA_VERSION >= 200
   ERREXIT:
+#endif
   return -1;
 }
 SBMA_EXPORT(internal, int
