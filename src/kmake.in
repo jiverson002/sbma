@@ -1,3 +1,11 @@
+project SBMalloc
+version `grep -e '^#define SBMA_MAJOR' -e '^#define SBMA_MINOR'\
+              -e '^#define SBMA_PATCH' -e '^#define SBMA_RCAND' sbma.h\
+       | awk '{print $3}'\
+       | paste -d ' ' - - - -\
+       | awk '{printf "%d.%d.%d%s", $1,$2,$3,$4}'`
+commit `git rev-parse --short HEAD`
+
 add_with_param profile no no= yes='-DUSE_PROFILE -pg'
 add_with_param pthread no no= yes='-DUSE_PTHREAD -pthread'
 add_with_param openmp no no= yes='-DUSE_OPENMP -fopenmp'

@@ -47,6 +47,24 @@ function check_exists {
 #}}}2
 }
 
+function project {
+#{{{2
+  PROJECT=$1
+#}}}2
+}
+
+function version {
+#{{{2
+  VERSION=$1
+#}}}2
+}
+
+function commit {
+#{{{2
+  COMMIT=$1
+#}}}2
+}
+
 function add_library {
 #{{{2
   l=$1
@@ -216,6 +234,10 @@ function fill_arrs {
 # Default variables                                                          #
 #****************************************************************************#
 #{{{1
+PROJECT='project'
+VERSION='-.-.-'
+COMMIT='-------'
+
 declare -A OPTS=( \
   [CC]='c99' \
   [LD]='c99' \
@@ -409,9 +431,10 @@ p \# INTERNAL VARIABLES
 p \#--------------------------------------------------------------------------
 p \#{{{1
 p \# Version information
+p PROJECT = \"${PROJECT}\"
 p DATE    = \"`date`\"
-p COMMIT  = \"`git rev-parse --short HEAD`\"
-p VERSION = \"0.2.3-pre\"
+p COMMIT  = \"${COMMIT}\"
+p VERSION = \"${VERSION}\"
 p
 p "AUTOFLAGS = \\"
 if [ 'x' != "x${BUILD[${CONFIG['build']}]}" ] ; then
@@ -429,7 +452,6 @@ for w in "${!with[@]}" ; do
   unset arr2
 done
 p
-p
 p \# Up-to-date file -- this file is used to ensure that any time the Makefile
 p \# is manually updated, libraries and targets will be rebuilt. This is done
 p \# by removing said files whenever the rule for this file is executed.
@@ -441,10 +463,6 @@ p \#--------------------------------------------------------------------------
 p \# COMPILE TARGETS
 p \#--------------------------------------------------------------------------
 p \#{{{1
-p '.c.a:'
-p '	$(CC) -c $(CFLAGS) $<'
-p '	$(AR) $(ARFLAGS) $@ $*.o'
-p
 for l in ${!lib[@]} ; do
   n "${l}: \$(UTD)"
   for d in ${lib[${l}]} ; do
@@ -452,7 +470,6 @@ for l in ${!lib[@]} ; do
   done
   p
   p "	\$(RANLIB) \$@"
-  p "	\$(RM) ${lib[${l}]}"
   p
 done
 for t in ${!target[@]} ; do
@@ -509,7 +526,7 @@ for t in ${install_target[@]} ; do
 done
 p
 p 'show:'
-p '	$(ECHO) "KLMalloc v$(VERSION) configured with: configure"'
+p '	$(ECHO) "$(PROJECT) v$(VERSION) configured with: configure"'
 n '	$(ECHO) "'
 for config in "${!CONFIG[@]}" ; do
   n "${config}=\$(${config}) "

@@ -1,0 +1,174 @@
+#--------------------------------------------------------------------------
+# COPYRIGHT NOTICE
+#--------------------------------------------------------------------------
+#{{{1
+# Copyright (c) 2015, Jeremy Iverson
+# All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions are
+# met:
+#
+# 1. Redistributions of source code must retain the above copyright notice,
+# this list of conditions and the following disclaimer.
+#
+# 2. Redistributions in binary form must reproduce the above copyright
+# notice, this list of conditions and the following disclaimer in the
+# documentation and/or other materials provided with the distribution.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS
+# IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
+# TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
+# PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER
+# OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+# EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+# PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+# PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+# LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+# NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+# SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+#}}}1
+
+
+.POSIX:
+.SILENT: help maintainer-clean show
+
+
+#--------------------------------------------------------------------------
+# CACHE VARIABLES
+#--------------------------------------------------------------------------
+#{{{1
+# Program variables
+AR = ar
+ARFLAGS = -cr
+RANLIB = ranlib
+RM = rm -f
+ECHO = echo
+TOUCH = touch
+SED = sed
+SED_I = $(SED) -i
+INSTALL = install -CDv --mode=0644
+INSTALLLOG = InstallManifest.txt
+
+# Config parameters
+build = debug
+includedir = $(prefix)/include
+libdir = $(exec_prefix)/lib
+exec_prefix = $(prefix)
+prefix = /usr/local
+
+# Compiler parameters
+CC = c99
+LD = c99
+CFLAGS = -I. $(AUTOFLAGS)
+LDFLAGS = -I. $(AUTOFLAGS)
+LDLIBS = 
+#}}}1
+
+
+#==========================================================================
+# DO NOT CHANGE ANYTHING BELOW HERE
+#==========================================================================
+
+
+#--------------------------------------------------------------------------
+# INTERNAL VARIABLES
+#--------------------------------------------------------------------------
+#{{{1
+# Version information
+PROJECT = "SBMalloc"
+DATE = "Unknown"
+COMMIT = "Unknown"
+VERSION = "Unknown"
+
+AUTOFLAGS = \
+ -O0 -g -Wall -Wextra -pedantic\
+ -DVERSION=$(VERSION) -DDATE=$(DATE) -DCOMMIT=$(COMMIT)\
+
+# Up-to-date file -- this file is used to ensure that any time the Makefile
+# is manually updated, libraries and targets will be rebuilt. This is done
+# by removing said files whenever the rule for this file is executed.
+UTD = .UTD
+#}}}1
+
+
+#--------------------------------------------------------------------------
+# COMPILE TARGETS
+#--------------------------------------------------------------------------
+#{{{1
+libsbma.a: $(UTD) libsbma.a(hooks.o) libsbma.a(ipc.o) libsbma.a(klmalloc.o) libsbma.a(lock.o) libsbma.a(malloc.o) libsbma.a(mcntrl.o) libsbma.a(mextra.o) libsbma.a(mmu.o) libsbma.a(mstate.o) libsbma.a(vmm.o)
+	$(RANLIB) $@
+
+test/check3: $(UTD) test/check3.c libsbma.a    sbma.h config.h
+	$(LD) $(LDFLAGS) -o $@ test/check3.c  libsbma.a -ldl -lrt -pthread $(LDLIBS)
+
+test/check2: $(UTD) test/check2.c libsbma.a    sbma.h config.h
+	$(LD) $(LDFLAGS) -o $@ test/check2.c  libsbma.a -ldl -lrt -pthread $(LDLIBS)
+
+test/check1: $(UTD) test/check1.c libsbma.a    klmalloc.h klconfig.h config.h
+	$(LD) $(LDFLAGS) -o $@ test/check1.c  libsbma.a -ldl -lrt -pthread $(LDLIBS)
+
+test/micro2: $(UTD) test/micro2.c libsbma.a    klmalloc.h klconfig.h
+	$(LD) $(LDFLAGS) -o $@ test/micro2.c  libsbma.a -ldl -lrt -pthread $(LDLIBS)
+
+test/micro1: $(UTD) test/micro1.c
+	$(LD) $(LDFLAGS) -o $@ test/micro1.c  $(LDLIBS)
+
+$(UTD): Makefile
+	@$(RM) libsbma.a test/check3 test/check2 test/check1 test/micro2 test/micro1
+	@$(TOUCH) $(UTD)
+#}}}1
+
+
+#--------------------------------------------------------------------------
+# SYSTEM TARGETS
+#--------------------------------------------------------------------------
+#{{{1
+install: libsbma.a
+	@$(ECHO) $(libdir)/libsbma.a > $(INSTALLLOG)
+	$(INSTALL) libsbma.a $(libdir)
+
+show:
+	$(ECHO) "$(PROJECT) v$(VERSION) configured with: configure"
+	$(ECHO) "build=$(build) includedir=$(includedir) libdir=$(libdir) exec_prefix=$(exec_prefix) prefix=$(prefix) with-pthread=no with-libc=no with-mmap=no with-memalign=no with-profile=no with-openmp=no with-sbma=no "
+
+clean:
+	$(RM) libsbma.a test/check3 test/check2 test/check1 test/micro2 test/micro1 $(UTD)
+
+help:
+	$(ECHO) "The following are valid targets for this Makefile:"
+	$(ECHO) "... libsbma.a (the default if no target is provided)"
+	$(ECHO) "... test/check3"
+	$(ECHO) "... test/check2"
+	$(ECHO) "... test/check1"
+	$(ECHO) "... test/micro2"
+	$(ECHO) "... test/micro1"
+	$(ECHO) "... install"
+	$(ECHO) "... show"
+	$(ECHO) "... clean"
+	$(ECHO) "... dist (non-portable)"
+	$(ECHO) "... maintainer-clean (non-portable)"
+	$(ECHO) "... help"
+#}}}1
+
+
+#--------------------------------------------------------------------------
+# MAINTAINER TARGETS (NON-PORTABLE)
+#--------------------------------------------------------------------------
+#{{{1
+dist:
+	cd .. && \
+mkdir sbma-$(VERSION) && \
+cp -r src sbma-$(VERSION)/src && \
+make -sC sbma-$(VERSION)/src maintainer-clean > /dev/null && \
+rm -rf sbma-$(VERSION)/src/old sbma-$(VERSION)/src/test && \
+rm -rf sbma-$(VERSION)/.git* && \
+tar -czhf sbma-$(VERSION).tar.gz sbma-$(VERSION) && \
+mv -f sbma-$(VERSION).tar.gz src && \
+rm -rf sbma-$(VERSION)
+
+maintainer-clean:
+	make clean > /dev/null
+	rm -f Makefile
+	rm -f sbma-$(VERSION).tar.gz
+#}}}1
