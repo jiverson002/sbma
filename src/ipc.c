@@ -316,8 +316,6 @@ __ipc_block(struct ipc * const __ipc, int const __flag));
 SBMA_EXTERN int
 __ipc_unblock(struct ipc * const __ipc)
 {
-  int ret;
-
   if (0 == __ipc->init)
     return 0;
 
@@ -365,6 +363,8 @@ __ipc_unpopulate(struct ipc * const __ipc));
 SBMA_EXTERN int
 __ipc_sigrecvd(struct ipc * const __ipc)
 {
+  if (NULL == __ipc) {}
+
   return _ipc_sigrecvd;
 }
 SBMA_EXPORT(internal, int

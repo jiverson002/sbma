@@ -261,7 +261,7 @@ __sbma_mtouch(void * const __addr, size_t const __len)
   }
 
   ASSERT(VMM_TO_SYS(ate->l_pages) >= chk_l_pages);
-  ASSERT(l_pages == VMM_TO_SYS(ate->l_pages)-chk_l_pages);
+  ASSERT(l_pages == (ssize_t)(VMM_TO_SYS(ate->l_pages)-chk_l_pages));
 
   ret = __lock_let(&(ate->lock));
   if (-1 == ret)
@@ -289,7 +289,7 @@ __sbma_mtouch_atomic(void * const __addr, size_t const __len, ...)
   ssize_t _l_pages, _numrd, l_pages, numrd;
   va_list args;
   void * _addr;
-  size_t new_l_pages[SBMA_ATOMIC_MAX], chk_l_pages[SBMA_ATOMIC_MAX];
+  size_t new_l_pages[SBMA_ATOMIC_MAX]/*, chk_l_pages[SBMA_ATOMIC_MAX]*/;
   size_t len[SBMA_ATOMIC_MAX];
   void * addr[SBMA_ATOMIC_MAX];
   struct ate * ate[SBMA_ATOMIC_MAX];
@@ -325,7 +325,7 @@ __sbma_mtouch_atomic(void * const __addr, size_t const __len, ...)
       l_pages += _l_pages;
 
       new_l_pages[i] = _l_pages;
-      chk_l_pages[i] = VMM_TO_SYS(ate[i]->l_pages);
+      /*chk_l_pages[i] = VMM_TO_SYS(ate[i]->l_pages);*/
     }
 
     if (0 == l_pages)
