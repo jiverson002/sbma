@@ -53,8 +53,9 @@ do {\
     return -1;\
   ret = libc_ ## __CMD;\
   if (-1 == ret) {\
-    (void)__ipc_unblock(__IPC);\
-    if (EINTR == errno)\
+    ret = __ipc_unblock(__IPC);\
+    ASSERT(-1 != ret);\
+    if (EINTR == errno || ETIMEDOUT == errno)\
       errno = EAGAIN;\
     return -1;\
   }\
@@ -63,7 +64,8 @@ do {\
     return -1;\
   ret = __ipc_sigrecvd(__IPC);\
   if (1 == ret) {\
-    (void)__SIGRECVD;\
+    ret = __SIGRECVD;\
+    ASSERT(-1 != ret);\
     errno = EAGAIN;\
     return -1;\
   }\
@@ -86,7 +88,7 @@ __ipc_init(struct ipc * const __ipc, int const __uniq, int const __n_procs,
 {
   int ret, shm_fd, id;
   void * shm;
-  sem_t * mtx, * cnt, * trn1, * sid;
+  sem_t * mtx, * trn1, * trn2, * trn3, * sid;
   int * idp;
   char fname[FILENAME_MAX];
 
@@ -96,15 +98,20 @@ __ipc_init(struct ipc * const __ipc, int const __uniq, int const __n_procs,
   mtx = sem_open(fname, O_RDWR|O_CREAT, S_IRUSR|S_IWUSR, 1);
   if (SEM_FAILED == mtx)
     return -1;
-  if (0 > snprintf(fname, FILENAME_MAX, "/ipc-cnt-%d", __uniq))
-    return -1;
-  cnt = sem_open(fname, O_RDWR|O_CREAT, S_IRUSR|S_IWUSR, 0);
-  if (SEM_FAILED == cnt)
-    return -1;
   if (0 > snprintf(fname, FILENAME_MAX, "/ipc-trn1-%d", __uniq))
     return -1;
   trn1 = sem_open(fname, O_RDWR|O_CREAT, S_IRUSR|S_IWUSR, 0);
   if (SEM_FAILED == trn1)
+    return -1;
+  if (0 > snprintf(fname, FILENAME_MAX, "/ipc-trn2-%d", __uniq))
+    return -1;
+  trn2 = sem_open(fname, O_RDWR|O_CREAT, S_IRUSR|S_IWUSR, 1);
+  if (SEM_FAILED == trn2)
+    return -1;
+  if (0 > snprintf(fname, FILENAME_MAX, "/ipc-trn3-%d", __uniq))
+    return -1;
+  trn3 = sem_open(fname, O_RDWR|O_CREAT, S_IRUSR|S_IWUSR, 0);
+  if (SEM_FAILED == trn3)
     return -1;
   if (0 > snprintf(fname, FILENAME_MAX, "/ipc-sid-%d", __uniq))
     return -1;
@@ -183,8 +190,9 @@ __ipc_init(struct ipc * const __ipc, int const __uniq, int const __n_procs,
   __ipc->maxpages = 0;
   __ipc->shm      = shm;
   __ipc->mtx      = mtx;
-  __ipc->cnt      = cnt;
   __ipc->trn1     = trn1;
+  __ipc->trn2     = trn2;
+  __ipc->trn3     = trn3;
   __ipc->smem     = (size_t*)shm;
   __ipc->pmem     = (size_t*)((uintptr_t)__ipc->smem+sizeof(size_t));
   __ipc->pid      = (int*)((uintptr_t)__ipc->pmem+(__n_procs*sizeof(size_t)));
@@ -228,19 +236,25 @@ __ipc_destroy(struct ipc * const __ipc)
   ret = sem_unlink(fname);
   if (-1 == ret && ENOENT != errno)
     return -1;
-
-  if (0 > snprintf(fname, FILENAME_MAX, "/ipc-cnt-%d", __ipc->uniq))
+  if (0 > snprintf(fname, FILENAME_MAX, "/ipc-trn1-%d", __ipc->uniq))
     return -1;
-  ret = sem_close(__ipc->cnt);
+  ret = sem_close(__ipc->trn1);
   if (-1 == ret)
     return -1;
   ret = sem_unlink(fname);
   if (-1 == ret && ENOENT != errno)
     return -1;
-
-  if (0 > snprintf(fname, FILENAME_MAX, "/ipc-trn1-%d", __ipc->uniq))
+  if (0 > snprintf(fname, FILENAME_MAX, "/ipc-trn2-%d", __ipc->uniq))
     return -1;
-  ret = sem_close(__ipc->trn1);
+  ret = sem_close(__ipc->trn2);
+  if (-1 == ret)
+    return -1;
+  ret = sem_unlink(fname);
+  if (-1 == ret && ENOENT != errno)
+    return -1;
+  if (0 > snprintf(fname, FILENAME_MAX, "/ipc-trn3-%d", __ipc->uniq))
+    return -1;
+  ret = sem_close(__ipc->trn3);
   if (-1 == ret)
     return -1;
   ret = sem_unlink(fname);
@@ -256,6 +270,8 @@ __ipc_destroy(struct ipc * const __ipc));
 SBMA_EXTERN int
 __ipc_block(struct ipc * const __ipc, int const __flag)
 {
+  int ret, sval;
+
   if (0 == __ipc->init)
     return 0;
 
@@ -263,6 +279,30 @@ __ipc_block(struct ipc * const __ipc, int const __flag)
    * SIGIPC is not honored. */
   _ipc_l_pages  = __ipc->pmem[__ipc->id];
   _ipc_sigrecvd = 0;
+
+#if SBMA_VERSION >= 200
+#if 1
+  if (IPC_CMD_BLOCKED == __flag) {
+    ret = libc_sem_wait(__ipc->trn2);
+    if (-1 == ret)
+      return -1;
+
+    ret = sem_getvalue(__ipc->trn3, &sval);
+    if (-1 == ret)
+      return -1;
+
+    if (0 == sval) {
+      ret = sem_post(__ipc->trn3);
+      if (-1 == ret)
+        return -1;
+    }
+
+    ret = sem_post(__ipc->trn2);
+    if (-1 == ret)
+      return -1;
+  }
+#endif
+#endif
 
   /* Transition to blocked */
   __ipc->flags[__ipc->id] |= __flag;
@@ -276,6 +316,8 @@ __ipc_block(struct ipc * const __ipc, int const __flag));
 SBMA_EXTERN int
 __ipc_unblock(struct ipc * const __ipc)
 {
+  int ret;
+
   if (0 == __ipc->init)
     return 0;
 
@@ -448,10 +490,33 @@ __ipc_madmit(struct ipc * const __ipc, size_t const __value)
     if (-1 == ret)
       goto CLEANUP1;
 
-    ts.tv_sec  = 0;
-    ts.tv_nsec = 250000000;
+#if 1
+    /* This approach is solely used as an early alert method. This means that
+     * instead of requiring the process to sleep for the whole period, it can
+     * be signalled early if another process enters the CMD_BLOCKED state. */
+    ret = clock_gettime(CLOCK_REALTIME, &ts);
+    if (-1 == ret)
+      goto ERREXIT;
+    if ((long)999999999-ts.tv_nsec < (long)100000000) {
+      ts.tv_sec++;
+      ts.tv_nsec = (long)100000000-((long)999999999-ts.tv_nsec);
+    }
+    else {
+      ts.tv_nsec += 100000000;
+    }
 
+    /* Cannot post to trn3 in case of sigrecvd, because doing so could
+     * possibly break the sem_getvalue() reliance in __ipc_block(). */
+    CALL_LIBC(__ipc, sem_timedwait(__ipc->trn3, &ts), 0);
+
+    ret = sem_post(__ipc->trn2);
+    if (-1 == ret)
+      goto ERREXIT;
+#else
+    ts.tv_sec  = 0;
+    ts.tv_nsec = 100000000;
     CALL_LIBC(__ipc, nanosleep(&ts, NULL), 0);
+#endif
 
     ASSERT(0 == __ipc_is_eligible(__ipc));
     errno = EAGAIN;

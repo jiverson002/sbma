@@ -79,9 +79,9 @@ struct ipc
   size_t maxpages;  /*!< maximum number of pages loaded */
 
   sem_t * mtx;      /*!< critical section semaphores */
-  sem_t * cnt;      /*!< ... */
   sem_t * trn1;     /*!< ... */
   sem_t * trn2;     /*!< ... */
+  sem_t * trn3;     /*!< ... */
 
   void * shm;               /*!< shared memory region */
   int * pid;                /*!< pointer into shm for pid array */
