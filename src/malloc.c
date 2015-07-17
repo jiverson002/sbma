@@ -470,14 +470,20 @@ __sbma_remap(void * const __nbase, void * const __obase, size_t const __size,
   ASSERT((uintptr_t)__obase == oate->base);
   ASSERT((uintptr_t)__nbase == nate->base);
   ASSERT(nate->l_pages == nate->n_pages);
+  ASSERT(oate->n_pages <= nate->n_pages);
 
   /* need to make sure that all bytes are captured, thus beg is a floor
    * operation and end is a ceil operation. */
   beg = ((uintptr_t)nptr-nate->base)/page_size;
   end = 1+(((uintptr_t)nptr+__size-nate->base-1)/page_size);
 
+  ASSERT(0 == beg);
+  ASSERT(end <= oate->n_pages);
+  ASSERT(end <= nate->n_pages);
+
   /* load new and old memory */
-  ret = __sbma_mtouch_atomic(nptr, __size, optr, __size, SBMA_ATOMIC_END);
+  ret = __sbma_mtouch_atomic((void*)nate->base, nate->n_pages*page_size,\
+    optr, __size, SBMA_ATOMIC_END);
   if (-1 == ret)
     return -1;
 
@@ -511,7 +517,27 @@ __sbma_remap(void * const __nbase, void * const __obase, size_t const __size,
     }
   }
 
-  /* move old file to new file and truncate to size */
+  /* This loop addresses the trailing bytes of the new file (>= __off+__size)
+   * which are necessarily overwritten when the old file is renamed to the new
+   * file. The assumption here is that the number of such pages will be small,
+   * else the remap in not beneficial. */
+  for (i=end; i<nate->n_pages; ++i) {
+    ASSERT(MMU_RSDNT != (nflags[i]&MMU_RSDNT));
+
+    /* change non-dirty disk pages to dirty since, they were overwritten by
+     * new file and grant them read-write permission */
+    if (MMU_ZFILL == (nflags[i]&(MMU_DIRTY|MMU_ZFILL))) {
+      nflags[i] &= ~MMU_ZFILL;
+      nflags[i] |= MMU_DIRTY;
+
+      ret = mprotect((void*)((uintptr_t)__nbase+(i*page_size)), page_size,\
+        PROT_READ|PROT_WRITE);
+      if (-1 == ret)
+        return -1;
+    }
+  }
+
+  /* move old file to new file and truncate to size. */
   ret = snprintf(nfname, FILENAME_MAX, "%s%d-%zx", vmm.fstem, (int)getpid(),\
     naddr);
   if (ret < 0)
@@ -526,6 +552,17 @@ __sbma_remap(void * const __nbase, void * const __obase, size_t const __size,
   /*ret = truncate(nfname, nn_pages*page_size);
   if (-1 == ret)
     return -1;*/
+
+  /*struct stat buf;
+  stat(nfname, &buf);
+  for (i=beg; i<end; ++i) {
+    if (MMU_ZFILL == (nflags[i]&MMU_ZFILL)) {
+      if ((i+1)*page_size > buf.st_size)
+        printf("[%5d] %s:%d (%zu,%zu)\n", (int)getpid(), __func__, __LINE__,
+          (i+1)*page_size, buf.st_size);
+      ASSERT((i+1)*page_size <= buf.st_size);
+    }
+  }*/
 
   ASSERT(0 == __ipc_is_eligible(&(vmm.ipc)));
   return 0;

@@ -84,6 +84,8 @@ __vmm_read(int const __fd, void * const __buf, size_t __len, size_t __off)
       return -1;
 #endif
 
+    ASSERT(0 != len);
+
     buf += len;
     __len -= len;
   } while (__len > 0);
@@ -116,6 +118,8 @@ __vmm_write(int const __fd, void const * const __buf, size_t __len,
     if (-1 == (len=libc_write(__fd, buf, __len)))
       return -1;
 #endif
+
+    ASSERT(0 != len);
 
     buf += len;
     __len -= len;
