@@ -150,7 +150,195 @@ the possibly moved allocated space.
  *  1. Allow coalescing of adjacent blocks.
  */
 
-#include "klconfig.h"
+
+/* enable use of assert */
+#ifdef NDEBUG
+# undef NDEBUG
+#endif
+
+
+/*--------------------------------------------------------------------------*/
+
+
+#ifdef USE_THREAD
+# define DEADLOCK 0   /* 0: no deadlock diagnostics, */
+                      /* 1: deadlock diagnostics */
+
+  /* Access to PTHREAD_MUTEX_RECURSIVE and SYS_gettid */
+# ifndef _GNU_SOURCE
+#   define _GNU_SOURCE
+# endif
+# include <malloc.h>      /* struct mallinfo */
+# include <pthread.h>     /* pthread library */
+# include <sys/syscall.h> /* SYS_gettid */
+# include <unistd.h>      /* syscall */
+# undef _GNU_SOURCE
+  /* Access to clock_gettime and related */
+# ifndef _POSIX_C_SOURCE
+#   define _POSIX_C_SOURCE 200112L
+# else
+#   if _POSIX_C_SOURCE < 200112L
+#     undef _POSIX_C_SOURCE
+#     define _POSIX_C_SOURCE 200112L
+#   endif
+# endif
+# include <time.h>    /* CLOCK_REALTIME, struct timespec, clock_gettime */
+
+# include <errno.h>   /* errno library */
+# include <pthread.h> /* pthread library */
+
+# define INIT_LOCK(LOCK)                                                    \
+do {                                                                        \
+  /* The locks must be of recursive type in-order for the multi-threaded
+   * code to work.  This is because OpenMP and pthread both call
+   * malloc/free internally when spawning/joining threads. */               \
+  int retval;                                                               \
+  pthread_mutexattr_t attr;                                                 \
+  if (0 != (retval=pthread_mutexattr_init(&(attr))))                        \
+    goto INIT_LOCK_CLEANUP;                                                 \
+  if (0 != (retval=pthread_mutexattr_settype(&(attr),                       \
+    PTHREAD_MUTEX_RECURSIVE)))                                              \
+    goto INIT_LOCK_CLEANUP;                                                 \
+  if (0 != (retval=pthread_mutex_init(LOCK, &(attr))))                      \
+    goto INIT_LOCK_CLEANUP;                                                 \
+                                                                            \
+  goto INIT_LOCK_DONE;                                                      \
+                                                                            \
+  INIT_LOCK_CLEANUP:                                                        \
+  printf("Mutex init failed@%s:%d [retval: %d %s]\n", __func__, __LINE__,   \
+    retval, strerror(retval));                                              \
+                                                                            \
+  INIT_LOCK_DONE: ;                                                         \
+} while (0)
+
+# define FREE_LOCK(LOCK)                                                    \
+do {                                                                        \
+  int retval;                                                               \
+  if (0 != (retval=pthread_mutex_destroy(LOCK))) {                          \
+    printf("Mutex free failed@%s:%d [retval: %d %s]\n", __func__, __LINE__, \
+      retval, strerror(retval));                                            \
+  }                                                                         \
+} while (0)
+
+# if !defined(DEADLOACK) || DEADLOCK == 0
+#   define GET_LOCK(LOCK)                                                   \
+do {                                                                        \
+  int retval;                                                               \
+  if (0 != (retval=pthread_mutex_lock(LOCK))) {                             \
+    printf("Mutex lock failed@%s:%d [retval: %d %s]\n", __func__, __LINE__, \
+      retval, strerror(retval));                                            \
+  }                                                                         \
+  else if (DEADLOCK) printf("[%5d] mtx get %s:%d %s (%p)\n",                \
+    (int)syscall(SYS_gettid), __func__, __LINE__, #LOCK, (void*)(LOCK));    \
+} while (0)
+# else
+#   define GET_LOCK(LOCK)                                                   \
+do {                                                                        \
+  int retval;                                                               \
+  struct timespec ts;                                                       \
+  if (0 != clock_gettime(CLOCK_REALTIME, &ts)) {                            \
+    printf("Clock get time failed [errno: %d %s]\n", errno,                 \
+      strerror(errno));                                                     \
+  }                                                                         \
+  ts.tv_sec += 10;                                                          \
+  if (0 != (retval=pthread_mutex_timedlock(LOCK, &ts))) {                   \
+    if (ETIMEDOUT == retval) {                                              \
+      printf("[%5d] Mutex lock timed-out %s:%d %s (%p)\n",                  \
+        (int)syscall(SYS_gettid), __func__, __LINE__, #LOCK, (void*)(LOCK));\
+      _GET_LOCK(LOCK);                                                      \
+    }                                                                       \
+    else {                                                                  \
+      printf("Mutex lock failed [retval: %d %s]\n", retval,                 \
+        strerror(retval));                                                  \
+    }                                                                       \
+  }                                                                         \
+  if (DEADLOCK) printf("[%5d] mtx get %s:%d %s (%p)\n",                     \
+    (int)syscall(SYS_gettid), __func__, __LINE__, #LOCK, (void*)(LOCK));    \
+} while (0)
+# endif
+
+# define LET_LOCK(LOCK)                                                     \
+do {                                                                        \
+  int retval;                                                               \
+  if (0 != (retval=pthread_mutex_unlock(LOCK))) {                           \
+    printf("Mutex unlock failed@%s:%d [retval: %d %s]\n", __func__,         \
+      __LINE__, retval, strerror(retval));                                  \
+  }                                                                         \
+  if (DEADLOCK) printf("[%5d] mtx let %s:%d %s (%p)\n",                     \
+    (int)syscall(SYS_gettid), __func__, __LINE__, #LOCK, (void*)(LOCK));    \
+} while (0)
+#else
+# define INIT_LOCK(LOCK)
+# define FREE_LOCK(LOCK)
+# define GET_LOCK(LOCK)
+# define LET_LOCK(LOCK)
+#endif
+
+
+/*--------------------------------------------------------------------------*/
+
+
+//#define USE_MMAP
+#if defined(USE_MMAP) && defined(USE_MEMALIGN)
+# undef USE_MMAP
+#endif
+#if defined(USE_MMAP) && defined(USE_SBMA)
+# undef USE_SBMA
+#endif
+#if defined(USE_MEMALIGN) && defined(USE_SBMA)
+# undef USE_SBMA
+#endif
+#if !defined(USE_MMAP) && !defined(USE_MEMALIGN) && !defined(USE_SBMA)
+# define USE_SBMA
+#endif
+
+#include <stddef.h> /* size_t */
+#ifdef USE_MMAP
+# ifndef _BSD_SOURCE
+#   define _BSD_SOURCE
+# endif
+# include <sys/mman.h> /* mmap, munmap */
+# undef _BSD_SOURCE
+# define SYS_ALLOC_FAIL MAP_FAILED
+# define CALL_SYS_ALLOC(P,S) \
+  ((P)=mmap(NULL, S, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0))
+# define CALL_SYS_FREE(P,S)  munmap(P,S)
+# define CALL_SYS_BZERO(P,S)
+#endif
+#ifdef USE_MEMALIGN
+# ifndef _POSIX_C_SOURCE
+#   define _POSIX_C_SOURCE 200112L
+# elif _POSIX_C_SOURCE < 200112L
+#   undef _POSIX_C_SOURCE
+#   define _POSIX_C_SOURCE 200112L
+# endif
+# include <stdlib.h>  /* posix_memalign */
+# undef _POSIX_C_SOURCE
+# define SYS_ALLOC_FAIL NULL
+# define CALL_SYS_ALLOC(P,S) \
+  (0 == posix_memalign(&(P),MEMORY_ALLOCATION_ALIGNMENT,S) ? (P) : NULL)
+# define CALL_SYS_FREE(P,S)  libc_free(P)
+# define CALL_SYS_BZERO(P,S) memset(P, 0, S)
+#endif
+#ifdef USE_SBMA
+# include <stdarg.h>
+int    __sbma_vinit(va_list args);
+int    __sbma_destroy(void);
+void * __sbma_malloc(size_t const size);
+void * __sbma_realloc(void * const ptr, size_t const size);
+int    __sbma_free(void * const ptr);
+int    __sbma_remap(void * const nptr, void * const ptr, size_t const num,
+                    size_t const off);
+# define SYS_ALLOC_FAIL NULL
+# define CALL_SYS_INIT(L)          __sbma_vinit(L)
+# define CALL_SYS_DESTROY()        __sbma_destroy()
+# define CALL_SYS_ALLOC(P,S)       ((P)=__sbma_malloc(S))
+# define CALL_SYS_REALLOC(N,O,S,F) ((N)=__sbma_realloc(O,F))
+# define CALL_SYS_REMAP(N,O,S,F)   __sbma_remap(N,O,S,F)
+# define CALL_SYS_FREE(P,S)        __sbma_free(P)
+# define CALL_SYS_BZERO(P,S)
+#endif
+
 
 #include <assert.h>   /* assert */
 #include <limits.h>   /* CHAR_BIT */
@@ -158,7 +346,18 @@ the possibly moved allocated space.
 #include <stdint.h>   /* uintptr_t */
 #include <string.h>   /* memset */
 
-#include "klmalloc.h" /* klmalloc library */
+
+/****************************************************************************/
+/*! Required enum. */
+/****************************************************************************/
+enum {
+  M_ENABLED,
+  M_NUMBER,
+
+    M_ENABLED_ON,
+    M_ENABLED_OFF,
+    M_ENABLED_PAUSE
+};
 
 
 /****************************************************************************/
@@ -855,14 +1054,14 @@ typedef struct kl_mem
   kl_fix_block_t * brick_bin[BRICK_BIN_NUM];
   kl_chunk_t * chunk_bin[CHUNK_BIN_NUM];
 
-#ifdef USE_PTHREAD
+#ifdef USE_THREAD
   pthread_mutex_t init_lock;  /* mutex guarding initialization */
   pthread_mutex_t lock;       /* mutex guarding struct */
 #endif
 } kl_mem_t;
 
 static kl_mem_t mem={
-#ifdef USE_PTHREAD
+#ifdef USE_THREAD
   .init_lock = PTHREAD_MUTEX_INITIALIZER,
 #endif
   .init = 0,
@@ -1661,6 +1860,38 @@ KL_calloc(size_t const num, size_t const size)
 
 
 /****************************************************************************/
+/* Release size bytes of memory */
+/****************************************************************************/
+KL_EXPORT int
+KL_free(void * const ptr)
+{
+  kl_alloc_t * alloc;
+
+  /* Enabled check. */
+  GET_LOCK(&(mem.init_lock));
+  if (M_ENABLED_ON != mem.enabled) {
+    LET_LOCK(&(mem.init_lock));
+    libc_free(ptr);
+    return 0;
+  }
+  LET_LOCK(&(mem.init_lock));
+
+  alloc = KL_G_ALLOC(ptr);
+
+  switch (KL_TYPEOF(alloc)) {
+    case KL_BRICK:
+      kl_brick_put(&mem, (kl_brick_t*)alloc);
+      break;
+    case KL_CHUNK:
+      kl_chunk_put(&mem, (kl_chunk_t*)alloc);
+      break;
+  }
+
+  return 0;
+}
+
+
+/****************************************************************************/
 /* Re-allocate size bytes of memory with pointer hint */
 /****************************************************************************/
 KL_EXPORT void *
@@ -1766,38 +1997,6 @@ KL_realloc(void * const ptr, size_t const size)
   assert(0 != KL_G_SIZE(KL_G_ALLOC(nptr)));
 
   return nptr;
-}
-
-
-/****************************************************************************/
-/* Release size bytes of memory */
-/****************************************************************************/
-KL_EXPORT int
-KL_free(void * const ptr)
-{
-  kl_alloc_t * alloc;
-
-  /* Enabled check. */
-  GET_LOCK(&(mem.init_lock));
-  if (M_ENABLED_ON != mem.enabled) {
-    LET_LOCK(&(mem.init_lock));
-    libc_free(ptr);
-    return 0;
-  }
-  LET_LOCK(&(mem.init_lock));
-
-  alloc = KL_G_ALLOC(ptr);
-
-  switch (KL_TYPEOF(alloc)) {
-    case KL_BRICK:
-      kl_brick_put(&mem, (kl_brick_t*)alloc);
-      break;
-    case KL_CHUNK:
-      kl_chunk_put(&mem, (kl_chunk_t*)alloc);
-      break;
-  }
-
-  return 0;
 }
 
 
