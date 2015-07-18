@@ -548,6 +548,9 @@ p
 p 'clean:'
 p "	\$(RM) ${!lib[@]} ${!target[@]} \$(UTD)"
 p
+p 'distclean: clean'
+p "	\$(RM) Makefile"
+p
 p 'help:'
 p	'	$(ECHO) "The following are valid targets for this Makefile:"'
 i=0
@@ -565,6 +568,7 @@ done
 p	'	$(ECHO) "... install"'
 p	'	$(ECHO) "... show"'
 p	'	$(ECHO) "... clean"'
+p	'	$(ECHO) "... distclean"'
 p	'	$(ECHO) "... help"'
 if [ 0 -eq ${MAINTAINER} ] ; then
   p \#\}\}\}1
