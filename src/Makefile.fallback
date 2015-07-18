@@ -45,8 +45,6 @@ RANLIB = ranlib
 RM = rm -f
 ECHO = echo
 TOUCH = touch
-SED = sed
-SED_I = $(SED) -i
 INSTALL = install -CDv --mode=0644
 INSTALLLOG = InstallManifest.txt
 
@@ -146,29 +144,5 @@ help:
 	$(ECHO) "... install"
 	$(ECHO) "... show"
 	$(ECHO) "... clean"
-	$(ECHO) "... dist (non-portable)"
-	$(ECHO) "... maintainer-clean (non-portable)"
 	$(ECHO) "... help"
-#}}}1
-
-
-#--------------------------------------------------------------------------
-# MAINTAINER TARGETS (NON-PORTABLE)
-#--------------------------------------------------------------------------
-#{{{1
-dist:
-	cd .. && \
-mkdir sbma-$(VERSION) && \
-cp -r src sbma-$(VERSION)/src && \
-make -sC sbma-$(VERSION)/src maintainer-clean > /dev/null && \
-rm -rf sbma-$(VERSION)/src/old sbma-$(VERSION)/src/test && \
-rm -rf sbma-$(VERSION)/.git* && \
-tar -czhf sbma-$(VERSION).tar.gz sbma-$(VERSION) && \
-mv -f sbma-$(VERSION).tar.gz src && \
-rm -rf sbma-$(VERSION)
-
-maintainer-clean:
-	make clean > /dev/null
-	rm -f Makefile
-	rm -f sbma-$(VERSION).tar.gz
 #}}}1

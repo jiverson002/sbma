@@ -234,6 +234,8 @@ function fill_arrs {
 # Default variables                                                          #
 #****************************************************************************#
 #{{{1
+MAINTAINER=0
+
 PROJECT='project'
 VERSION='-.-.-'
 COMMIT='-------'
@@ -298,6 +300,9 @@ done
 #{{{1
 for i in "$@" ; do
   case $i in
+    --maintainer)
+      MAINTAINER=1
+      ;;
     --with-*)
       w=${i#--}
       w=${w%%=*}
@@ -402,8 +407,6 @@ p 'RANLIB = ranlib'
 p 'RM = rm -f'
 p 'ECHO = echo'
 p 'TOUCH = touch'
-p 'SED = sed'
-p 'SED_I = $(SED) -i'
 p 'INSTALL = install -CDv --mode=0644'
 p 'INSTALLLOG = InstallManifest.txt'
 p
@@ -430,7 +433,7 @@ p \#--------------------------------------------------------------------------
 p \# INTERNAL VARIABLES
 p \#--------------------------------------------------------------------------
 p \#{{{1
-p \# Version information
+p \# Project information
 p PROJECT = \"${PROJECT}\"
 p DATE    = \"`date`\"
 p COMMIT  = \"${COMMIT}\"
@@ -441,16 +444,21 @@ if [ 'x' != "x${BUILD[${CONFIG['build']}]}" ] ; then
   p " ${BUILD[${CONFIG['build']}]}\\"
 fi
 p ' -DVERSION=$(VERSION) -DDATE=$(DATE) -DCOMMIT=$(COMMIT)\'
+NEWLINE=0
 for w in "${!with[@]}" ; do
   declare -a arr1
   declare -A arr2
   fill_arrs with ${w} arr1 arr2
   if [ 'x' != "x${arr2[${params["with-${w}"]}]}" ] ; then
     n " ${arr2[${params["with-${w}"]}]}"
+    NEWLINE=1
   fi
   unset arr1
   unset arr2
 done
+if [ 0 -ne ${NEWLINE} ] ; then
+  p
+fi
 p
 p \# Up-to-date file -- this file is used to ensure that any time the Makefile
 p \# is manually updated, libraries and targets will be rebuilt. This is done
@@ -500,7 +508,8 @@ p
 p \#--------------------------------------------------------------------------
 p \# SYSTEM TARGETS
 p \#--------------------------------------------------------------------------
-p \#{{{1
+#{{{1
+p \#\{\{\{1
 n 'install:'
 for h in ${install_header[@]} ; do
   n " ${h}"
@@ -556,29 +565,38 @@ done
 p	'	$(ECHO) "... install"'
 p	'	$(ECHO) "... show"'
 p	'	$(ECHO) "... clean"'
-p	'	$(ECHO) "... dist (non-portable)"'
-p	'	$(ECHO) "... maintainer-clean (non-portable)"'
 p	'	$(ECHO) "... help"'
-p \#}}}1
-p
-p
-p \#--------------------------------------------------------------------------
-p \# MAINTAINER TARGETS \(NON-PORTABLE\)
-p \#--------------------------------------------------------------------------
-p \#{{{1
-p 'dist:'
-p '	cd .. && \'
-p  'mkdir sbma-$(VERSION) && \'
-p  'cp -r src sbma-$(VERSION)/src && \'
-p  'make -sC sbma-$(VERSION)/src maintainer-clean > /dev/null && \'
-p  'rm -rf sbma-$(VERSION)/src/old sbma-$(VERSION)/src/test && \'
-p  'rm -rf sbma-$(VERSION)/.git* && \'
-p  'tar -czhf sbma-$(VERSION).tar.gz sbma-$(VERSION) && \'
-p  'mv -f sbma-$(VERSION).tar.gz src && \'
-p  'rm -rf sbma-$(VERSION)'
-p
-p 'maintainer-clean:'
-p '	make clean > /dev/null'
-p '	rm -f Makefile'
-p '	rm -f sbma-$(VERSION).tar.gz'
-p \#}}}1
+if [ 0 -eq ${MAINTAINER} ] ; then
+  p \#\}\}\}1
+else
+  p	'	$(ECHO) "... dist (non-portable)"'
+  p	'	$(ECHO) "... maintainer-clean (non-portable)"'
+  p \#\}\}\}1
+  p
+  p
+fi
+#}}}1
+if [ 0 -ne ${MAINTAINER} ] ; then
+#{{{1
+  p \#------------------------------------------------------------------------
+  p \# MAINTAINER TARGETS \(NON-PORTABLE\)
+  p \#------------------------------------------------------------------------
+  p \#\{\{\{1
+  p 'dist:'
+  p '	cd .. && \'
+  p  'mkdir sbma-$(VERSION) && \'
+  p  'cp -r src sbma-$(VERSION)/src && \'
+  p  'make -sC sbma-$(VERSION)/src maintainer-clean > /dev/null && \'
+  p  'rm -rf sbma-$(VERSION)/src/old sbma-$(VERSION)/src/test && \'
+  p  'rm -rf sbma-$(VERSION)/.git* && \'
+  p  'tar -czhf sbma-$(VERSION).tar.gz sbma-$(VERSION) && \'
+  p  'mv -f sbma-$(VERSION).tar.gz src && \'
+  p  'rm -rf sbma-$(VERSION)'
+  p
+  p 'maintainer-clean:'
+  p '	make clean > /dev/null'
+  p '	rm -f Makefile'
+  p '	rm -f sbma-$(VERSION).tar.gz'
+  p \#\}\}\}1
+#}}}1
+fi
