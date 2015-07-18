@@ -1,741 +1,556 @@
-/* ============================ BEG CONFIG ================================ */
-//#define USE_LIBC
-
-//#define USE_LOAD
-
-//#define USE_LAZY
-
-//#define USE_GHOST
-
-//#define USE_CTX
-
-//#define USE_RAND
-
-//#define USE_LOCK
-
-#define USE_RD
-
-#define USE_WR
-
-#define USE_RW
-
-#define DEFAULT_NUM_MEM ((1lu<<31)-(1lu<<29)) /* 1.5GiB */
-
-#define DEFAULT_NUM_SYS 1                     /* 4KiB */
-
-#define DEFAULT_TMPFILE "/scratch/micro1"
-
-#define DATATYPE unsigned
-
-
-/* ======================= INTERNAL CONFIG ================================ */
-
-
-#if defined(USE_LIBC)
-# if defined(USE_CTX)
-#   undef USE_CTX
-# endif
-#endif
-#if !defined(USE_LOAD)
-# if defined(USE_GHOST)
-#   undef USE_GHOST
-# endif
-# if defined(USE_CTX)
-#   undef USE_CTX
-# endif
+/*===========================================================================*/
+#ifndef _BSD_SOURCE
+# define _BSD_SOURCE
 #endif
 
-
-/* ============================ END CONFIG ================================ */
-
-
-#ifndef _GNU_SOURCE
-# define _GNU_SOURCE
+#define _POSIX_C_SOURCE 200112L
+#if !defined(_WIN32) && (defined(__unix__) || defined(__unix) || \
+    (defined(__APPLE__) && defined(__MACH__)))
+# include <unistd.h>
 #endif
 
-#ifdef NDEBUG
-# undef NDEBUG
+/* try to get access to clock_gettime() */
+#if defined(_POSIX_TIMERS) && _POSIX_TIMERS > 0 && defined(_POSIX_MONOTONIC_CLOCK)
+# include <time.h>
+# define HAVE_CLOCK_GETTIME
+/* then try to get access to gettimeofday() */
+#elif defined(_POSIX_VERSION)
+# undef _POSIX_C_SOURCE
+# include <sys/time.h>
+# define HAVE_GETTIMEOFDAY
+/* if neither of the above are available, default to time() */
+#else
+# undef _POSIX_C_SOURCE
+# include <time.h>
 #endif
 
-#include <assert.h>
-#include <fcntl.h>
-#include <signal.h>
-#include <stdint.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
 #include <sys/mman.h>
-#include <sys/stat.h>
-#include <sys/ucontext.h>
-#include <time.h>
-#include <unistd.h>
 
-
-#define XSTR(X) #X
-#define STR(X)  XSTR(X)
-
-static size_t NUM_MEM = DEFAULT_NUM_MEM;
-static size_t NUM_SYS = DEFAULT_NUM_SYS;
-static char * TMPFILE = DEFAULT_TMPFILE;
-
-static char * pflags=NULL;
-static uintptr_t base=0;
-static size_t page=0;
-static size_t faults=0;
-#define SYNC   1
-#define DIRTY  2
-#define ONDISK 4
-
-#pragma GCC push_options
-#pragma GCC optimize("-O0")
-static void
-_membarrier(void)
+struct _timespec
 {
-  __asm volatile("": : :"memory"); \
-  __sync_synchronize();
-}
-#pragma GCC pop_options
+  long unsigned tv_sec;
+  long unsigned tv_nsec;
+};
 
-#pragma GCC push_options
-#pragma GCC optimize("-O0")
-static void
-_cacheflush(void)
+void
+_gettime(struct _timespec * const t)
 {
-  /* 1<<28 == 256MiB */
-  long unsigned i;
-  char * ptr = mmap(NULL, 1<<28, PROT_READ|PROT_WRITE,
-    MAP_PRIVATE|MAP_ANONYMOUS|MAP_NORESERVE, -1, 0);
-  if (MAP_FAILED != ptr) {
-    for (i=0; i<1<<28; ++i)
-      ptr[i] = (char)i;
-    for (i=0; i<1<<28; ++i)
-      assert((char)i == ptr[i]);
-    munmap(ptr, 1<<28);
-  }
-}
-#pragma GCC pop_options
-
-static inline void
-_gettime(struct timespec * const t)
-{
+#if defined(HAVE_CLOCK_GETTIME)
   struct timespec tt;
   clock_gettime(CLOCK_MONOTONIC, &tt);
   t->tv_sec = tt.tv_sec;
   t->tv_nsec = tt.tv_nsec;
+#elif defined(HAVE_GETTIMEOFDAY)
+  struct timeval tt;
+  gettimeofday(&tt, NULL);
+  t->tv_sec = tt.tv_sec;
+  t->tv_nsec = tt.tv_usec * 1000UL;
+#else
+  time_t tt = time(NULL);
+  t->tv_sec = tt;
+  t->tv_nsec = 0;
+#endif
 }
 
-static inline long unsigned
-_getelapsed(struct timespec const * const ts,
-            struct timespec const * const te)
+long unsigned
+_getelapsed(struct _timespec const * const ts,
+            struct _timespec const * const te)
 {
-  struct timespec t;
+  struct _timespec t;
   if (te->tv_nsec < ts->tv_nsec) {
     t.tv_nsec = 1000000000UL + te->tv_nsec - ts->tv_nsec;
     t.tv_sec = te->tv_sec - 1 - ts->tv_sec;
-  }
-  else {
+  }else {
     t.tv_nsec = te->tv_nsec - ts->tv_nsec;
     t.tv_sec = te->tv_sec - ts->tv_sec;
   }
   return (unsigned long)(t.tv_sec * 1000000000UL + t.tv_nsec);
 }
 
-static inline void
-_read(void * const addr, size_t const off, size_t size)
+#pragma GCC push_options
+#pragma GCC optimize("-O0")
+void
+_cacheflush(void)
 {
-  int fd;
-  ssize_t ret;
-  char * buf;
-  void * tmp_addr;
+  long unsigned i;
+  char * ptr = mmap(NULL, 1LU<<32, PROT_READ|PROT_WRITE,
+    MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
+  if (MAP_FAILED != ptr) {
+    for (i=0; i<1LU<<32; ++i)
+      ptr[i] = i;
+    munmap(ptr, 1LU<<32);
+  }
+}
+#pragma GCC pop_options
+/*===========================================================================*/
 
-#if !defined(USE_GHOST)
-  tmp_addr = (void*)addr;
-# if !defined(USE_LIBC)
-  ret = mprotect(tmp_addr, size, PROT_WRITE);
-  assert(-1 != ret);
+
+#ifndef NDEBUG
+# define NDEBUG
+#endif
+
+#include <assert.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include "klmalloc.h"
+
+
+/* random number generator seed */
+//#define SEED time(NULL)
+//#define SEED 1430937600
+#define SEED 1430939513
+
+
+/* use standard c malloc library or klmalloc library */
+#ifdef USE_LIBC
+# define PFX(F) libc_##F
+# ifdef __cplusplus
+extern "C" {
+# endif
+void * libc_malloc(size_t);
+void libc_free(void*);
+# ifdef __cplusplus
+}
 # endif
 #else
-  tmp_addr = mmap(NULL, size, PROT_WRITE,
-    MAP_PRIVATE|MAP_ANONYMOUS|MAP_NORESERVE, -1, 0);
-  assert(MAP_FAILED != tmp_addr);
+# include <sbma.h>
+# define PFX(F) KL_##F
 #endif
 
-  fd = open(TMPFILE, O_RDONLY);
-  assert(-1 != fd);
 
-  ret = lseek(fd, off, SEEK_SET);
-  assert(-1 != ret);
+/* probability to memset a previous allocation */
+#define PER_MEMSET 30
+/* probability to free a previous allocation */
+#define PER_FREE   30
 
-  buf = (char*)tmp_addr;
-  do {
-    ret = read(fd, buf, size);
-    assert(-1 != ret);
 
-    buf  += ret;
-    size -= ret;
-  } while (size > 0);
+#define DEFAULT_WDIR "/scratch-ssd/bdmp"
+#define DEFAULT_UNIQ (int)getpid()
+#define DEFAULT_PSIZ (4*sysconf(_SC_PAGESIZE))
+#define DEFAULT_PROC 1
+#define DEFAULT_RMEM 900000
+#define DEFAULT_OPTS (VMM_LZYRD|VMM_LZYWR|VMM_GHOST)
 
-  ret = close(fd);
-  assert(-1 != ret);
 
-#if !defined(USE_LIBC)
-  ret = mprotect(tmp_addr, size, PROT_READ);
-  assert(-1 != ret);
-#endif
+/* different op classes */
+enum {
+  NOOP,
+  FREE,
+  ALLOC,
+  NUM_CLASS_OP
+};
 
-#if defined(USE_GHOST)
-  tmp_addr = mremap(tmp_addr, size, size, MREMAP_MAYMOVE|MREMAP_FIXED, addr);
-  assert(MAP_FAILED != tmp_addr);
-#endif
-}
 
-static inline void
-_write(void const * const addr, size_t size)
-{
-  int fd;
-  ssize_t ret;
-  char const * buf;
+/* different allocation classes */
+enum {
+  BRICK_ALLOC,
+  CHUNK_ALLOC,
+  SOLO_ALLOC,
+  NUM_CLASS_ALLOC
+};
 
-  fd = open(TMPFILE, O_WRONLY);
-  assert(-1 != fd);
 
-  buf = (char const*)addr;
-  do {
-    ret = write(fd, buf, size);
-    assert(-1 != ret);
-
-    buf  += ret;
-    size -= ret;
-  } while (size > 0);
-
-  ret = close(fd);
-  assert(-1 != ret);
-}
-
-static inline void
-_segvhandler(int const sig, siginfo_t * const si, void * const ctx)
-{
-  int type;
-  ssize_t ret;
-  uintptr_t addr;
-  size_t ip;
-
-  assert(SIGSEGV == sig);
-
-  ip   = ((uintptr_t)si->si_addr-base)/page;
-  addr = base+ip*page;
-
-#if !defined(USE_CTX)
-  type = (SYNC != (pflags[ip]&SYNC)) ? SYNC : DIRTY;
-#else
-  type = (0x2 == (((ucontext_t*)ctx)->uc_mcontext.gregs[REG_ERR]&0x2)) ? DIRTY : SYNC;
-#endif
-
-  if (SYNC == type) {
-    assert(SYNC != (pflags[ip]&SYNC));
-    assert(DIRTY != (pflags[ip]&DIRTY));
-
-#if defined(USE_LOAD)
-    if (ONDISK == (pflags[ip]&ONDISK)) {
-# if defined(USE_LAZY)
-      _read((void*)addr, ip*page, page);
-# else
-      _read((void*)base, 0, NUM_MEM);
-# endif
-    }
-    else {
-#endif
-#if defined(USE_LAZY)
-      ret = mprotect((void*)addr, page, PROT_READ);
-      assert(0 == ret);
-      pflags[ip] = SYNC;
-#else
-      ret = mprotect((void*)addr, NUM_MEM, PROT_READ);
-      assert(0 == ret);
-      memset(pflags, SYNC, NUM_MEM/page);
-#endif
-#if defined(USE_LOAD)
-    }
-#endif
-  }
-  else {
-#if !defined(USE_CTX)
-    assert(SYNC == (pflags[ip]&SYNC));
-#endif
-    ret = mprotect((void*)addr, page, PROT_READ|PROT_WRITE);
-    assert(0 == ret);
-    pflags[ip] = DIRTY;
-  }
-
-  faults++;
-
-#if !defined(USE_CTX)
-  if (NULL == ctx) {} /* supress unused warning */
-#endif
-}
-
-static inline void
-_init(void)
+int main(void)
 {
   int ret;
-  struct sigaction act;
-  struct sigaction oldact;
+  size_t i, j, k, l, m, cur_mem=0;;
+  size_t n_alloc=0, n_free=0, n_memset=0, b_alloc=0, b_free=0, b_memset=0;
+  size_t b_brick_alloc=0, b_chunk_alloc=0, b_solo_alloc=0;
+  size_t b_brick_free=0, b_chunk_free=0, b_solo_free=0;
+  size_t b_brick_memset=0, b_chunk_memset=0, b_solo_memset=0;
+  size_t n_brick_alloc=0, n_chunk_alloc=0, n_solo_alloc=0;
+  size_t n_brick_free=0, n_chunk_free=0, n_solo_free=0;
+  size_t n_brick_memset=0, n_chunk_memset=0, n_solo_memset=0;
+  unsigned long t_total=0, seed, _t;
+  unsigned long t_alloc=0, t_free=0, t_new_memset=0, t_init_memset=0;
+  unsigned long t_brick_alloc=0,  t_chunk_alloc=0,  t_solo_alloc=0;
+  unsigned long t_brick_free=0,   t_chunk_free=0,   t_solo_free=0;
+  unsigned long t_new_brick_memset=0, t_new_chunk_memset=0, t_new_solo_memset=0;
+  unsigned long t_init_brick_memset=0, t_init_chunk_memset=0, t_init_solo_memset=0;
+  struct _timespec ts, te, _ts, _te;
+  char * op, * buf;
+  size_t * oprnd;
+  void ** alloc;
 
-  act.sa_flags     = SA_SIGINFO;
-  act.sa_sigaction = _segvhandler;
+  size_t NUM_OPS                = 1<<15;
+  size_t const BRICK_ALLOC_SIZE = KL_brick_max_size();
+  size_t const CHUNK_ALLOC_SIZE = KL_chunk_max_size();
+  size_t const SOLO_ALLOC_SIZE  = 1lu<<24;              /* 16MB */
+  size_t const MAX_MEM          = 1lu<<32;              /* 4GiB */
 
-  ret = sigemptyset(&(act.sa_mask));
-  assert(0 == ret);
-  ret = sigaction(SIGSEGV, &act, &oldact);
-  assert(0 == ret);
-}
+#ifndef USE_LIBC
+  ret = SBMA_init(DEFAULT_WDIR, DEFAULT_UNIQ, DEFAULT_PSIZ, DEFAULT_PROC,
+    DEFAULT_RMEM, DEFAULT_OPTS);
+  assert(-1 != ret);
+#endif
 
-static inline void
-_parse(int argc, char * argv[])
-{
-  int i;
+  seed = SEED;
+  srand(seed);
+  fprintf(stderr, "===============================\n");
+  fprintf(stderr, "General =======================\n");
+  fprintf(stderr, "===============================\n");
+  fprintf(stderr, "Seed              = %11lu\n", seed);
 
-  for (i=1; i<argc; ++i) {
-    if (0 == strncmp("--mem=", argv[i], 6)) {
-      NUM_MEM = atol(argv[i]+6);
+  op = (char *) PFX(malloc)(NUM_OPS*sizeof(char));
+  assert(NULL != op);
+  oprnd = (size_t *) PFX(malloc)(NUM_OPS*sizeof(size_t));
+  assert(NULL != oprnd);
+  alloc = (void **) PFX(malloc)(NUM_OPS*sizeof(void *));
+  assert(NULL != alloc);
+  buf = (char *) PFX(malloc)(SOLO_ALLOC_SIZE*sizeof(char));
+  assert(NULL != buf);
+  memset(buf, 1, SOLO_ALLOC_SIZE);
+
+  for (i=0; i<NUM_OPS; ++i) {
+    op[i] = NOOP;
+
+    if ((j=rand()%100) < PER_FREE) {
+      k = rand()%(i+1);
+      m = i;
+      for (l=k; l<i; ++l) {
+        if ((void*)1 == alloc[l]) {
+          m = l;
+          break;
+        }
+      }
+      if (i == m) {
+        for (l=0; l<k; ++l) {
+          if ((void*)1 == alloc[l]) {
+            m = l;
+            break;
+          }
+        }
+      }
+
+      if (i != m) {
+        op[i]    = FREE;
+        oprnd[i] = m;
+        alloc[i] = (void*)0;  /* set my alloc as invaild.    */
+        alloc[m] = (void*)0;  /* set oprnd alloc as invalid. */
+
+        cur_mem -= oprnd[m];
+      }
     }
-    else if (0 == strncmp("--sys=", argv[i], 6)) {
-      NUM_SYS = atol(argv[i]+6);
+
+    if (NOOP == op[i])  {
+      switch (rand()%NUM_CLASS_ALLOC) {
+        case BRICK_ALLOC:
+          j = rand()%BRICK_ALLOC_SIZE;
+          break;
+
+        case CHUNK_ALLOC:
+          j = rand()%CHUNK_ALLOC_SIZE;
+          break;
+
+        case SOLO_ALLOC:
+          j = rand()%SOLO_ALLOC_SIZE;
+          break;
+      }
+
+      if (cur_mem+j+1 <= MAX_MEM) {
+        op[i]    = ALLOC;
+        oprnd[i] = ++j;
+        alloc[i] = (void*)1;
+
+        cur_mem += oprnd[i];
+      }
+      else {
+        break;
+      }
     }
-    else if (0 == strncmp("--file=", argv[i], 7)) {
-      TMPFILE = argv[i]+7;
+  }
+  NUM_OPS = i;
+
+  _gettime(&ts);
+  for (i=0; i<NUM_OPS; ++i) {
+    switch (op[i]) {
+      case FREE:
+        _gettime(&_ts);
+        PFX(free)(alloc[oprnd[i]]);
+        alloc[oprnd[i]] = NULL;
+        _gettime(&_te);
+        _t = _getelapsed(&_ts, &_te);
+
+        if (oprnd[oprnd[i]] <= BRICK_ALLOC_SIZE) {
+          t_brick_free += _t;
+          b_brick_free += oprnd[oprnd[i]];
+          n_brick_free++;
+        }
+        else if (oprnd[oprnd[i]] <= CHUNK_ALLOC_SIZE) {
+          t_chunk_free += _t;
+          b_chunk_free += oprnd[oprnd[i]];
+          n_chunk_free++;
+        }
+        else {
+          t_solo_free += _t;
+          b_solo_free += oprnd[oprnd[i]];
+          n_solo_free++;
+        }
+        break;
+
+      case ALLOC:
+        _gettime(&_ts);
+        alloc[i] = PFX(malloc)(oprnd[i]);
+        assert(NULL != alloc[i]);
+        _gettime(&_te);
+        _t = _getelapsed(&_ts, &_te);
+
+        if (oprnd[i] <= BRICK_ALLOC_SIZE) {
+          t_brick_alloc += _t;
+          b_brick_alloc += oprnd[i];
+          n_brick_alloc++;
+        }
+        else if (oprnd[i] <= CHUNK_ALLOC_SIZE) {
+          t_chunk_alloc += _t;
+          b_chunk_alloc += oprnd[i];
+          n_chunk_alloc++;
+        }
+        else {
+          t_solo_alloc += _t;
+          b_solo_alloc += oprnd[i];
+          n_solo_alloc++;
+        }
+        break;
     }
   }
-}
-
-int main(int argc, char * argv[])
-{
-#if defined(USE_LOAD)
-  int fd;
-#endif
-  size_t i, j, ii, jj, kk, elem;
-  ssize_t ret;
-  unsigned long t_rd, t_wr, t_rw;
-  struct timespec ts, te;
-  DATATYPE tmp;
-  DATATYPE * addr;
-  DATATYPE * rnum;
-
-  _parse(argc, argv);
-
-  fprintf(stderr, "==========================\n");
-  fprintf(stderr, "General ==================\n");
-  fprintf(stderr, "==========================\n");
-  fprintf(stderr, "  Version      = %9s\n", STR(VERSION));
-  fprintf(stderr, "  Build date   = %9s\n", STR(DATE));
-  fprintf(stderr, "  Git commit   = %9s\n", STR(COMMIT));
-#if defined(USE_LIBC)
-  fprintf(stderr, "  Library      =      libc\n");
-#else
-  fprintf(stderr, "  Library      =      sbma\n");
-#endif
-  fprintf(stderr, "  Datatype     = %9s\n", STR(DATATYPE));
-  fprintf(stderr, "  MiB I/O      = %9.0f\n", NUM_MEM/1000000.0);
-  fprintf(stderr, "  SysPages I/O = %9lu\n", NUM_MEM/sysconf(_SC_PAGESIZE));
-  fprintf(stderr, "  SysPage mult = %9lu\n", NUM_SYS);
-  fprintf(stderr, "  Options      = ");
-#if defined(USE_LOAD)
-  fprintf(stderr, "load,");
-#endif
-#if defined(USE_LAZY)
-  fprintf(stderr, "lazy,");
-#endif
-#if defined(USE_GHOST)
-  fprintf(stderr, "ghost,");
-#endif
-#if defined(USE_CTX)
-  fprintf(stderr, "context,");
-#endif
-  fprintf(stderr, "\n");
-#if defined(USE_LOAD)
-  fprintf(stderr, "  Temp file    = %s\n", TMPFILE);
-#endif
-  fprintf(stderr, "\n");
-
-  elem = NUM_MEM/sizeof(DATATYPE);
-  page = sysconf(_SC_PAGESIZE)*NUM_SYS;
-  assert(0 == (NUM_MEM&(page-1)));
-
-  /* ===== Acquire resources ===== */
-{
-#if defined(USE_LIBC)
-  addr = mmap(NULL, NUM_MEM, PROT_READ|PROT_WRITE,
-    MAP_PRIVATE|MAP_ANONYMOUS|MAP_NORESERVE, -1, 0);
-  assert(MAP_FAILED != addr);
-#else
-  _init();
-
-  addr = mmap(NULL, NUM_MEM, PROT_NONE,
-    MAP_PRIVATE|MAP_ANONYMOUS|MAP_NORESERVE, -1, 0);
-  assert(MAP_FAILED != addr);
-
-  pflags = mmap(NULL, NUM_MEM/page, PROT_READ|PROT_WRITE,
-    MAP_PRIVATE|MAP_ANONYMOUS|MAP_NORESERVE, -1, 0);
-  assert(MAP_FAILED != pflags);
-#endif
-
-  base = (uintptr_t)addr;
-  assert(0 == (NUM_MEM&(page-1)));
-
-  rnum = mmap(NULL, NUM_MEM, PROT_READ|PROT_WRITE,
-    MAP_PRIVATE|MAP_ANONYMOUS|MAP_NORESERVE, -1, 0);
-  assert(MAP_FAILED != rnum);
-}
-
-  /* ===== Generate random array ===== */
-{
-  for (i=0; i<elem; ++i)
-    rnum[i] = i;
-  for (i=0; i<elem-1; ++i) {
-    j = rand()%((elem-1)-i)+i;
-    tmp = rnum[j];
-    rnum[j] = rnum[i];
-    rnum[i] = tmp;
-  }
-}
-
-  _cacheflush();
-
-  /* ===== Popoulate array ===== */
-{
-  _gettime(&ts);
-#if defined(USE_RAND)
-    ii = rnum[0];
-#else
-    ii = 0;
-#endif
-  addr[ii] = rnum[ii];
-  for (i=1; i<elem; ++i) {
-#if defined(USE_RAND)
-    ii = rnum[i];
-    jj = rnum[i-1];
-#else
-    ii = i;
-    jj = i-1;
-#endif
-    addr[ii] = addr[jj]+rnum[ii];
-  }
-  _membarrier();
   _gettime(&te);
-  t_wr = _getelapsed(&ts, &te);
-
-#if defined(USE_RAND)
-    ii = rnum[0];
-#else
-    ii = 0;
-#endif
-  assert(rnum[ii] == addr[ii]);
-  for (i=1; i<elem; ++i) {
-#if defined(USE_RAND)
-    ii = rnum[i];
-    jj = rnum[i-1];
-#else
-    ii = i;
-    jj = i-1;
-#endif
-    assert(addr[jj]+rnum[ii] == addr[ii]);
-  }
-
-#if !defined(USE_LIBC)
-  memset(pflags, 0, NUM_MEM/page);
-  ret = mprotect(addr, NUM_MEM, PROT_NONE);
-  assert(0 == ret);
-  faults = 0;
-#endif
+  t_total += _getelapsed(&ts, &te);
 
   _cacheflush();
-}
 
-  /* ----- WRITE (new) ----- */
-#if defined(USE_WR)
-{
-  fprintf(stderr, "==========================\n");
-  fprintf(stderr, "Write (new) ==============\n");
-  fprintf(stderr, "==========================\n");
-  fprintf(stderr, "  MiB/s        = %9.0f\n", NUM_MEM/(t_wr/1000000.0));
-  fprintf(stderr, "  SysPages/s   = %9.0f\n",
-    NUM_MEM/sysconf(_SC_PAGESIZE)/(t_wr/1000000.0));
-#if !defined(USE_LIBC)
-  fprintf(stderr, "  # SIGSEGV    = %9zu\n", faults);
-#endif
-  fprintf(stderr, "\n");
-}
-#endif
+  /* Memset new buffers */
+  for (i=0; i<NUM_OPS; ++i) {
+    if (NULL != alloc[i]) {
+      if (oprnd[i] <= BRICK_ALLOC_SIZE) {
+        b_brick_memset += oprnd[i];
+        n_brick_memset++;
 
-  /* ----- WRITE (init) ----- */
-#if defined(USE_WR)
-{
+        b_brick_free += oprnd[i];
+        n_brick_free++;
+      }
+      else if (oprnd[i] <= CHUNK_ALLOC_SIZE) {
+        b_chunk_memset += oprnd[i];
+        n_chunk_memset++;
+
+        b_chunk_free += oprnd[i];
+        n_chunk_free++;
+      }
+      else {
+        b_solo_memset += oprnd[i];
+        n_solo_memset++;
+
+        b_solo_free += oprnd[i];
+        n_solo_free++;
+      }
+    }
+  }
   _gettime(&ts);
-#if defined(USE_RAND)
-    ii = rnum[0];
-#else
-    ii = 0;
-#endif
-  addr[ii] = rnum[ii];
-  for (i=1; i<elem; ++i) {
-#if defined(USE_RAND)
-    ii = rnum[i];
-    jj = rnum[i-1];
-#else
-    ii = i;
-    jj = i-1;
-#endif
-    addr[ii] = addr[jj]+rnum[ii];
+  _gettime(&_ts);
+  for (i=0; i<NUM_OPS; ++i) {
+    if (NULL != alloc[i] && oprnd[i] <= BRICK_ALLOC_SIZE)
+      memset(alloc[i], 1, oprnd[i]);
   }
-  _membarrier();
+  _gettime(&_te);
+  t_new_brick_memset = _getelapsed(&_ts, &_te);
+
+  _cacheflush();
+
+  _gettime(&_ts);
+  for (i=0; i<NUM_OPS; ++i) {
+    if (NULL != alloc[i] && oprnd[i] > BRICK_ALLOC_SIZE &&
+      oprnd[i] <= CHUNK_ALLOC_SIZE)
+      memset(alloc[i], 1, oprnd[i]);
+  }
+  _gettime(&_te);
+  t_new_chunk_memset = _getelapsed(&_ts, &_te);
+
+  _cacheflush();
+
+  _gettime(&_ts);
+  for (i=0; i<NUM_OPS; ++i) {
+    if (NULL != alloc[i] && oprnd[i] > BRICK_ALLOC_SIZE &&
+      oprnd[i] > CHUNK_ALLOC_SIZE)
+      memset(alloc[i], 1, oprnd[i]);
+  }
+  _gettime(&_te);
+  t_new_solo_memset = _getelapsed(&_ts, &_te);
   _gettime(&te);
-  t_wr = _getelapsed(&ts, &te);
-
-#if defined(USE_RAND)
-    ii = rnum[0];
-#else
-    ii = 0;
-#endif
-  assert(rnum[ii] == addr[ii]);
-  for (i=1; i<elem; ++i) {
-#if defined(USE_RAND)
-    ii = rnum[i];
-    jj = rnum[i-1];
-#else
-    ii = i;
-    jj = i-1;
-#endif
-    assert(addr[jj]+rnum[ii] == addr[ii]);
+  t_total += _getelapsed(&ts, &te);
+  for (i=0; i<NUM_OPS; ++i) {
+    if (NULL != alloc[i])
+      assert(0 == memcmp(buf, alloc[i], oprnd[i]));
   }
 
-  fprintf(stderr, "==========================\n");
-  fprintf(stderr, "Write (init) =============\n");
-  fprintf(stderr, "==========================\n");
-  fprintf(stderr, "  MiB/s        = %9.0f\n", NUM_MEM/(t_wr/1000000.0));
-  fprintf(stderr, "  SysPages/s   = %9.0f\n",
-    NUM_MEM/sysconf(_SC_PAGESIZE)/(t_wr/1000000.0));
-#if !defined(USE_LIBC)
-  fprintf(stderr, "  # SIGSEGV    = %9zu\n", faults);
-#endif
-  fprintf(stderr, "\n");
-
-#if !defined(USE_LIBC)
-# if !defined(USE_LOAD)
-  memset(pflags, 0, NUM_MEM/page);
-# endif
-  faults = 0;
+#ifndef USE_LIBC
+  SBMA_mclearall();
 #endif
 
+  memset(buf, 2, SOLO_ALLOC_SIZE);
   _cacheflush();
-}
-#endif
 
-  /* ===== File setup ===== */
-#if defined(USE_LOAD)
-{
-  fd = open(TMPFILE, O_RDWR|O_CREAT|O_EXCL, S_IRUSR|S_IWUSR);
-  assert(-1 != fd);
-
-  _write(addr, NUM_MEM);
-
-  memset(addr, 0, NUM_MEM);
-
-# if !defined(USE_LIBC)
-  memset(pflags, ONDISK, NUM_MEM/page);
-# endif
-
-  _cacheflush();
-}
-#endif
-#if !defined(USE_LIBC)
-{
-  ret = mprotect(addr, NUM_MEM, PROT_NONE);
-  assert(0 == ret);
-
-  _cacheflush();
-}
-#endif
-
-  /* ----- READ ----- */
-#if defined(USE_RD)
-{
-#if defined(USE_LOAD)
-# if !defined(USE_LIBC)
-  ret = madvise((void*)base, NUM_MEM, MADV_DONTNEED);
-  assert(-1 != ret);
-# endif
-  ret = posix_fadvise(fd, 0, NUM_MEM, POSIX_FADV_DONTNEED);
-  assert(-1 != ret);
-#endif
-
+  /* Memset initialized buffers */
   _gettime(&ts);
-#if defined(USE_LIBC) && defined(USE_LOAD) && !defined(USE_LAZY)
-  _read(addr, 0, NUM_MEM);
-#endif
-#if defined(USE_RAND)
-  ii = rnum[0];
-#else
-  ii = 0;
-#endif
-#if defined(USE_LIBC) && defined(USE_LOAD) && defined(USE_LAZY)
-  if (0 == ((uintptr_t)(addr+ii)&(page-1)))
-    _read(addr+ii, ii*sizeof(DATATYPE), page);
-#endif
-  assert(rnum[ii] == addr[ii]);
-  for (i=1; i<elem; ++i) {
-#if defined(USE_RAND)
-    ii = rnum[i];
-    jj = rnum[i-1];
-#else
-    ii = i;
-    jj = i-1;
-#endif
-#if defined(USE_LIBC) && defined(USE_LOAD) && defined(USE_LAZY)
-    if (0 == ((uintptr_t)(addr+ii)&(page-1)))
-      _read(addr+ii, ii*sizeof(DATATYPE), page);
-#endif
-    assert(addr[jj]+rnum[ii] == addr[ii]);
+  _gettime(&_ts);
+  for (i=0; i<NUM_OPS; ++i) {
+    if (NULL != alloc[i] && oprnd[i] <= BRICK_ALLOC_SIZE)
+      memset(alloc[i], 2, oprnd[i]);
   }
-  _membarrier();
-  _gettime(&te);
-  t_rd = _getelapsed(&ts, &te);
-
-  fprintf(stderr, "==========================\n");
-  fprintf(stderr, "Read =====================\n");
-  fprintf(stderr, "==========================\n");
-  fprintf(stderr, "  MiB/s        = %9.0f\n", NUM_MEM/(t_rd/1000000.0));
-  fprintf(stderr, "  SysPages/s   = %9.0f\n",
-    NUM_MEM/sysconf(_SC_PAGESIZE)/(t_rd/1000000.0));
-#if !defined(USE_LIBC)
-  fprintf(stderr, "  # SIGSEGV    = %9zu\n", faults);
-#endif
-  fprintf(stderr, "\n");
-
-#if defined(USE_LOAD)
-# if !defined(USE_LIBC)
-  ret = mprotect(addr, NUM_MEM, PROT_WRITE);
-  assert(0 == ret);
-# endif
-  memset(addr, 0, NUM_MEM);
-#endif
-#if !defined(USE_LIBC)
-# if !defined(USE_LOAD)
-  memset(pflags, 0, NUM_MEM/page);
-# else
-  memset(pflags, ONDISK, NUM_MEM/page);
-# endif
-  ret = mprotect(addr, NUM_MEM, PROT_NONE);
-  assert(0 == ret);
-  faults = 0;
-#endif
+  _gettime(&_te);
+  t_init_brick_memset = _getelapsed(&_ts, &_te);
 
   _cacheflush();
-}
-#endif
 
-  /* ----- READ/WRITE ----- */
-#if defined(USE_RW)
-{
-#if defined(USE_LOAD)
-# if !defined(USE_LIBC)
-  ret = madvise((void*)base, NUM_MEM, MADV_DONTNEED);
-  assert(-1 != ret);
-# endif
-  ret = posix_fadvise(fd, 0, NUM_MEM, POSIX_FADV_DONTNEED);
-  assert(-1 != ret);
-#endif
-
-  _gettime(&ts);
-#if defined(USE_LIBC) && defined(USE_LOAD) && !defined(USE_LAZY)
-  _read(addr, 0, NUM_MEM);
-#endif
-#if defined(USE_RAND)
-  ii = rnum[0];
-#else
-  ii = 0;
-#endif
-#if defined(USE_LIBC) && defined(USE_LOAD) && defined(USE_LAZY)
-  if (0 == ((uintptr_t)(addr+ii)&(page-1)))
-    _read(addr+ii, ii*sizeof(DATATYPE), page);
-#endif
-  addr[ii] += rnum[ii];
-  for (i=1; i<elem; ++i) {
-#if defined(USE_RAND)
-    ii = rnum[i];
-    jj = rnum[i-1];
-#else
-    ii = i;
-    jj = i-1;
-#endif
-#if defined(USE_LIBC) && defined(USE_LOAD) && defined(USE_LAZY)
-    if (0 == ((uintptr_t)(addr+ii)&(page-1)))
-      _read(addr+ii, ii*sizeof(DATATYPE), page);
-#endif
-    addr[ii] += addr[jj]+rnum[ii];
+  _gettime(&_ts);
+  for (i=0; i<NUM_OPS; ++i) {
+    if (NULL != alloc[i] && oprnd[i] > BRICK_ALLOC_SIZE &&
+      oprnd[i] <= CHUNK_ALLOC_SIZE)
+      memset(alloc[i], 2, oprnd[i]);
   }
-  _membarrier();
+  _gettime(&_te);
+  t_init_chunk_memset = _getelapsed(&_ts, &_te);
+
+  _cacheflush();
+
+  _gettime(&_ts);
+  for (i=0; i<NUM_OPS; ++i) {
+    if (NULL != alloc[i] && oprnd[i] > BRICK_ALLOC_SIZE &&
+      oprnd[i] > CHUNK_ALLOC_SIZE)
+      memset(alloc[i], 2, oprnd[i]);
+  }
+  _gettime(&_te);
+  t_init_solo_memset = _getelapsed(&_ts, &_te);
   _gettime(&te);
-  t_rw = _getelapsed(&ts, &te);
-
-#if defined(USE_RAND)
-  ii = rnum[1];
-  jj = rnum[0];
-#else
-  ii = 1;
-  jj = 0;
-#endif
-  addr[ii] -= addr[jj]+rnum[ii];
-  addr[jj] -= rnum[jj];
-  assert(rnum[jj] == addr[jj]);
-  assert(addr[jj]+rnum[ii] == addr[ii]);
-  addr[jj] += rnum[jj];
-  addr[ii] += addr[jj]+rnum[ii];
-  for (i=2; i<elem; ++i) {
-#if defined(USE_RAND)
-    ii = rnum[i];
-    jj = rnum[i-1];
-    kk = rnum[i-2];
-#else
-    ii = i;
-    jj = i-1;
-    kk = i-2;
-#endif
-    addr[ii] -= addr[jj]+rnum[ii];
-    addr[jj] -= addr[kk]+rnum[jj];
-    assert(addr[jj]+rnum[ii] == addr[ii]);
-    addr[jj] += addr[kk]+rnum[jj];
-    addr[ii] += addr[jj]+rnum[ii];
+  t_total += _getelapsed(&ts, &te);
+  for (i=0; i<NUM_OPS; ++i) {
+    if (NULL != alloc[i])
+      assert(0 == memcmp(buf, alloc[i], oprnd[i]));
   }
 
-  fprintf(stderr, "==========================\n");
-  fprintf(stderr, "Read/Write ===============\n");
-  fprintf(stderr, "==========================\n");
-  fprintf(stderr, "  MiB/s        = %9.0f\n", NUM_MEM/(t_rw/1000000.0));
-  fprintf(stderr, "  SysPages/s   = %9.0f\n",
-    NUM_MEM/sysconf(_SC_PAGESIZE)/(t_rw/1000000.0));
-#if !defined(USE_LIBC)
-  fprintf(stderr, "  # SIGSEGV    = %9zu\n", faults);
-#endif
-}
+  /* Free remaining allocs */
+  _gettime(&ts);
+  _gettime(&_ts);
+  for (i=0; i<NUM_OPS; ++i) {
+    if (NULL != alloc[i] && oprnd[i] <= BRICK_ALLOC_SIZE) {
+      PFX(free)(alloc[i]);
+      alloc[i] = NULL;
+    }
+  }
+  _gettime(&_te);
+  t_brick_free = _getelapsed(&_ts, &_te);
+
+  _cacheflush();
+
+  _gettime(&_ts);
+  for (i=0; i<NUM_OPS; ++i) {
+    if (NULL != alloc[i] && oprnd[i] > BRICK_ALLOC_SIZE &&
+      oprnd[i] <= CHUNK_ALLOC_SIZE)
+    {
+      PFX(free)(alloc[i]);
+      alloc[i] = NULL;
+    }
+  }
+  _gettime(&_te);
+  t_chunk_free = _getelapsed(&_ts, &_te);
+
+  _cacheflush();
+
+  _gettime(&_ts);
+  for (i=0; i<NUM_OPS; ++i) {
+    if (NULL != alloc[i] && oprnd[i] > BRICK_ALLOC_SIZE &&
+      oprnd[i] > CHUNK_ALLOC_SIZE)
+    {
+      PFX(free)(alloc[i]);
+      alloc[i] = NULL;
+    }
+  }
+  _gettime(&_te);
+  t_solo_free = _getelapsed(&_ts, &_te);
+  _gettime(&te);
+  t_total += _getelapsed(&ts, &te);
+
+  PFX(free)(op);
+  PFX(free)(oprnd);
+  PFX(free)(alloc);
+  PFX(free)(buf);
+
+#ifndef USE_LIBC
+  ret = SBMA_destroy();
+  assert(-1 != ret);
 #endif
 
-  /* ===== Release resources ===== */
-{
-  ret = munmap(addr, NUM_MEM);
-  assert(0 == ret);
-  ret = munmap(rnum, NUM_MEM);
-  assert(0 == ret);
-#if !defined(USE_LIBC)
-  ret = munmap(pflags, NUM_MEM/page);
-  assert(0 == ret);
-#endif
-#if defined(USE_LOAD)
-  ret = close(fd);
-  assert(-1 != ret);
-  ret = unlink(TMPFILE);
-  assert(-1 != ret);
-#endif
-}
+  /* Output */
+  t_alloc       = t_brick_alloc+t_chunk_alloc+t_solo_alloc;
+  t_free        = t_brick_free+t_chunk_free+t_solo_free;
+  t_new_memset  = t_new_brick_memset+t_new_chunk_memset+t_new_solo_memset;
+  t_init_memset = t_init_brick_memset+t_init_chunk_memset+t_init_solo_memset;
+
+  b_alloc  = b_brick_alloc+b_chunk_alloc+b_solo_alloc;
+  b_free   = b_brick_free+b_chunk_free+b_solo_free;
+  b_memset = b_brick_memset+b_chunk_memset+b_solo_memset;
+  n_alloc  = n_brick_alloc+n_chunk_alloc+n_solo_alloc;
+  n_free   = n_brick_free+n_chunk_free+n_solo_free;
+  n_memset = n_brick_memset+n_chunk_memset+n_solo_memset;
+
+  fprintf(stderr, "Num ops           = %11zu\n", NUM_OPS);
+  fprintf(stderr, "Total time        = %11lu ns\n", t_total);
+  fprintf(stderr, "Overhead time     = %11lu ns\n",
+    t_total-t_alloc-t_free-t_new_memset-t_init_memset);
+  fprintf(stderr, "\n");
+  fprintf(stderr, "===============================\n");
+  fprintf(stderr, "Malloc ========================\n");
+  fprintf(stderr, "===============================\n");
+  fprintf(stderr, "  Malloc time     = %11lu ns\n", t_alloc);
+  fprintf(stderr, "  Malloc ops      = %11zu\n", n_alloc);
+  fprintf(stderr, "  Malloc ns/KiB   = %11lu\n", t_alloc/(b_alloc/1024));
+  fprintf(stderr, "    brick ns/KiB  = %11lu\n",
+    t_brick_alloc/(b_brick_alloc/1024));
+  fprintf(stderr, "    chunk ns/KiB  = %11lu\n",
+    t_chunk_alloc/(b_chunk_alloc/1024));
+  fprintf(stderr, "    solo ns/KiB   = %11lu\n",
+    t_solo_alloc/(b_solo_alloc/1024));
+  fprintf(stderr, "\n");
+  fprintf(stderr, "===============================\n");
+  fprintf(stderr, "Free ==========================\n");
+  fprintf(stderr, "===============================\n");
+  fprintf(stderr, "  Free time       = %11lu ns\n", t_free);
+  fprintf(stderr, "  Free ops        = %11zu\n", n_free);
+  fprintf(stderr, "  Free ns/KiB     = %11lu\n", t_free/(b_free/1024));
+  fprintf(stderr, "    brick ns/KiB  = %11lu\n",
+    t_brick_free/(b_brick_free/1024));
+  fprintf(stderr, "    chunk ns/KiB  = %11lu\n",
+    t_chunk_free/(b_chunk_free/1024));
+  fprintf(stderr, "    solo ns/KiB   = %11lu\n",
+    t_solo_free/(b_solo_free/1024));
+  fprintf(stderr, "\n");
+  fprintf(stderr, "===============================\n");
+  fprintf(stderr, "Memset ========================\n");
+  fprintf(stderr, "===============================\n");
+  fprintf(stderr, "  -----------------------------\n");
+  fprintf(stderr, "  New -------------------------\n");
+  fprintf(stderr, "  -----------------------------\n");
+  fprintf(stderr, "  Memset time     = %11lu ns\n", t_new_memset);
+  fprintf(stderr, "  Memset ops      = %11zu\n", n_memset);
+  fprintf(stderr, "  Memset ns/KiB   = %11lu\n", t_new_memset/(b_memset/1024));
+  fprintf(stderr, "    brick ns/KiB  = %11lu\n",
+    t_new_brick_memset/(b_brick_memset/1024));
+  fprintf(stderr, "    chunk ns/KiB  = %11lu\n",
+    t_new_chunk_memset/(b_chunk_memset/1024));
+  fprintf(stderr, "    solo ns/KiB   = %11lu\n",
+    t_new_solo_memset/(b_solo_memset/1024));
+  fprintf(stderr, "  -----------------------------\n");
+  fprintf(stderr, "  Init ------------------------\n");
+  fprintf(stderr, "  -----------------------------\n");
+  fprintf(stderr, "  Memset time     = %11lu ns\n", t_init_memset);
+  fprintf(stderr, "  Memset ops      = %11zu\n", n_memset);
+  fprintf(stderr, "  Memset ns/KiB   = %11lu\n", t_init_memset/(b_memset/1024));
+  fprintf(stderr, "    brick ns/KiB  = %11lu\n",
+    t_init_brick_memset/(b_brick_memset/1024));
+  fprintf(stderr, "    chunk ns/KiB  = %11lu\n",
+    t_init_chunk_memset/(b_chunk_memset/1024));
+  fprintf(stderr, "    solo ns/KiB   = %11lu\n",
+    t_init_solo_memset/(b_solo_memset/1024));
 
   return EXIT_SUCCESS;
 }
