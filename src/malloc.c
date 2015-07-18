@@ -38,7 +38,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <sys/stat.h>  /* S_IRUSR, S_IWUSR */
 #include <sys/types.h> /* truncate, ftruncate */
 #include <unistd.h>    /* truncate, ftruncate */
-#include "config.h"
+#include "common.h"
 #include "ipc.h"
 #include "lock.h"
 #include "mmu.h"

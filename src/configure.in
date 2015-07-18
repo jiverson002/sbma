@@ -18,7 +18,7 @@ add_library libsbma.a hooks.o ipc.o klmalloc.o lock.o malloc.o mcntrl.o \
   mextra.o mmu.o mstate.o vmm.o
 
 add_executable test/micro1 test/micro1.c
-add_dependencies test/micro1 klmalloc.h klconfig.h sbma.h
+add_dependencies test/micro1 sbma.h
 target_link_libraries test/micro1 libsbma.a -ldl -lrt -pthread
 
 install_libraries libsbma.a

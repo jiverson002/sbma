@@ -38,7 +38,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <string.h>   /* strncpy */
 #include <sys/mman.h> /* mmap, mremap, madvise, mprotect */
 #include <unistd.h>   /* sysconf */
-#include "config.h"
+#include "common.h"
 #include "ipc.h"
 #include "lock.h"
 #include "mmu.h"

@@ -35,7 +35,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <stddef.h>    /* NULL, size_t */
 #include <sys/types.h> /* ssize_t */
 #include <unistd.h>    /* syscall, _SC_PAGESIZE */
-#include "config.h"
+#include "common.h"
 #include "ipc.h"
 #include "lock.h"
 #include "mmu.h"

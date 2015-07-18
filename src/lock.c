@@ -40,7 +40,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 # include <sys/syscall.h> /* SYS_gettid */
 # include <time.h>        /* CLOCK_REALTIME, struct timespec, clock_gettime */
 # include <unistd.h>      /* syscall */
-# include "config.h"
+# include "common.h"
 # include "lock.h"
 
 # if defined(DEADLOCK) && DEADLOCK > 0

@@ -31,7 +31,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include <stdarg.h> /* stdarg library */
 #include <stddef.h> /* size_t */
-#include "config.h"
+#include "common.h"
 #include "lock.h"
 #include "vmm.h"
 

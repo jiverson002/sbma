@@ -50,7 +50,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <sys/stat.h>  /* stat, open */
 #include <sys/types.h> /* stat, open */
 #include <unistd.h>    /* ssize_t, stat */
-#include "config.h"
+#include "common.h"
 #include "ipc.h"
 #include "sbma.h"
 #include "vmm.h"

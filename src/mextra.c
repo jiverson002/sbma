@@ -31,7 +31,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include <malloc.h> /* struct mallinfo */
 #include <string.h> /* memset */
-#include "config.h"
+#include "common.h"
 #include "ipc.h"
 #include "lock.h"
 #include "sbma.h"

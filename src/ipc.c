@@ -39,8 +39,9 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <sys/mman.h>  /* mmap, mremap, munmap, madvise, mprotect */
 #include <sys/stat.h>  /* S_IRUSR, S_IWUSR */
 #include <sys/types.h> /* ftruncate */
+#include <time.h>      /* CLOCK_REALTIME, struct timespec, clock_gettime */
 #include <unistd.h>    /* ftruncate */
-#include "config.h"
+#include "common.h"
 #include "ipc.h"
 #include "sbma.h"
 #include "vmm.h"

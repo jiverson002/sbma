@@ -38,8 +38,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <stdlib.h>     /* abort, stderr */
 #include <string.h>     /* basename */
 #include <sys/types.h>  /* ssize_t */
-#include <time.h>       /* CLOCK_REALTIME, struct timespec, clock_gettime */
-#include <unistd.h>     /* alarm */
+#include <unistd.h>     /* getpid */
 
 
 /****************************************************************************/
@@ -47,7 +46,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 /****************************************************************************/
 /* If we're not using GNU C, omit __attribute__ */
 #ifndef __GNUC__
-#  define  __attribute__(x)
+# define  __attribute__(x)
 #endif
 
 #define SBMA_EXTERN extern
@@ -76,8 +75,9 @@ do {                                                                        \
 /****************************************************************************/
 /*! Process deadlock check functions. */
 /****************************************************************************/
-#define DEADLOCK_ALARM_TIME  10000
+//#define DEADLOCK_ALARM_TIME  10000
 #ifdef DEADLOCK_ALARM_TIME
+# include <time.h>    /* CLOCK_REALTIME, struct timespec, clock_gettime */
 # define DEADLOCK_ALARM_ON()\
 do {\
   /*printf("[%5d] %s:%d alarm on\n", (int)getpid(), basename(__FILE__),\
@@ -110,7 +110,6 @@ ssize_t libc_read(int const, void * const, size_t const);
 ssize_t libc_write(int const, void const * const, size_t const);
 int     libc_mlock(void const * const, size_t const);
 int     libc_msync(void * const, size_t const, int const);
-int     libc_nanosleep(struct timespec const * const, struct timespec * const);
 int     libc_sem_wait(sem_t * const);
 int     libc_sem_timedwait(sem_t * const, struct timespec const * const);
 
