@@ -31,7 +31,7 @@
 
 
 .POSIX:
-.SILENT: help maintainer-clean show
+.SILENT: help show
 
 
 #--------------------------------------------------------------------------
