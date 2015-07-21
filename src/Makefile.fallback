@@ -75,9 +75,9 @@ LDLIBS =
 #{{{1
 # Version information
 PROJECT = "SBMalloc"
-DATE = "Unknown"
-COMMIT = "Unknown"
-VERSION = "Unknown"
+DATE = "`date`"
+COMMIT = "`git rev-parse --short HEAD`"
+VERSION = "`grep -e '^\#define SBMA_MAJOR' -e '^\#define SBMA_MINOR' -e '^\#define SBMA_PATCH' -e '^\#define SBMA_RCAND' sbma.h | awk '{print $$3}' | paste -d ' ' - - - - | awk '{printf \"%d.%d.%d%s\", $$1,$$2,$$3,$$4}'`"
 
 AUTOFLAGS = \
  -O0 -g -Wall -Wextra -pedantic\
