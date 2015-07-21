@@ -683,37 +683,43 @@ __ipc_madmit(struct ipc * const __ipc, size_t const __value)
       dlctr += (IPC_CMD_BLOCKED == (flags[i]&IPC_CMD_ELIGIBLE));
       dlctr += (IPC_MEM_BLOCKED == (flags[i]&IPC_MEM_ELIGIBLE));
 
-      if (i == id)
+      if (i == id || 0 == pmem[i])
         continue;
 
-#if 1
       /* If the process is blocked on a function call, then choose it as a
        * candidate if it has the most resident memory so far. */
-      if (IPC_CMD_ELIGIBLE == (flags[i]&IPC_CMD_ELIGIBLE)) {
-        if (pmem[i] > mxmem) {
-          ii = i;
-          mxmem = pmem[i];
-        }
-      }
       /* If the process is blocked trying to admit memory, then choose it only
        * if has the most resident memory so far AND my resident memory is
        * larger than its resident memory. */
-      else if (IPC_MEM_ELIGIBLE == (flags[i]&IPC_MEM_ELIGIBLE)) {
-        if (pmem[i] > mxmem && pmem[id] >= pmem[i]) {
-          ii = i;
-          mxmem = pmem[i];
-        }
-      }
-#else
-      if (IPC_CMD_ELIGIBLE == (flags[i]&IPC_CMD_ELIGIBLE) ||\
-        IPC_MEM_ELIGIBLE == (flags[i]&IPC_MEM_ELIGIBLE))
+      if ((IPC_CMD_ELIGIBLE == (flags[i]&IPC_CMD_ELIGIBLE)) ||\
+         ((IPC_MEM_ELIGIBLE == (flags[i]&IPC_MEM_ELIGIBLE)) &&\
+          (pmem[id] >= pmem[i])))
       {
+#if 1
+        if (mxmem < __value-smem) {
+# if 0
+          if (0 == mxmem || pmem[i] < mxmem || pmem[i] >= __value-smem)
+# else
+          if (pmem[i] > mxmem)
+# endif
+          {
+            ii = i;
+            mxmem = pmem[i];
+          }
+        }
+        else {
+          if (pmem[i] >= __value-smem && pmem[i] < mxmem) {
+            ii = i;
+            mxmem = pmem[i];
+          }
+        }
+#else
         if (pmem[i] > mxmem) {
           ii = i;
           mxmem = pmem[i];
         }
-      }
 #endif
+      }
     }
 
     /* no such process exists, break loop */
@@ -753,7 +759,6 @@ __ipc_madmit(struct ipc * const __ipc, size_t const __value)
     if (-1 == ret)
       goto ERREXIT;
 
-    ASSERT(0 == __ipc_is_eligible(__ipc));
     errno = EAGAIN;
     goto ERREXIT;
   }
@@ -794,6 +799,7 @@ __ipc_madmit(struct ipc * const __ipc, size_t const __value)
   ret = sem_post(__ipc->mtx);
   ASSERT(-1 != ret);
   ERREXIT:
+  ASSERT(0 == __ipc_is_eligible(__ipc));
   return -1;
 }
 SBMA_EXPORT(internal, int
