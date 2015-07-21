@@ -426,6 +426,8 @@ __ipc_destroy(struct ipc * const __ipc));
 SBMA_EXTERN int
 __ipc_release(struct ipc * const __ipc)
 {
+#if SBMA_WAIT_ALGO == 0 || SBMA_WAIT_ALGO == 1 || SBMA_WAIT_ALGO == 3 ||\
+    SBMA_WAIT_ALGO == 4
   int ret, sval;
 
   if (0 == __ipc->init)
@@ -456,6 +458,9 @@ __ipc_release(struct ipc * const __ipc)
   ASSERT(-1 != ret);
   ERREXIT:
   return -1;
+#else
+  return 0;
+#endif
 }
 SBMA_EXPORT(internal, int
 __ipc_release(struct ipc * const __ipc));
