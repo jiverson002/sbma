@@ -82,12 +82,13 @@ struct ipc
   sem_t * trn1;     /*!< ... */
   sem_t * trn2;     /*!< ... */
   sem_t * trn3;     /*!< ... */
+  sem_t * cnt;      /*!< ... */
 
-  void * shm;               /*!< shared memory region */
-  int * pid;                /*!< pointer into shm for pid array */
-  volatile size_t * smem;   /*!< pointer into shm for smem scalar */
-  volatile size_t * pmem;   /*!< pointer into shm for pmem array */
-  volatile uint8_t * flags; /*!< pointer into shm for flags array */
+  void * shm;                 /*!< shared memory region */
+  int * pid;                  /*!< pointer into shm for pid array */
+  volatile size_t  * smem;    /*!< pointer into shm for smem scalar */
+  volatile size_t  * pmem;    /*!< pointer into shm for pmem array */
+  volatile uint8_t * flags;   /*!< pointer into shm for flags array */
 };
 
 
@@ -108,6 +109,13 @@ __ipc_init(struct ipc * const __ipc, int const __uniq, int const __n_procs,
 /****************************************************************************/
 int
 __ipc_destroy(struct ipc * const __ipc);
+
+
+/****************************************************************************/
+/*! Release a process if any are waiting. */
+/****************************************************************************/
+int
+__ipc_release(struct ipc * const __ipc);
 
 
 /****************************************************************************/

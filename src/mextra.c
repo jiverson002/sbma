@@ -119,8 +119,7 @@ __sbma_sigrecvd(void));
 SBMA_EXTERN int
 __sbma_block(void)
 {
-  //return __ipc_release(&(vmm.ipc));
-  return 0;
+  return __ipc_release(&(vmm.ipc));
 }
 SBMA_EXPORT(default, int
 __sbma_block(void));
