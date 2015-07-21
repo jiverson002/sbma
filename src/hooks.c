@@ -942,7 +942,8 @@ nanosleep(struct timespec const * const req, struct timespec * const rem)
   /* perform blocking wait */
   ret = libc_nanosleep(req, rem);
   if (-1 == ret) {
-    (void)__ipc_unblock(&(vmm.ipc));
+    ret = __ipc_unblock(&(vmm.ipc));
+    ASSERT(-1 != ret);
     return -1;
   }
 
@@ -983,7 +984,8 @@ sem_wait(sem_t * const sem)
   /* perform blocking wait */
   ret = libc_sem_wait(sem);
   if (-1 == ret) {
-    (void)__ipc_unblock(&(vmm.ipc));
+    ret = __ipc_unblock(&(vmm.ipc));
+    ASSERT(-1 != ret);
     return -1;
   }
 
@@ -1020,7 +1022,8 @@ sem_timedwait(sem_t * const sem, struct timespec const * const ts)
   /* perform blocking wait */
   ret = libc_sem_timedwait(sem, ts);
   if (-1 == ret) {
-    (void)__ipc_unblock(&(vmm.ipc));
+    ret = __ipc_unblock(&(vmm.ipc));
+    ASSERT(-1 != ret);
     return -1;
   }
 
@@ -1056,7 +1059,8 @@ mq_send(mqd_t const mqdes, char const * const msg_ptr, size_t const msg_len,
   /* perform blocking send */
   ret = libc_mq_send(mqdes, msg_ptr, msg_len, msg_prio);
   if (-1 == ret) {
-    (void)__ipc_unblock(&(vmm.ipc));
+    ret = __ipc_unblock(&(vmm.ipc));
+    ASSERT(-1 != ret);
     return -1;
   }
 
@@ -1094,7 +1098,8 @@ mq_timedsend(mqd_t const mqdes, char const * const msg_ptr,
   /* perform block send */
   ret = libc_mq_timedsend(mqdes, msg_ptr, msg_len, msg_prio, abs_timeout);
   if (-1 == ret) {
-    (void)__ipc_unblock(&(vmm.ipc));
+    ret = __ipc_unblock(&(vmm.ipc));
+    ASSERT(-1 != ret);
     return -1;
   }
 
@@ -1133,7 +1138,8 @@ mq_receive(mqd_t const mqdes, char * const msg_ptr, size_t const msg_len,
   /* perform blocking receive */
   retval = libc_mq_receive(mqdes, msg_ptr, msg_len, msg_prio);
   if (-1 == retval) {
-    (void)__ipc_unblock(&(vmm.ipc));
+    ret = __ipc_unblock(&(vmm.ipc));
+    ASSERT(-1 != ret);
     return -1;
   }
 
@@ -1173,7 +1179,8 @@ mq_timedreceive(mqd_t const mqdes, char * const msg_ptr, size_t const msg_len,
   retval = libc_mq_timedreceive(mqdes, msg_ptr, msg_len, msg_prio,\
     abs_timeout);
   if (-1 == retval) {
-    (void)__ipc_unblock(&(vmm.ipc));
+    ret = __ipc_unblock(&(vmm.ipc));
+    ASSERT(-1 != ret);
     return -1;
   }
 

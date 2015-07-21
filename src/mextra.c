@@ -110,3 +110,17 @@ __sbma_sigrecvd(void)
 }
 SBMA_EXPORT(default, int
 __sbma_sigrecvd(void));
+
+
+/****************************************************************************/
+/*! Signal to runtime that this process will be blocking and a waiting process
+ *  can be released, if any. */
+/****************************************************************************/
+SBMA_EXTERN int
+__sbma_block(void)
+{
+  //return __ipc_release(&(vmm.ipc));
+  return 0;
+}
+SBMA_EXPORT(default, int
+__sbma_block(void));

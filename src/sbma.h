@@ -120,6 +120,7 @@ int     __sbma_mexist(void const * const ptr);
 /* mextra.c */
 #define SBMA_mallopt            __sbma_mallopt
 #define SBMA_mallinfo           __sbma_mallinfo
+#define SBMA_block              __sbma_block
 
 /* mstate.c */
 #define SBMA_check()            __sbma_check(__FILE__, __LINE__, 7)

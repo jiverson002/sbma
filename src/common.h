@@ -38,6 +38,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <stdlib.h>     /* abort, stderr */
 #include <string.h>     /* basename */
 #include <sys/types.h>  /* ssize_t */
+#include <time.h>       /* struct timespec, nanosleep */
 #include <unistd.h>     /* getpid */
 
 
@@ -110,6 +111,8 @@ ssize_t libc_read(int const, void * const, size_t const);
 ssize_t libc_write(int const, void const * const, size_t const);
 int     libc_mlock(void const * const, size_t const);
 int     libc_msync(void * const, size_t const, int const);
+int     libc_nanosleep(struct timespec const * const req,
+                       struct timespec * const rem);
 int     libc_sem_wait(sem_t * const);
 int     libc_sem_timedwait(sem_t * const, struct timespec const * const);
 
