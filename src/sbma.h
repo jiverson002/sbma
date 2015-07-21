@@ -92,6 +92,7 @@ int    KL_free(void * const ptr);
 /* mextra.c */
 int             __sbma_mallopt(int const param, int const value);
 struct mallinfo __sbma_mallinfo(void);
+int             __sbma_block(void);
 
 /* mstate.c */
 void    __sbma_check(char const * const file, int const line, int const __flag);

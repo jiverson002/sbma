@@ -47,11 +47,15 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "vmm.h"
 
 
-#define SBMA_WAIT_ALGO 0  /* timed wait on trn3 / every block posts */
-//#define SBMA_WAIT_ALGO 1  /* wait on trn3 or all blocked / every block posts */
-//#define SBMA_WAIT_ALGO 2  /* timed sleep */
-//#define SBMA_WAIT_ALGO 3  /* timed wait on trn3 / manual posts */
-//#define SBMA_WAIT_ALGO 4  /* wait on trn3 or all blocked / manual posts */
+#if SBMA_VERSION >= 200
+//# define SBMA_WAIT_ALGO 0  /* timed wait on trn3 / every block posts */
+//# define SBMA_WAIT_ALGO 1  /* wait on trn3 or all blocked / every block posts */
+//# define SBMA_WAIT_ALGO 2  /* timed sleep */
+//# define SBMA_WAIT_ALGO 3  /* timed wait on trn3 / manual posts */
+# define SBMA_WAIT_ALGO 4  /* wait on trn3 or all blocked / manual posts */
+#else
+# define SBMA_WAIT_ALGO (-1) /* disable all wait algorithm code */
+#endif
 
 
 #define CALL_LIBC(__IPC, __CMD, __SIGRECVD)\
@@ -63,7 +67,7 @@ do {\
   if (-1 == ret) {\
     ret = __ipc_unblock(__IPC);\
     ASSERT(-1 != ret);\
-    if (EINTR == errno)\
+    if (EINTR == errno || ETIMEDOUT == errno)\
       errno = EAGAIN;\
     return -1;\
   }\
@@ -144,7 +148,7 @@ __ipc_wait(struct ipc * const __ipc)
   for (;;) {
     ret = libc_sem_wait(__ipc->trn2);
     if (-1 == ret) {
-      if (EINTR == errno)
+      if (EINTR == errno || ETIMEDOUT == errno)
         errno = EAGAIN;
       goto CLEANUP1;
     }
@@ -161,7 +165,7 @@ __ipc_wait(struct ipc * const __ipc)
       if (1 == sval1) {
         ret = libc_sem_wait(__ipc->trn3);
         if (-1 == ret) {
-          if (EINTR == errno)
+          if (EINTR == errno || ETIMEDOUT == errno)
             errno = EAGAIN;
           goto CLEANUP1;
         }
@@ -182,7 +186,7 @@ __ipc_wait(struct ipc * const __ipc)
 
     ret = libc_nanosleep(&ts, NULL);
     if (-1 == ret) {
-      if (EINTR == errno)
+      if (EINTR == errno || ETIMEDOUT == errno)
         errno = EAGAIN;
       goto CLEANUP1;
     }
@@ -670,96 +674,91 @@ __ipc_madmit(struct ipc * const __ipc, size_t const __value)
   /* TODO: one problem with current implementation is that a process will have
    * the opportunity to SIGIPC other processes before it waits to see if it
    * should continue or not. */
-  if (smem < __value) {
+
+  while (smem < __value) {
+    /* find a process which has memory and is eligible */
+    mxmem = 0;
+    ii    = -1;
+    for (dlctr=0,i=0; i<__ipc->n_procs; ++i) {
+      dlctr += (IPC_CMD_BLOCKED == (flags[i]&IPC_CMD_ELIGIBLE));
+      dlctr += (IPC_MEM_BLOCKED == (flags[i]&IPC_MEM_ELIGIBLE));
+
+      if (i == id)
+        continue;
+
+#if 1
+      /* If the process is blocked on a function call, then choose it as a
+       * candidate if it has the most resident memory so far. */
+      if (IPC_CMD_ELIGIBLE == (flags[i]&IPC_CMD_ELIGIBLE)) {
+        if (pmem[i] > mxmem) {
+          ii = i;
+          mxmem = pmem[i];
+        }
+      }
+      /* If the process is blocked trying to admit memory, then choose it only
+       * if has the most resident memory so far AND my resident memory is
+       * larger than its resident memory. */
+      else if (IPC_MEM_ELIGIBLE == (flags[i]&IPC_MEM_ELIGIBLE)) {
+        if (pmem[i] > mxmem && pmem[id] >= pmem[i]) {
+          ii = i;
+          mxmem = pmem[i];
+        }
+      }
+#else
+      if (IPC_CMD_ELIGIBLE == (flags[i]&IPC_CMD_ELIGIBLE) ||\
+        IPC_MEM_ELIGIBLE == (flags[i]&IPC_MEM_ELIGIBLE))
+      {
+        if (pmem[i] > mxmem) {
+          ii = i;
+          mxmem = pmem[i];
+        }
+      }
+#endif
+    }
+
+    /* no such process exists, break loop */
+    if (-1 == ii) {
+      if (dlctr == __ipc->n_procs-1) {
+        printf("[%5d] {%zu,%zu} (", (int)getpid(), __value, *__ipc->smem);
+        for (i=0; i<__ipc->n_procs; ++i)
+          printf(" <%d,%d,%zu>", pid[i], flags[i], pmem[i]);
+        printf(" )\n");
+      }
+      ASSERT(dlctr != __ipc->n_procs-1);
+      break;
+    }
+
+    /* such a process is available, tell it to free memory */
+    ret = kill(pid[ii], SIGIPC);
+    if (-1 == ret)
+      goto CLEANUP1;
+
+    /* wait for it to signal it has finished */
+    ret = libc_sem_wait(__ipc->trn1);
+    if (-1 == ret) {
+      ASSERT(EINTR != errno);
+      goto CLEANUP1;
+    }
+
+    smem = *__ipc->smem;
+  }
+
 #if SBMA_VERSION >= 200
+  if (smem < __value) {
     ret = sem_post(__ipc->mtx);
     if (-1 == ret)
       goto CLEANUP1;
 
-    //printf("[%5d] %s:%d\n", (int)getpid(), __func__, __LINE__); fflush(stdout);
     ret = __ipc_wait(__ipc);
     if (-1 == ret)
-      if (ETIMEDOUT != errno) {
-        //printf("[%5d] %s:%d %s\n", (int)getpid(), __func__, __LINE__,
-        //  strerror(errno)); fflush(stdout);
-        goto ERREXIT;
-      }
-    //printf("[%5d] %s:%d\n", (int)getpid(), __func__, __LINE__); fflush(stdout);
+      goto ERREXIT;
 
-    CALL_LIBC(__ipc, sem_wait(__ipc->mtx), sem_post(__ipc->mtx));
-    //printf("[%5d] %s:%d\n", (int)getpid(), __func__, __LINE__); fflush(stdout);
-#endif
-
-    while (smem < __value) {
-      /* find a process which has memory and is eligible */
-      mxmem = 0;
-      ii    = -1;
-      for (dlctr=0,i=0; i<__ipc->n_procs; ++i) {
-        dlctr += (IPC_CMD_BLOCKED == (flags[i]&IPC_CMD_ELIGIBLE));
-        dlctr += (IPC_MEM_BLOCKED == (flags[i]&IPC_MEM_ELIGIBLE));
-
-        if (i == id)
-          continue;
-
-  #if 1
-        /* If the process is blocked on a function call, then choose it as a
-         * candidate if it has the most resident memory so far. */
-        if (IPC_CMD_ELIGIBLE == (flags[i]&IPC_CMD_ELIGIBLE)) {
-          if (pmem[i] > mxmem) {
-            ii = i;
-            mxmem = pmem[i];
-          }
-        }
-        /* If the process is blocked trying to admit memory, then choose it
-         * only if has the most resident memory so far AND my resident memory
-         * is larger than its resident memory. */
-        else if (IPC_MEM_ELIGIBLE == (flags[i]&IPC_MEM_ELIGIBLE)) {
-          if (pmem[i] > mxmem && pmem[id] >= pmem[i]) {
-            ii = i;
-            mxmem = pmem[i];
-          }
-        }
-  #else
-        if (IPC_CMD_ELIGIBLE == (flags[i]&IPC_CMD_ELIGIBLE) ||\
-          IPC_MEM_ELIGIBLE == (flags[i]&IPC_MEM_ELIGIBLE))
-        {
-          if (pmem[i] > mxmem) {
-            ii = i;
-            mxmem = pmem[i];
-          }
-        }
-  #endif
-      }
-
-      /* no such process exists, break loop */
-      if (-1 == ii) {
-        if (dlctr == __ipc->n_procs-1) {
-          printf("[%5d] {%zu,%zu} (", (int)getpid(), __value, *__ipc->smem);
-          for (i=0; i<__ipc->n_procs; ++i)
-            printf(" <%d,%d,%zu>", pid[i], flags[i], pmem[i]);
-          printf(" )\n");
-        }
-        ASSERT(dlctr != __ipc->n_procs-1);
-        break;
-      }
-
-      /* such a process is available, tell it to free memory */
-      ret = kill(pid[ii], SIGIPC);
-      if (-1 == ret)
-        goto CLEANUP1;
-
-      /* wait for it to signal it has finished */
-      ret = libc_sem_wait(__ipc->trn1);
-      if (-1 == ret) {
-        ASSERT(EINTR != errno);
-        goto CLEANUP1;
-      }
-
-      smem = *__ipc->smem;
-    }
+    ASSERT(0 == __ipc_is_eligible(__ipc));
+    errno = EAGAIN;
+    goto ERREXIT;
   }
-
-  if (smem >= __value) {
+  else {
+#endif
     *__ipc->smem -= __value;
     __ipc->pmem[id] += __value;
     ret = libc_msync(__ipc->shm, IPC_LEN(__ipc->n_procs), MS_SYNC);
@@ -787,17 +786,14 @@ __ipc_madmit(struct ipc * const __ipc, size_t const __value)
     ret = libc_msync(__ipc->shm, IPC_LEN(__ipc->n_procs), MS_SYNC);
     ASSERT(-1 != ret);
     goto CLEANUP1;
+#if SBMA_VERSION >= 200
   }
-  else {
-    errno = EAGAIN;
-    goto CLEANUP1;
-  }
+#endif
 
   CLEANUP1:
   ret = sem_post(__ipc->mtx);
   ASSERT(-1 != ret);
   ERREXIT:
-  ASSERT(0 == __ipc_is_eligible(__ipc));
   return -1;
 }
 SBMA_EXPORT(internal, int
