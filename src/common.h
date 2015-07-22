@@ -24,8 +24,8 @@ OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
-#ifndef __CONFIG_H__
-#define __CONFIG_H__ 1
+#ifndef __COMMON_H__
+#define __COMMON_H__ 1
 
 
 #ifndef _GNU_SOURCE
@@ -59,7 +59,6 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 /****************************************************************************/
 /*! Assert function. */
 /****************************************************************************/
-//#ifndef NDEBUG
 # define ASSERT(COND)                                                       \
 do {                                                                        \
   if (0 == (COND)) {                                                        \
@@ -68,33 +67,6 @@ do {                                                                        \
     abort();                                                                \
   }                                                                         \
 } while (0)
-//#else
-//# define ASSERT(COND) (void)0
-//#endif
-
-
-/****************************************************************************/
-/*! Process deadlock check functions. */
-/****************************************************************************/
-//#define DEADLOCK_ALARM_TIME  10000
-#ifdef DEADLOCK_ALARM_TIME
-# include <time.h>    /* CLOCK_REALTIME, struct timespec, clock_gettime */
-# define DEADLOCK_ALARM_ON()\
-do {\
-  /*printf("[%5d] %s:%d alarm on\n", (int)getpid(), basename(__FILE__),\
-    __LINE__);*/\
-  alarm(DEADLOCK_ALARM_TIME);\
-} while (0)
-# define DEADLOCK_ALARM_OFF()\
-do {\
-  /*printf("[%5d] %s:%d alarm off\n", (int)getpid(), basename(__FILE__),\
-    __LINE__);*/\
-  alarm(0);\
-} while (0)
-#else
-# define DEADLOCK_ALARM_ON()  (void)0
-# define DEADLOCK_ALARM_OFF() (void)0
-#endif
 
 
 /****************************************************************************/
@@ -111,10 +83,8 @@ ssize_t libc_read(int const, void * const, size_t const);
 ssize_t libc_write(int const, void const * const, size_t const);
 int     libc_mlock(void const * const, size_t const);
 int     libc_msync(void * const, size_t const, int const);
-int     libc_nanosleep(struct timespec const * const req,
-                       struct timespec * const rem);
+int     libc_nanosleep(struct timespec const * const, struct timespec * const);
 int     libc_sem_wait(sem_t * const);
-int     libc_sem_timedwait(sem_t * const, struct timespec const * const);
 
 #ifdef __cplusplus
 }

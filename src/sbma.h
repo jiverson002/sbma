@@ -92,10 +92,9 @@ int    KL_free(void * const ptr);
 /* mextra.c */
 int             __sbma_mallopt(int const param, int const value);
 struct mallinfo __sbma_mallinfo(void);
-int             __sbma_block(void);
+int             __sbma_release(void);
 
 /* mstate.c */
-void    __sbma_check(char const * const file, int const line, int const __flag);
 ssize_t __sbma_mtouch(void * const ptr, size_t const size);
 ssize_t __sbma_mtouch_atomic(void * const ptr, size_t const size, ...);
 ssize_t __sbma_mtouchall(void);
@@ -121,10 +120,9 @@ int     __sbma_mexist(void const * const ptr);
 /* mextra.c */
 #define SBMA_mallopt            __sbma_mallopt
 #define SBMA_mallinfo           __sbma_mallinfo
-#define SBMA_block              __sbma_block
+#define SBMA_release            __sbma_release
 
 /* mstate.c */
-#define SBMA_check()            __sbma_check(__FILE__, __LINE__, 7)
 #define SBMA_mtouch             __sbma_mtouch
 #define SBMA_mtouch_atomic(...) __sbma_mtouch_atomic(__VA_ARGS__, SBMA_ATOMIC_END)
 #define SBMA_mtouchall          __sbma_mtouchall

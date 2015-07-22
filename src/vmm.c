@@ -175,11 +175,13 @@ __vmm_sigsegv(int const sig, siginfo_t * const si, void * const ctx)
       chk_l_pages = ate->l_pages;
 
       ret = __ipc_madmit(&(vmm.ipc), VMM_TO_SYS(l_pages));
-      if (-1 == ret && EAGAIN != errno) {
+      if (-1 == ret) {
         (void)__lock_let(&(ate->lock));
+        printf("[%5d] %s:%d %s\n", (int)getpid(), __func__, __LINE__,
+          strerror(errno));
         ASSERT(0);
       }
-      else if (-1 != ret) {
+      else if (-2 != ret) {
         break;
       }
     }
@@ -244,7 +246,7 @@ __vmm_sigipc(int const sig, siginfo_t * const si, void * const ctx)
   ASSERT(SIGIPC == sig);
 
   /* Only honor the SIGIPC if my status is still eligible */
-  if (1 == __ipc_is_eligible(&(vmm.ipc))) {
+  if (1 == __ipc_eligible(&(vmm.ipc))) {
     /* TODO: is it possible / what happens / does it matter if the process
      * receives a SIGIPC at this point in the execution of the signal handler?
      * */
@@ -256,21 +258,16 @@ __vmm_sigipc(int const sig, siginfo_t * const si, void * const ctx)
     ret = __sbma_mevictall_int(&l_pages, &numwr);
     ASSERT(-1 != ret);
 
-    /* update ipc memory statistics */
-    *(vmm.ipc.smem)          += l_pages;
-    vmm.ipc.pmem[vmm.ipc.id] -= l_pages;
-    ret = libc_msync((void*)vmm.ipc.shm, IPC_LEN(vmm.ipc.n_procs), MS_SYNC);
-    ASSERT(-1 != ret);
+    /* update ipc memory statistics and unpopulate */
+    __ipc_atomic_dec(&(vmm.ipc), l_pages);
+    __ipc_unpopulate(&(vmm.ipc));
 
     /* track number of syspages currently loaded, number of syspages written
      * to disk, and high water mark for syspages loaded */
     VMM_TRACK(numwr, numwr);
     VMM_TRACK(numhipc, 1);
 
-    /* change my status to unpopulated - must be before any potential waiting,
-     * since SIGIPC could be raised again then. */
-    ret = __ipc_unpopulate(&(vmm.ipc));
-    ASSERT(-1 != ret);
+    ipc_sigrecvd = 1;
   }
 
   /* signal to the waiting process that the memory has been released */
@@ -635,8 +632,6 @@ __vmm_init(struct vmm * const __vmm, char const * const __fstem,
     return -1;
 
   vmm.init = 1;
-
-  ASSERT(0 == __ipc_is_eligible(&(__vmm->ipc)));
 
   return 0;
 }

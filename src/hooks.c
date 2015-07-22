@@ -930,31 +930,13 @@ msync(void * const addr, size_t const len, int const flags));
 SBMA_EXTERN int
 nanosleep(struct timespec const * const req, struct timespec * const rem)
 {
-  int ret;
+  int retval;
 
-  DEADLOCK_ALARM_ON();
+  __ipc_sigon(&(vmm.ipc));
+  retval = libc_nanosleep(req, rem);
+  __ipc_sigoff(&(vmm.ipc));
 
-  /* transition to blocked state */
-  ret = __ipc_block(&(vmm.ipc), IPC_CMD_BLOCKED);
-  if (-1 == ret)
-    return -1;
-
-  /* perform blocking wait */
-  ret = libc_nanosleep(req, rem);
-  if (-1 == ret) {
-    ret = __ipc_unblock(&(vmm.ipc));
-    ASSERT(-1 != ret);
-    return -1;
-  }
-
-  /* transition to running state */
-  ret = __ipc_unblock(&(vmm.ipc));
-  if (-1 == ret)
-    return -1;
-
-  DEADLOCK_ALARM_OFF();
-
-  return 0;
+  return retval;
 }
 SBMA_EXPORT(default, int
 nanosleep(struct timespec const * const req, struct timespec * const rem));
@@ -966,39 +948,13 @@ nanosleep(struct timespec const * const req, struct timespec * const rem));
 SBMA_EXTERN int
 sem_wait(sem_t * const sem)
 {
-  int ret;
+  int retval;
 
-  DEADLOCK_ALARM_ON();
+  __ipc_sigon(&(vmm.ipc));
+  retval = libc_sem_wait(sem);
+  __ipc_sigoff(&(vmm.ipc));
 
-  /* transition to blocked state */
-  ret = __ipc_block(&(vmm.ipc), IPC_CMD_BLOCKED);
-  if (-1 == ret)
-    return -1;
-
-  /* NOTE: If a signal is received here or at 'marker', then it will be
-   * identified when __ipc_unblock is called and __ipc_sigrecvd is set to 1.
-   * Note that in the case that __ipc_sigrecvd is set to 1, -1 will not be
-   * returned, but rather a value indicating success and thus, it is left to
-   * the caller to check to see if a SIGIPC was received. */
-
-  /* perform blocking wait */
-  ret = libc_sem_wait(sem);
-  if (-1 == ret) {
-    ret = __ipc_unblock(&(vmm.ipc));
-    ASSERT(-1 != ret);
-    return -1;
-  }
-
-  /* NOTE: marker */
-
-  /* transition to running state */
-  ret = __ipc_unblock(&(vmm.ipc));
-  if (-1 == ret)
-    return -1;
-
-  DEADLOCK_ALARM_OFF();
-
-  return 0;
+  return retval;
 }
 SBMA_EXPORT(default, int
 sem_wait(sem_t * const sem));
@@ -1010,31 +966,13 @@ sem_wait(sem_t * const sem));
 SBMA_EXTERN int
 sem_timedwait(sem_t * const sem, struct timespec const * const ts)
 {
-  int ret;
+  int retval;
 
-  DEADLOCK_ALARM_ON();
+  __ipc_sigon(&(vmm.ipc));
+  retval = libc_sem_timedwait(sem, ts);
+  __ipc_sigoff(&(vmm.ipc));
 
-  /* transition to blocked state */
-  ret = __ipc_block(&(vmm.ipc), IPC_CMD_BLOCKED);
-  if (-1 == ret)
-    return -1;
-
-  /* perform blocking wait */
-  ret = libc_sem_timedwait(sem, ts);
-  if (-1 == ret) {
-    ret = __ipc_unblock(&(vmm.ipc));
-    ASSERT(-1 != ret);
-    return -1;
-  }
-
-  /* transition to running state */
-  ret = __ipc_unblock(&(vmm.ipc));
-  if (-1 == ret)
-    return -1;
-
-  DEADLOCK_ALARM_OFF();
-
-  return 0;
+  return retval;
 }
 SBMA_EXPORT(default, int
 sem_timedwait(sem_t * const sem, struct timespec const * const ts));
@@ -1047,31 +985,13 @@ SBMA_EXTERN int
 mq_send(mqd_t const mqdes, char const * const msg_ptr, size_t const msg_len,
         unsigned const msg_prio)
 {
-  int ret;
+  int retval;
 
-  DEADLOCK_ALARM_ON();
+  __ipc_sigon(&(vmm.ipc));
+  retval = libc_mq_send(mqdes, msg_ptr, msg_len, msg_prio);
+  __ipc_sigoff(&(vmm.ipc));
 
-  /* transition to blocked state */
-  ret = __ipc_block(&(vmm.ipc), IPC_CMD_BLOCKED);
-  if (-1 == ret)
-    return -1;
-
-  /* perform blocking send */
-  ret = libc_mq_send(mqdes, msg_ptr, msg_len, msg_prio);
-  if (-1 == ret) {
-    ret = __ipc_unblock(&(vmm.ipc));
-    ASSERT(-1 != ret);
-    return -1;
-  }
-
-  /* transition to running state */
-  ret = __ipc_unblock(&(vmm.ipc));
-  if (-1 == ret)
-    return -1;
-
-  DEADLOCK_ALARM_OFF();
-
-  return 0;
+  return retval;
 }
 SBMA_EXPORT(default, int
 mq_send(mqd_t const mqdes, char const * const msg_ptr, size_t const msg_len,
@@ -1086,31 +1006,13 @@ mq_timedsend(mqd_t const mqdes, char const * const msg_ptr,
              size_t const msg_len, unsigned const msg_prio,
              struct timespec const * const abs_timeout)
 {
-  int ret;
+  int retval;
 
-  DEADLOCK_ALARM_ON();
+  __ipc_sigon(&(vmm.ipc));
+  retval = libc_mq_timedsend(mqdes, msg_ptr, msg_len, msg_prio, abs_timeout);
+  __ipc_sigoff(&(vmm.ipc));
 
-  /* transition to blocked state */
-  ret = __ipc_block(&(vmm.ipc), IPC_CMD_BLOCKED);
-  if (-1 == ret)
-    return -1;
-
-  /* perform block send */
-  ret = libc_mq_timedsend(mqdes, msg_ptr, msg_len, msg_prio, abs_timeout);
-  if (-1 == ret) {
-    ret = __ipc_unblock(&(vmm.ipc));
-    ASSERT(-1 != ret);
-    return -1;
-  }
-
-  /* transition to running state */
-  ret = __ipc_unblock(&(vmm.ipc));
-  if (-1 == ret)
-    return -1;
-
-  DEADLOCK_ALARM_OFF();
-
-  return 0;
+  return retval;
 }
 SBMA_EXPORT(default, int
 mq_timedsend(mqd_t const mqdes, char const * const msg_ptr,
@@ -1125,30 +1027,11 @@ SBMA_EXTERN ssize_t
 mq_receive(mqd_t const mqdes, char * const msg_ptr, size_t const msg_len,
            unsigned * const msg_prio)
 {
-  int ret;
   ssize_t retval;
 
-  DEADLOCK_ALARM_ON();
-
-  /* transition to blocked state */
-  ret = __ipc_block(&(vmm.ipc), IPC_CMD_BLOCKED);
-  if (-1 == ret)
-    return -1;
-
-  /* perform blocking receive */
+  __ipc_sigon(&(vmm.ipc));
   retval = libc_mq_receive(mqdes, msg_ptr, msg_len, msg_prio);
-  if (-1 == retval) {
-    ret = __ipc_unblock(&(vmm.ipc));
-    ASSERT(-1 != ret);
-    return -1;
-  }
-
-  /* transition to running state */
-  ret = __ipc_unblock(&(vmm.ipc));
-  if (-1 == ret)
-    return -1;
-
-  DEADLOCK_ALARM_OFF();
+  __ipc_sigoff(&(vmm.ipc));
 
   return retval;
 }
@@ -1165,31 +1048,12 @@ mq_timedreceive(mqd_t const mqdes, char * const msg_ptr, size_t const msg_len,
                 unsigned * const msg_prio,
                 struct timespec const * const abs_timeout)
 {
-  int ret;
   ssize_t retval;
 
-  DEADLOCK_ALARM_ON();
-
-  /* transition to blocked state */
-  ret = __ipc_block(&(vmm.ipc), IPC_CMD_BLOCKED);
-  if (-1 == ret)
-    return -1;
-
-  /* perform blocking receive */
+  __ipc_sigon(&(vmm.ipc));
   retval = libc_mq_timedreceive(mqdes, msg_ptr, msg_len, msg_prio,\
     abs_timeout);
-  if (-1 == retval) {
-    ret = __ipc_unblock(&(vmm.ipc));
-    ASSERT(-1 != ret);
-    return -1;
-  }
-
-  /* transition to running state */
-  ret = __ipc_unblock(&(vmm.ipc));
-  if (-1 == ret)
-    return -1;
-
-  DEADLOCK_ALARM_OFF();
+  __ipc_sigoff(&(vmm.ipc));
 
   return retval;
 }

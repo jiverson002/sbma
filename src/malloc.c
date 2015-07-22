@@ -59,8 +59,6 @@ __sbma_malloc(size_t const __size)
   struct ate * ate;
   char fname[FILENAME_MAX];
 
-  ASSERT(0 == __ipc_is_eligible(&(vmm.ipc)));
-
   /* Shortcut. */
   if (0 == __size)
     return NULL;
@@ -78,9 +76,9 @@ __sbma_malloc(size_t const __size)
    * allocation. */
   for (;;) {
     ret = __ipc_madmit(&(vmm.ipc), VMM_TO_SYS(s_pages+n_pages+f_pages));
-    if (-1 == ret && EAGAIN != errno)
+    if (-1 == ret)
       goto RETURN;
-    else if (-1 != ret)
+    else if (-2 != ret)
       break;
   }
 
@@ -159,9 +157,9 @@ __sbma_malloc(size_t const __size)
   CLEANUP1:
   for (;;) {
     ret = __ipc_mevict(&(vmm.ipc), VMM_TO_SYS(s_pages+n_pages+f_pages));
-    if (-1 == ret && EAGAIN != errno)
+    if (-1 == ret)
       goto RETURN;
-    else if (-1 != ret)
+    else if (-2 != ret)
       break;
   }
   retval = NULL;
@@ -170,7 +168,6 @@ __sbma_malloc(size_t const __size)
   /* Return point -- make sure vmm is in valid state and return. */
   /**************************************************************************/
   RETURN:
-  ASSERT(0 == __ipc_is_eligible(&(vmm.ipc)));
   return retval;
 }
 SBMA_EXPORT(default, void *
@@ -199,8 +196,6 @@ __sbma_free(void * const __ptr)
   size_t page_size, s_pages, n_pages, f_pages, l_pages;
   struct ate * ate;
   char fname[FILENAME_MAX];
-
-  ASSERT(0 == __ipc_is_eligible(&(vmm.ipc)));
 
   /* Default return value. */
   retval = 0;
@@ -238,20 +233,14 @@ __sbma_free(void * const __ptr)
 
   /* Update memory file. */
   for (;;) {
-    ret = __ipc_mevict(&(vmm.ipc), VMM_TO_SYS(s_pages+l_pages+f_pages));
-    if (-1 == ret && EAGAIN != errno) {
-      retval = -1;
+    retval = __ipc_mevict(&(vmm.ipc), VMM_TO_SYS(s_pages+l_pages+f_pages));
+    if (-2 != retval)
       break;
-    }
-    else if (-1 != ret) {
-      break;
-    }
   }
 
   /**************************************************************************/
   /* Return point -- make sure vmm is in valid state and return. */
   /**************************************************************************/
-  ASSERT(0 == __ipc_is_eligible(&(vmm.ipc)));
   return retval;
 }
 SBMA_EXPORT(default, int
@@ -280,8 +269,6 @@ __sbma_realloc(void * const __ptr, size_t const __size)
 
   if (0 == __size)
     return NULL;
-
-  ASSERT(0 == __ipc_is_eligible(&(vmm.ipc)));
 
   page_size = vmm.page_size;
   s_pages   = 1+((sizeof(struct ate)-1)/page_size);
@@ -331,9 +318,9 @@ __sbma_realloc(void * const __ptr, size_t const __size)
     for (;;) {
       ret = __ipc_mevict(&(vmm.ipc),\
         VMM_TO_SYS((ol_pages-ate->l_pages)+(of_pages-nf_pages)));
-      if (-1 == ret && EAGAIN != errno)
+      if (-1 == ret)
         return NULL;
-      else if (-1 != ret)
+      else if (-2 != ret)
         break;
     }
   }
@@ -343,9 +330,9 @@ __sbma_realloc(void * const __ptr, size_t const __size)
     for (;;) {
       ret = __ipc_madmit(&(vmm.ipc),\
         VMM_TO_SYS((nn_pages-on_pages)+(nf_pages-of_pages)));
-      if (-1 == ret && EAGAIN != errno)
+      if (-1 == ret)
         return NULL;
-      else if (-1 != ret)
+      else if (-2 != ret)
         break;
     }
 
@@ -422,17 +409,15 @@ __sbma_realloc(void * const __ptr, size_t const __size)
     for (;;) {
       ret = __ipc_mevict(&(vmm.ipc),\
         VMM_TO_SYS((nn_pages-on_pages)+(nf_pages-of_pages)));
-      if (-1 == ret && EAGAIN != errno)
+      if (-1 == ret)
         return NULL;
-      else if (-1 != ret)
+      else if (-2 != ret)
         break;
     }
-    ASSERT(0 == __ipc_is_eligible(&(vmm.ipc)));
     return NULL;
   }
 
   DONE:
-  ASSERT(0 == __ipc_is_eligible(&(vmm.ipc)));
   return (void*)ate->base;
 }
 SBMA_EXPORT(default, void *
@@ -453,8 +438,6 @@ __sbma_remap(void * const __nbase, void * const __obase, size_t const __size,
   volatile uint8_t * oflags, * nflags;
   struct ate * oate, * nate;
   char ofname[FILENAME_MAX], nfname[FILENAME_MAX];
-
-  ASSERT(0 == __ipc_is_eligible(&(vmm.ipc)));
 
   page_size = vmm.page_size;
   s_pages   = 1+((sizeof(struct ate)-1)/page_size);
@@ -564,7 +547,6 @@ __sbma_remap(void * const __nbase, void * const __obase, size_t const __size,
     }
   }*/
 
-  ASSERT(0 == __ipc_is_eligible(&(vmm.ipc)));
   return 0;
 }
 SBMA_EXPORT(internal, int

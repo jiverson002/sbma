@@ -148,65 +148,6 @@ __sbma_mevict_int(struct ate * const __ate, void * const __addr,
 
 
 /****************************************************************************/
-/*! Check the state of the memory tracking structures. */
-/****************************************************************************/
-SBMA_EXTERN void
-__sbma_check(char const * const __file, int const __line, int const __flag)
-{
-  static int FAILED=0;
-  int ret;
-  size_t page_size, s_pages, n_pages, f_pages, l_pages;
-  struct ate * ate;
-
-  if (1 == FAILED)
-    return;
-
-  ret = __lock_get(&(vmm.lock));
-  if (-1 == ret)
-    printf("[%5d] %s:%d %s\n", (int)getpid(), basename(__file), __line,
-      strerror(errno));
-
-  page_size = vmm.page_size;
-  s_pages   = 1+((sizeof(struct ate)-1)/page_size);
-  l_pages = 0;
-  for (ate=vmm.mmu.a_tbl; NULL!=ate; ate=ate->next) {
-    ret = __lock_get(&(ate->lock));
-    if (-1 == ret)
-      printf("[%5d] %s:%d %s\n", (int)getpid(), basename(__file), __line,
-        strerror(errno));
-    n_pages   = ate->n_pages;
-    f_pages   = 1+((n_pages*sizeof(uint8_t)-1)/page_size);
-    l_pages += (s_pages+ate->l_pages+f_pages);
-    ret = __lock_let(&(ate->lock));
-    if (-1 == ret)
-      printf("[%5d] %s:%d %s\n", (int)getpid(), basename(__file), __line,
-        strerror(errno));
-  }
-  l_pages = VMM_TO_SYS(l_pages);
-
-  if ((1<<1) == (__flag&(1<<1)) && l_pages != vmm.ipc.pmem[vmm.ipc.id]) {
-    printf("[%5d] %s:%d l_pages != vmm.ipc.pmem[vmm.ipc.id] (%zu,%zu)\n",
-      (int)getpid(), basename(__file), __line, l_pages,
-      vmm.ipc.pmem[vmm.ipc.id]);
-    FAILED = 1;
-  }
-  /*if (l_pages == vmm.ipc.pmem[vmm.ipc.id])
-    printf("[%5d] %s:%d success\n", (int)getpid(), basename(__file), __line);*/
-
-  ret = __lock_let(&(vmm.lock));
-  if (-1 == ret)
-    printf("[%5d] %s:%d %s\n", (int)getpid(), basename(__file), __line,
-      strerror(errno));
-
-  /*if (NULL != __file && 0 != __line)
-    printf("[%5d] %s:%d\n", (int)getpid(), basename(__file), __line);*/
-  fflush(stdout);
-}
-SBMA_EXPORT(internal, void
-__sbma_check(char const * const __file, int const __line, int const __flag));
-
-
-/****************************************************************************/
 /*! Touch the specified range. */
 /****************************************************************************/
 SBMA_EXTERN ssize_t
@@ -216,8 +157,6 @@ __sbma_mtouch(void * const __addr, size_t const __len)
   size_t chk_l_pages;
   ssize_t l_pages, numrd=0;
   struct ate * ate;
-
-  ASSERT(0 == __ipc_is_eligible(&(vmm.ipc)));
 
   ate = __mmu_lookup_ate(&(vmm.mmu), __addr);
   if (NULL == ate)
@@ -229,6 +168,7 @@ __sbma_mtouch(void * const __addr, size_t const __len)
     l_pages = __sbma_mtouch_probe(ate, __addr, __len);
     if (-1 == l_pages) {
       (void)__lock_let(&(ate->lock));
+      printf("[%5d] %s:%d\n", (int)getpid(), __func__, __LINE__);
       return -1;
     }
 
@@ -238,14 +178,13 @@ __sbma_mtouch(void * const __addr, size_t const __len)
       break;
 
     ret = __ipc_madmit(&(vmm.ipc), l_pages);
-    if (-1 == ret && EAGAIN != errno) {
+    if (-1 == ret) {
       (void)__lock_let(&(ate->lock));
+      printf("[%5d] %s:%d\n", (int)getpid(), __func__, __LINE__);
       return -1;
     }
-    else if (-1 != ret) {
-      ASSERT(0 == __ipc_sigrecvd(&(vmm.ipc)));
+    else if (-2 != ret) {
       ASSERT(VMM_TO_SYS(ate->l_pages) == chk_l_pages);
-      ASSERT(0 == __ipc_is_eligible(&(vmm.ipc)));
       break;
     }
   }
@@ -256,6 +195,7 @@ __sbma_mtouch(void * const __addr, size_t const __len)
     numrd = __sbma_mtouch_int(ate, __addr, __len);
     if (-1 == numrd) {
       (void)__lock_let(&(ate->lock));
+      printf("[%5d] %s:%d\n", (int)getpid(), __func__, __LINE__);
       return -1;
     }
   }
@@ -271,7 +211,6 @@ __sbma_mtouch(void * const __addr, size_t const __len)
    * disk, and high water mark for syspages loaded */
   VMM_TRACK(numrd, numrd);
 
-  ASSERT(0 == __ipc_is_eligible(&(vmm.ipc)));
   return l_pages;
 }
 SBMA_EXPORT(internal, ssize_t
@@ -296,8 +235,6 @@ __sbma_mtouch_atomic(void * const __addr, size_t const __len, ...)
 
   if (NULL == __addr)
     return 0;
-
-  ASSERT(0 == __ipc_is_eligible(&(vmm.ipc)));
 
   /* populate the arrays with the variable number of pointers and lengths */
   num   = 0;
@@ -332,13 +269,10 @@ __sbma_mtouch_atomic(void * const __addr, size_t const __len, ...)
       break;
 
     ret = __ipc_madmit(&(vmm.ipc), l_pages);
-    if (-1 == ret && EAGAIN != errno) {
+    if (-1 == ret)
       goto CLEANUP;
-    }
-    else if (-1 != ret) {
-      ASSERT(0 == __ipc_is_eligible(&(vmm.ipc)));
+    else if (-2 != ret)
       break;
-    }
   }
 
   /* touch each of the pointers */
@@ -365,7 +299,6 @@ __sbma_mtouch_atomic(void * const __addr, size_t const __len, ...)
    * disk, and high water mark for syspages loaded */
   VMM_TRACK(numrd, numrd);
 
-  ASSERT(0 == __ipc_is_eligible(&(vmm.ipc)));
   return l_pages;
 
   CLEANUP:
@@ -394,8 +327,6 @@ __sbma_mtouchall(void)
   if (-1 == ret)
     return -1;
 
-  ASSERT(0 == __ipc_is_eligible(&(vmm.ipc)));
-
   /* Lock all allocations */
   for (ate=vmm.mmu.a_tbl; NULL!=ate; ate=ate->next) {
     ret = __lock_get(&(ate->lock));
@@ -422,9 +353,9 @@ __sbma_mtouchall(void)
       break;
 
     ret = __ipc_madmit(&(vmm.ipc), l_pages);
-    if (-1 == ret && EAGAIN != errno)
+    if (-1 == ret)
       goto CLEANUP;
-    else if (-1 != ret)
+    else if (-2 != ret)
       break;
   }
 
@@ -451,7 +382,6 @@ __sbma_mtouchall(void)
    * disk, and high water mark for syspages loaded */
   VMM_TRACK(numrd, numrd);
 
-  ASSERT(0 == __ipc_is_eligible(&(vmm.ipc)));
   return l_pages;
 
   CLEANUP:
@@ -543,8 +473,6 @@ __sbma_mevict(void * const __addr, size_t const __len)
   ssize_t l_pages, numwr;
   struct ate * ate;
 
-  ASSERT(0 == __ipc_is_eligible(&(vmm.ipc)));
-
   ate = __mmu_lookup_ate(&(vmm.mmu), __addr);
   if (NULL == ate)
     return -1;
@@ -568,13 +496,12 @@ __sbma_mevict(void * const __addr, size_t const __len)
   /* update memory file */
   for (;;) {
     ret = __ipc_mevict(&(vmm.ipc), l_pages);
-    if (-1 == ret && EAGAIN != errno)
+    if (-1 == ret)
       return -1;
-    else if (-1 != ret)
+    else if (-2 != ret)
       break;
   }
 
-  ASSERT(0 == __ipc_is_eligible(&(vmm.ipc)));
   return l_pages;
 }
 SBMA_EXPORT(internal, ssize_t
@@ -646,8 +573,6 @@ __sbma_mevictall(void)
   int ret;
   size_t l_pages, numwr;
 
-  ASSERT(0 == __ipc_is_eligible(&(vmm.ipc)));
-
   ret = __sbma_mevictall_int(&l_pages, &numwr);
   if (-1 == ret)
     return -1;
@@ -659,19 +584,16 @@ __sbma_mevictall(void)
   /* update memory file */
   for (;;) {
     ret = __ipc_mevict(&(vmm.ipc), l_pages);
-    if (-1 == ret && EAGAIN != errno)
+    if (-1 == ret)
       return -1;
-    else if (-1 != ret)
+    else if (-2 != ret)
       break;
   }
 
   /* change my status to unpopulated - must be before any potential waiting,
    * since SIGIPC could be raised again then. */
-  ret = __ipc_unpopulate(&(vmm.ipc));
-  if (-1 == ret)
-    return -1;
+  __ipc_unpopulate(&(vmm.ipc));
 
-  ASSERT(0 == __ipc_is_eligible(&(vmm.ipc)));
   return l_pages;
 }
 SBMA_EXPORT(internal, ssize_t

@@ -101,25 +101,12 @@ __sbma_mallinfo(void));
 
 
 /****************************************************************************/
-/*! Check if a SIGIPC was received during last blocking hook. */
+/*! Inform runtime to release a memory blocked process. */
 /****************************************************************************/
 SBMA_EXTERN int
-__sbma_sigrecvd(void)
-{
-  return __ipc_sigrecvd(&(vmm.ipc));
-}
-SBMA_EXPORT(default, int
-__sbma_sigrecvd(void));
-
-
-/****************************************************************************/
-/*! Signal to runtime that this process will be blocking and a waiting process
- *  can be released, if any. */
-/****************************************************************************/
-SBMA_EXTERN int
-__sbma_block(void)
+__sbma_release(void)
 {
   return __ipc_release(&(vmm.ipc));
 }
 SBMA_EXPORT(default, int
-__sbma_block(void));
+__sbma_release(void));

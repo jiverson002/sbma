@@ -48,18 +48,17 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 /*!
  * Inter-process communication process status bits:
  *
- *   bit 0 ==    0: running       1: blocked on function call
- *   bit 0 ==    0: running       1: blocked on memory request
- *   bit 1 ==    0: unpopulated   1: populated
+ *   bit 0 ==    0: unpopulated      1: populated
+ *   bit 1 ==    0: signals blocked  1: signals unblocked
+ *   bit 2 ==    0:                  1: blocked in madmit
  */
 /****************************************************************************/
 enum ipc_code
 {
-  IPC_CMD_BLOCKED  = 1 << 0,
-  IPC_MEM_BLOCKED  = 1 << 1,
-  IPC_POPULATED    = 1 << 2,
-  IPC_CMD_ELIGIBLE = IPC_CMD_BLOCKED|IPC_POPULATED,
-  IPC_MEM_ELIGIBLE = IPC_MEM_BLOCKED|IPC_POPULATED
+  IPC_POPULATED    = 1 << 0,
+  IPC_SIGON        = 1 << 1,
+  IPC_MEM_BLOCKED  = 1 << 3,
+  IPC_ELIGIBLE     = IPC_POPULATED|IPC_SIGON
 };
 
 
@@ -84,12 +83,18 @@ struct ipc
   sem_t * trn3;     /*!< ... */
   sem_t * cnt;      /*!< ... */
 
-  void * shm;                 /*!< shared memory region */
-  int * pid;                  /*!< pointer into shm for pid array */
-  volatile size_t  * smem;    /*!< pointer into shm for smem scalar */
-  volatile size_t  * pmem;    /*!< pointer into shm for pmem array */
-  volatile uint8_t * flags;   /*!< pointer into shm for flags array */
+  void * shm;                /*!< shared memory region */
+  int * pid;                 /*!< pointer into shm for pid array */
+  volatile size_t  * smem;   /*!< pointer into shm for smem scalar */
+  volatile size_t  * pmem;   /*!< pointer into shm for pmem array */
+  volatile uint8_t * flags;  /*!< pointer into shm for flags array */
 };
+
+
+/****************************************************************************/
+/*! Thread-local variable to check for signal received. */
+/****************************************************************************/
+extern volatile __thread int ipc_sigrecvd;
 
 
 #ifdef __cplusplus
@@ -112,53 +117,59 @@ __ipc_destroy(struct ipc * const __ipc);
 
 
 /****************************************************************************/
-/*! Release a process if any are waiting. */
-/****************************************************************************/
-int
-__ipc_release(struct ipc * const __ipc);
-
-
-/****************************************************************************/
-/*! Transition process to blocked state. */
-/****************************************************************************/
-int
-__ipc_block(struct ipc * const __ipc, int const __flag);
-
-
-/****************************************************************************/
-/*! Transition process to running state. */
-/****************************************************************************/
-int
-__ipc_unblock(struct ipc * const __ipc);
-
-
-/****************************************************************************/
 /*! Transition process to populated status. */
 /****************************************************************************/
-int
+void
 __ipc_populate(struct ipc * const __ipc);
 
 
 /****************************************************************************/
 /*! Transition process to unpopulated status. */
 /****************************************************************************/
-int
+void
 __ipc_unpopulate(struct ipc * const __ipc);
 
 
 /****************************************************************************/
-/*! Check if a SIGIPC was received during last __ipc_block/__ipc_unblock
- * cycle. */
+/*! Allow signals to be sent to process. */
 /****************************************************************************/
-int
-__ipc_sigrecvd(struct ipc * const __ipc);
+void
+__ipc_sigon(struct ipc * const __ipc);
+
+
+/****************************************************************************/
+/*! Disallow signals to be sent to process. */
+/****************************************************************************/
+void
+__ipc_sigoff(struct ipc * const __ipc);
 
 
 /****************************************************************************/
 /*! Check if process is eligible for eviction. */
 /****************************************************************************/
 int
-__ipc_is_eligible(struct ipc * const __ipc);
+__ipc_eligible(struct ipc * const __ipc);
+
+
+/****************************************************************************/
+/*! Release a memory blocked process, if any. */
+/****************************************************************************/
+int
+__ipc_release(struct ipc * const __ipc);
+
+
+/****************************************************************************/
+/*! Increment process resident memory. */
+/****************************************************************************/
+void
+__ipc_atomic_inc(struct ipc * const __ipc, size_t const __value);
+
+
+/****************************************************************************/
+/*! Decrement process resident memory. */
+/****************************************************************************/
+void
+__ipc_atomic_dec(struct ipc * const __ipc, size_t const __value);
 
 
 /****************************************************************************/

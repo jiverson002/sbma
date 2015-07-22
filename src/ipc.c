@@ -48,179 +48,184 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 
 #if SBMA_VERSION >= 200
-//# define SBMA_WAIT_ALGO 0  /* timed wait on trn3 / every block posts */
-//# define SBMA_WAIT_ALGO 1  /* wait on trn3 or all blocked / every block posts */
+# define SBMA_WAIT_ALGO 0  /* timed wait on trn3 / manual posts */
+//# define SBMA_WAIT_ALGO 1  /* wait on trn3 or all blocked / manual posts */
 //# define SBMA_WAIT_ALGO 2  /* timed sleep */
-//# define SBMA_WAIT_ALGO 3  /* timed wait on trn3 / manual posts */
-# define SBMA_WAIT_ALGO 4  /* wait on trn3 or all blocked / manual posts */
 #else
 # define SBMA_WAIT_ALGO (-1) /* disable all wait algorithm code */
 #endif
 
 
-#define CALL_LIBC(__IPC, __CMD, __SIGRECVD)\
+/****************************************************************************/
+/*! Thread-local variable to check for signal received. */
+/****************************************************************************/
+volatile __thread int ipc_sigrecvd;
+
+
+/****************************************************************************/
+/*! Constructs which implement a critical section. */
+/****************************************************************************/
+#define CRITICAL_SECTION_BEG(__IPC)\
 do {\
-  ret = __ipc_block(__IPC, IPC_MEM_BLOCKED);\
-  if (-1 == ret)\
-    return -1;\
-  ret = libc_ ## __CMD;\
-  if (-1 == ret) {\
-    ret = __ipc_unblock(__IPC);\
-    ASSERT(-1 != ret);\
-    if (EINTR == errno || ETIMEDOUT == errno)\
-      errno = EAGAIN;\
-    return -1;\
+  int ret;\
+  (__IPC)->flags[(__IPC)->id] |= IPC_MEM_BLOCKED;\
+  ret = sem_wait((__IPC)->mtx);\
+  (__IPC)->flags[(__IPC)->id] &= ~IPC_MEM_BLOCKED;\
+  if (-1 == ret && (EINTR != errno || 0 == ipc_sigrecvd))\
+    goto CRITICAL_SECTION_ERREXIT;\
+  if (1 == ipc_sigrecvd) {\
+    if (-1 != ret) {\
+      ret = sem_post((__IPC)->mtx);\
+      if (-1 == ret)\
+        goto CRITICAL_SECTION_CLEANUP1;\
+    }\
+    goto CRITICAL_SECTION_ERRAGAIN;\
   }\
-  ret = __ipc_unblock(__IPC);\
+} while (0)
+
+#define CRITICAL_SECTION_END(__IPC)\
+do {\
+  int ret;\
+  ret = sem_post((__IPC)->mtx);\
   if (-1 == ret)\
-    return -1;\
-  ret = __ipc_sigrecvd(__IPC);\
-  if (1 == ret) {\
-    ret = __SIGRECVD;\
-    ASSERT(-1 != ret);\
-    errno = EAGAIN;\
-    return -1;\
-  }\
+    goto CRITICAL_SECTION_CLEANUP1;\
+  goto CRITICAL_SECTION_DONE;\
+  CRITICAL_SECTION_CLEANUP1:\
+  ret = sem_post((__IPC)->mtx);\
+  ASSERT(-1 != ret);\
+  CRITICAL_SECTION_ERREXIT:\
+  return -1;\
+  CRITICAL_SECTION_ERRAGAIN:\
+  return -2;\
+  CRITICAL_SECTION_DONE:\
+  (void)0;\
 } while (0)
 
 
 /****************************************************************************/
-/*! Enum to identify state of ipc. */
+/*! Cause process to wait for some event to occur. */
 /****************************************************************************/
-enum ipc_state_code
-{
-  IPC_STATE_TRN2    = 1<<0,
-  IPC_STATE_BLOCKED = 1<<1
-};
-
-
-/****************************************************************************/
-/*!
- * Thread static variables for checking to see if a SIGIPC was received and
- * honored bewteen __ipc_block() and __ipc_unblock().
- */
-/****************************************************************************/
-static __thread size_t _ipc_l_pages;
-static __thread int    _ipc_sigrecvd;
-
-
 SBMA_STATIC int
 __ipc_wait(struct ipc * const __ipc)
 {
 
   int ret;
   struct timespec ts;
-#if SBMA_WAIT_ALGO == 1 || SBMA_WAIT_ALGO == 4
+#if SBMA_WAIT_ALGO == 1
   int state, sval1, sval2;
 #endif
 
-  if (NULL == __ipc)
-    goto ERREXIT;
-
-#if SBMA_WAIT_ALGO == 0 || SBMA_WAIT_ALGO == 3
-  /* This approach is solely used as an early alert method. This means that
-   * instead of requiring the process to sleep for the whole period, it can
-   * be signalled early if another process enters the CMD_BLOCKED state. */
-  ret = clock_gettime(CLOCK_REALTIME, &ts);
-  if (-1 == ret)
-    goto ERREXIT;
-  if ((long)999999999-ts.tv_nsec < (long)100000000) {
-    ts.tv_sec++;
-    ts.tv_nsec = (long)100000000-((long)999999999-ts.tv_nsec);
-  }
-  else {
-    ts.tv_nsec += 100000000;
-  }
-
-  /* Cannot post to trn3 in case of sigrecvd, because doing so could
-   * possibly break the sem_getvalue() reliance in __ipc_block(). */
-  CALL_LIBC(__ipc, sem_timedwait(__ipc->trn3, &ts), 0);
-#elif SBMA_WAIT_ALGO == 1 || SBMA_WAIT_ALGO == 4
-  ts.tv_sec  = 0;
-  ts.tv_nsec = 50000000;
-
-  state = 0;
-  ret = __ipc_block(__ipc, IPC_MEM_BLOCKED);
-  if (-1 == ret)
-    goto CLEANUP1;
-  state |= IPC_STATE_BLOCKED;
-
-  for (;;) {
-    ret = libc_sem_wait(__ipc->trn2);
-    if (-1 == ret) {
-      if (EINTR == errno || ETIMEDOUT == errno)
-        errno = EAGAIN;
-      goto CLEANUP1;
+#if SBMA_WAIT_ALGO == 0
+  {
+    /* This approach is solely used as an early alert method. This means that
+     * instead of requiring the process to sleep for the whole period, it can
+     * be signalled early if another process enters the CMD_BLOCKED state. */
+    ret = clock_gettime(CLOCK_REALTIME, &ts);
+    if (-1 == ret)
+      return -1;
+    if ((long)999999999-ts.tv_nsec < (long)100000000) {
+      ts.tv_sec++;
+      ts.tv_nsec = (long)100000000-((long)999999999-ts.tv_nsec);
     }
-    state |= IPC_STATE_TRN2;
+    else {
+      ts.tv_nsec += 100000000;
+    }
 
-    ret = sem_getvalue(__ipc->trn3, &sval1);
+    __ipc->flags[__ipc->id] |= IPC_MEM_BLOCKED;
+    ret = sem_timedwait(__ipc->trn3, &ts);
+    __ipc->flags[__ipc->id] &= ~IPC_MEM_BLOCKED;
+    if (-1 == ret)
+      return -1;
+  }
+#elif SBMA_WAIT_ALGO == 1
+  {
+    state      = 0;
+    ts.tv_sec  = 0;
+    ts.tv_nsec = 50000000;
+
+    __ipc->flags[__ipc->id] |= IPC_MEM_BLOCKED;
+    state |= 2;
+    ret = sem_post(__ipc->cnt);
     if (-1 == ret)
       goto CLEANUP1;
-    ret = sem_getvalue(__ipc->cnt, &sval2);
-    if (-1 == ret)
-      goto CLEANUP1;
+    state |= 4;
 
-    if (1 == sval1 || __ipc->n_procs == sval2) {
-      if (1 == sval1) {
-        ret = libc_sem_wait(__ipc->trn3);
-        if (-1 == ret) {
-          if (EINTR == errno || ETIMEDOUT == errno)
-            errno = EAGAIN;
-          goto CLEANUP1;
+    for (;;) {
+      ret = libc_sem_wait(__ipc->trn2);
+      if (-1 == ret)
+        goto CLEANUP1;
+      state |= 1;
+
+      ret = sem_getvalue(__ipc->trn3, &sval1);
+      if (-1 == ret)
+        goto CLEANUP1;
+      ret = sem_getvalue(__ipc->cnt, &sval2);
+      if (-1 == ret)
+        goto CLEANUP1;
+
+      if (1 == sval1 || __ipc->n_procs == sval2) {
+        if (1 == sval1) {
+          ret = libc_sem_wait(__ipc->trn3);
+          if (-1 == ret)
+            goto CLEANUP1;
         }
+
+        ret = sem_post(__ipc->trn2);
+        if (-1 == ret)
+          goto CLEANUP1;
+        state &= ~1;
+
+        break;
       }
 
       ret = sem_post(__ipc->trn2);
       if (-1 == ret)
         goto CLEANUP1;
-      state &= ~IPC_STATE_TRN2;
+      state &= ~1;
 
-      break;
+      ret = libc_nanosleep(&ts, NULL);
+      if (-1 == ret)
+        goto CLEANUP1;
     }
 
-    ret = sem_post(__ipc->trn2);
+    __ipc->flags[__ipc->id] &= ~IPC_MEM_BLOCKED;
+    state &= ~2;
+    ret = libc_sem_wait(__ipc->cnt);
     if (-1 == ret)
       goto CLEANUP1;
-    state &= ~IPC_STATE_TRN2;
+    state &= ~4;
 
-    ret = libc_nanosleep(&ts, NULL);
-    if (-1 == ret) {
-      if (EINTR == errno || ETIMEDOUT == errno)
-        errno = EAGAIN;
-      goto CLEANUP1;
+    return 0;
+
+    CLEANUP1:
+    if (0 != state) {
+      if (1 == (state&1)) {
+        ret = sem_post(__ipc->trn2);
+        ASSERT(-1 != ret);
+      }
+      if (2 == (state&2)) {
+        __ipc->flags[__ipc->id] &= ~IPC_MEM_BLOCKED;
+      }
+      /*if (4 == (state&4)) {
+        ret = libc_sem_wait(__ipc->cnt);
+        ASSERT(-1 != ret);
+      }*/
     }
+    return -1;
   }
-
-  ret = __ipc_unblock(__ipc);
-  if (-1 == ret)
-    goto CLEANUP1;
-  state &= ~IPC_STATE_BLOCKED;
-
-  return 0;
-
-  CLEANUP1:
-  if (0 != state) {
-    if (IPC_STATE_TRN2 == (state&IPC_STATE_TRN2)) {
-      ret = sem_post(__ipc->trn2);
-      ASSERT(-1 != ret);
-    }
-    if (IPC_STATE_BLOCKED == (state&IPC_STATE_BLOCKED)) {
-      ret = __ipc_unblock(__ipc);
-      ASSERT(-1 != ret);
-    }
-  }
-  goto ERREXIT;
 #elif SBMA_WAIT_ALGO == 2
-  ts.tv_sec  = 0;
-  ts.tv_nsec = 100000000;
-  CALL_LIBC(__ipc, nanosleep(&ts, NULL), 0);
+  {
+    ts.tv_sec  = 0;
+    ts.tv_nsec = 1000000;
+    __ipc->flags[__ipc->id] |= IPC_MEM_BLOCKED;
+    ret = nanosleep(&ts, NULL);
+    __ipc->flags[__ipc->id] &= ~IPC_MEM_BLOCKED;
+    if (-1 == ret)
+      return -1;
+  }
 #endif
 
   return 0;
-
-  ERREXIT:
-  return -1;
 }
 
 
@@ -366,7 +371,7 @@ __ipc_destroy(struct ipc * const __ipc)
 
   __ipc->curpages = __ipc->pmem[__ipc->id];
 
-  ret = munmap(__ipc->shm, IPC_LEN(__ipc->n_procs));
+  ret = munmap((void*)__ipc->shm, IPC_LEN(__ipc->n_procs));
   if (-1 == ret)
     return -1;
 
@@ -423,11 +428,74 @@ SBMA_EXPORT(internal, int
 __ipc_destroy(struct ipc * const __ipc));
 
 
+SBMA_EXTERN void
+__ipc_populate(struct ipc * const __ipc)
+{
+  if (1 == __ipc->init)
+    __ipc->flags[__ipc->id] |= IPC_POPULATED;
+}
+SBMA_EXPORT(internal, void
+__ipc_populate(struct ipc * const __ipc));
+
+
+SBMA_EXTERN void
+__ipc_unpopulate(struct ipc * const __ipc)
+{
+  if (1 == __ipc->init)
+    __ipc->flags[__ipc->id] &= ~IPC_POPULATED;
+}
+SBMA_EXPORT(internal, void
+__ipc_unpopulate(struct ipc * const __ipc));
+
+
+SBMA_EXTERN void
+__ipc_sigon(struct ipc * const __ipc)
+{
+  ipc_sigrecvd = 0;
+  if (1 == __ipc->init)
+    __ipc->flags[__ipc->id] |= IPC_SIGON;
+#if SBMA_WAIT_ALGO == 1
+  if (1 == __ipc->init) {
+    int ret = sem_post(__ipc->cnt);
+    ASSERT(-1 != ret);
+  }
+#endif
+}
+SBMA_EXPORT(internal, void
+__ipc_sigon(struct ipc * const __ipc));
+
+
+SBMA_EXTERN void
+__ipc_sigoff(struct ipc * const __ipc)
+{
+  if (1 == __ipc->init)
+    __ipc->flags[__ipc->id] &= ~IPC_SIGON;
+#if SBMA_WAIT_ALGO == 1
+  if (1 == __ipc->init) {
+    int ret = libc_sem_wait(__ipc->cnt);
+    ASSERT(-1 != ret);
+  }
+#endif
+}
+SBMA_EXPORT(internal, void
+__ipc_sigoff(struct ipc * const __ipc));
+
+
+SBMA_EXTERN int
+__ipc_eligible(struct ipc * const __ipc)
+{
+  if (1 == __ipc->init)
+    return (IPC_ELIGIBLE == (__ipc->flags[__ipc->id]&IPC_ELIGIBLE));
+  return 0;
+}
+SBMA_EXPORT(internal, int
+__ipc_eligible(struct ipc * const __ipc));
+
+
 SBMA_EXTERN int
 __ipc_release(struct ipc * const __ipc)
 {
-#if SBMA_WAIT_ALGO == 0 || SBMA_WAIT_ALGO == 1 || SBMA_WAIT_ALGO == 3 ||\
-    SBMA_WAIT_ALGO == 4
+#if SBMA_WAIT_ALGO == 0 || SBMA_WAIT_ALGO == 1
   int ret, sval;
 
   if (0 == __ipc->init)
@@ -466,346 +534,134 @@ SBMA_EXPORT(internal, int
 __ipc_release(struct ipc * const __ipc));
 
 
-SBMA_EXTERN int
-__ipc_block(struct ipc * const __ipc, int const __flag)
+SBMA_EXTERN void
+__ipc_atomic_inc(struct ipc * const __ipc, size_t const __value)
 {
-#if SBMA_VERSION >= 200
-  int ret, sval;
-#endif
+  ASSERT(*__ipc->smem >= __value);
 
-  if (0 == __ipc->init)
-    return 0;
+  *__ipc->smem -= __value;
+  __ipc->pmem[__ipc->id] += __value;
 
-  /* Get number of loaded pages when process is in a state where reception of
-   * SIGIPC is not honored. */
-  _ipc_l_pages  = __ipc->pmem[__ipc->id];
-  _ipc_sigrecvd = 0;
-
-#if SBMA_VERSION >= 200
-# if SBMA_WAIT_ALGO == 0 || SBMA_WAIT_ALGO == 1 || SBMA_WAIT_ALGO == 4
-#   if SBMA_WAIT_ALGO == 0
-  if (IPC_CMD_BLOCKED == __flag) {
-#   endif
-  ret = libc_sem_wait(__ipc->trn2);
-  if (-1 == ret)
-    goto ERREXIT;
-
-#   if SBMA_WAIT_ALGO == 1
-  if (IPC_CMD_BLOCKED == __flag) {
-#   endif
-#   if SBMA_WAIT_ALGO == 0 || SBMA_WAIT_ALGO == 1
-    ret = sem_getvalue(__ipc->trn3, &sval);
-    if (-1 == ret)
-      goto CLEANUP1;
-
-    if (0 == sval) {
-      ret = sem_post(__ipc->trn3);
-      if (-1 == ret)
-        goto CLEANUP1;
-    }
-#   endif
-#   if SBMA_WAIT_ALGO == 1
-  }
-#   endif
-
-#   if SBMA_WAIT_ALGO == 1 || SBMA_WAIT_ALGO == 4
-  ret = sem_post(__ipc->cnt);
-  if (-1 == ret)
-    goto CLEANUP1;
-#   endif
-
-  ret = sem_post(__ipc->trn2);
-  if (-1 == ret)
-    goto CLEANUP1;
-#   if SBMA_WAIT_ALGO == 0
-  }
-#   endif
-# endif
-#endif
-
-  /* Transition to blocked */
-  __ipc->flags[__ipc->id] |= __flag;
-
-  return 0;
-
-#if SBMA_VERSION >= 200
-# if SBMA_WAIT_ALGO == 0 || SBMA_WAIT_ALGO == 1 || SBMA_WAIT_ALGO == 4
-  CLEANUP1:
-  ret = sem_post(__ipc->trn2);
-  ASSERT(-1 != ret);
-  ERREXIT:
-  return -1;
-# endif
-#endif
+  if (__ipc->pmem[__ipc->id] > __ipc->maxpages)
+    __ipc->maxpages = __ipc->pmem[__ipc->id];
 }
-SBMA_EXPORT(internal, int
-__ipc_block(struct ipc * const __ipc, int const __flag));
+SBMA_EXPORT(internal, void
+__ipc_atomic_inc(struct ipc * const __ipc, size_t const __value));
 
 
-SBMA_EXTERN int
-__ipc_unblock(struct ipc * const __ipc)
+SBMA_EXTERN void
+__ipc_atomic_dec(struct ipc * const __ipc, size_t const __value)
 {
-#if SBMA_VERSION >= 200
-# if SBMA_WAIT_ALGO == 1 || SBMA_WAIT_ALGO == 4
-  int ret;
-# endif
-#endif
+  ASSERT(__ipc->pmem[__ipc->id] >= __value);
 
-  if (0 == __ipc->init)
-    return 0;
-
-#if SBMA_VERSION >= 200
-# if SBMA_WAIT_ALGO == 1 || SBMA_WAIT_ALGO == 4
-  ret = libc_sem_wait(__ipc->trn2);
-  if (-1 == ret)
-    goto ERREXIT;
-
-  ret = libc_sem_wait(__ipc->cnt);
-  if (-1 == ret)
-    goto CLEANUP1;
-
-  ret = sem_post(__ipc->trn2);
-  if (-1 == ret)
-    goto CLEANUP1;
-# endif
-#endif
-
-  /* Transition to running */
-  __ipc->flags[__ipc->id] &= ~(IPC_CMD_BLOCKED|IPC_MEM_BLOCKED);
-
-  /* Compare number of loaded pages now, when process is in a state where
-   * reception of SIGIPC is not honored, to before the process was put in
-   * state where it would be honored. If the two values are different, then a
-   * SIGIPC was received and honored and thus __ipc_sigrecvd should be set to
-   * 1. */
-  if (_ipc_l_pages != __ipc->pmem[__ipc->id])
-    _ipc_sigrecvd = 1;
-
-  return 0;
-
-#if SBMA_VERSION >= 200
-# if SBMA_WAIT_ALGO == 1 || SBMA_WAIT_ALGO == 4
-  CLEANUP1:
-  ret = sem_post(__ipc->trn2);
-  ASSERT(-1 != ret);
-  ERREXIT:
-  return -1;
-# endif
-#endif
+  *__ipc->smem += __value;
+  __ipc->pmem[__ipc->id] -= __value;
 }
-SBMA_EXPORT(internal, int
-__ipc_unblock(struct ipc * const __ipc));
-
-
-SBMA_EXTERN int
-__ipc_populate(struct ipc * const __ipc)
-{
-  if (0 == __ipc->init)
-    return 0;
-  __ipc->flags[__ipc->id] |= IPC_POPULATED;
-  return 0;
-}
-SBMA_EXPORT(internal, int
-__ipc_populate(struct ipc * const __ipc));
-
-
-SBMA_EXTERN int
-__ipc_unpopulate(struct ipc * const __ipc)
-{
-  if (0 == __ipc->init)
-    return 0;
-  __ipc->flags[__ipc->id] &= ~IPC_POPULATED;
-  return 0;
-}
-SBMA_EXPORT(internal, int
-__ipc_unpopulate(struct ipc * const __ipc));
-
-
-SBMA_EXTERN int
-__ipc_sigrecvd(struct ipc * const __ipc)
-{
-  if (NULL == __ipc) {}
-
-  return _ipc_sigrecvd;
-}
-SBMA_EXPORT(internal, int
-__ipc_sigrecvd(struct ipc * const __ipc));
-
-
-SBMA_EXTERN int
-__ipc_is_eligible(struct ipc * const __ipc)
-{
-  uint8_t const flag1 = (IPC_CMD_BLOCKED|IPC_POPULATED);
-  uint8_t const flag2 = (IPC_MEM_BLOCKED|IPC_POPULATED);
-  volatile uint8_t const flags = __ipc->flags[__ipc->id];
-  if (0 == __ipc->init)
-    return 0;
-  return ((flag1 == (flags&flag1)) || (flag2 == (flags&flag2)));
-}
-SBMA_EXPORT(internal, int
-__ipc_is_eligible(struct ipc * const __ipc));
+SBMA_EXPORT(internal, void
+__ipc_atomic_dec(struct ipc * const __ipc, size_t const __value));
 
 
 SBMA_EXTERN int
 __ipc_madmit(struct ipc * const __ipc, size_t const __value)
 {
-  /* TODO: There is some potential for optimization here regarding how and
-   * when processes are chosen for eviction. For example, instead of choosing
-   * to evict the process with the most resident memory, we could chose the
-   * process with the least or the process with the least, but still greater
-   * than the request. Another example is instead of blindly evicting
-   * processes, even if their resident memory will not satisfy the request, we
-   * can choose not to evict processes unless the eviction will successfully
-   * satisfy the request.
-   */
-
-  int ret, i, ii, id, dlctr;
+  int ret, i, ii, id;
   size_t mxmem, smem;
-  volatile uint8_t * flags;
   int * pid;
+  volatile uint8_t * flags;
   volatile size_t * pmem;
 
   if (0 == __value)
     return 0;
 
-  CALL_LIBC(__ipc, sem_wait(__ipc->mtx), sem_post(__ipc->mtx));
-
   id    = __ipc->id;
-  smem  = *__ipc->smem;
   pmem  = __ipc->pmem;
   pid   = __ipc->pid;
   flags = __ipc->flags;
 
-  /* TODO: one problem with current implementation is that a process will have
-   * the opportunity to SIGIPC other processes before it waits to see if it
-   * should continue or not. */
+  /*========================================================================*/
+  CRITICAL_SECTION_BEG(__ipc);
+  /*========================================================================*/
 
+  smem  = *__ipc->smem;
   while (smem < __value) {
-    /* find a process which has memory and is eligible */
+    ii = -1;
     mxmem = 0;
-    ii    = -1;
-    for (dlctr=0,i=0; i<__ipc->n_procs; ++i) {
-      dlctr += (IPC_CMD_BLOCKED == (flags[i]&IPC_CMD_ELIGIBLE));
-      dlctr += (IPC_MEM_BLOCKED == (flags[i]&IPC_MEM_ELIGIBLE));
-
-      if (i == id || 0 == pmem[i])
+    /* find a candidate process to release memory */
+    for (i=0; i<__ipc->n_procs; ++i) {
+      /* skip oneself */
+      if (i == id)
         continue;
 
-      /* If the process is blocked on a function call, then choose it as a
-       * candidate if it has the most resident memory so far. */
-      /* If the process is blocked trying to admit memory, then choose it only
-       * if has the most resident memory so far AND my resident memory is
-       * larger than its resident memory. */
-      if ((IPC_CMD_ELIGIBLE == (flags[i]&IPC_CMD_ELIGIBLE)) ||\
-         ((IPC_MEM_ELIGIBLE == (flags[i]&IPC_MEM_ELIGIBLE)) &&\
-          (pmem[id] >= pmem[i])))
+      /* skip process which are ineligible */
+      if ((IPC_ELIGIBLE != (flags[i]&IPC_ELIGIBLE)) ||\
+          (IPC_MEM_BLOCKED == (flags[i]&IPC_MEM_BLOCKED) && pmem[id]<pmem[i]))
       {
-#if 1
-        if (mxmem < __value-smem) {
-# if 0
-          if (0 == mxmem || pmem[i] < mxmem || pmem[i] >= __value-smem)
-# else
-          if (pmem[i] > mxmem)
-# endif
-          {
-            ii = i;
-            mxmem = pmem[i];
-          }
-        }
-        else {
-          if (pmem[i] >= __value-smem && pmem[i] < mxmem) {
-            ii = i;
-            mxmem = pmem[i];
-          }
-        }
-#else
-        if (pmem[i] > mxmem) {
-          ii = i;
-          mxmem = pmem[i];
-        }
-#endif
+        continue;
+      }
+
+      /*
+       *  Choose the process to eject as follows:
+       *    1) If no candidate process has resident memory greater than the
+       *       requested memory, then choose the candidate which has the most
+       *       resident memory.
+       *    2) If some candidate process(es) have resident memory greater than
+       *       the requested memory, then choose from these, the candidate
+       *       which has the least.
+       */
+      if (((mxmem < __value-smem && pmem[i] > mxmem) ||\
+          (pmem[i] >= __value-smem && pmem[i] < mxmem)))
+      {
+        ii = i;
+        mxmem = pmem[i];
       }
     }
 
-    /* no such process exists, break loop */
-    if (-1 == ii) {
-      if (dlctr == __ipc->n_procs-1) {
-        printf("[%5d] {%zu,%zu} (", (int)getpid(), __value, *__ipc->smem);
-        for (i=0; i<__ipc->n_procs; ++i)
-          printf(" <%d,%d,%zu>", pid[i], flags[i], pmem[i]);
-        printf(" )\n");
-      }
-      ASSERT(dlctr != __ipc->n_procs-1);
+    /* no valid candidate process exists, break loop */
+    if (-1 == ii)
       break;
-    }
 
-    /* such a process is available, tell it to free memory */
+    /* tell the chosen candidate process to free memory */
     ret = kill(pid[ii], SIGIPC);
     if (-1 == ret)
       goto CLEANUP1;
 
     /* wait for it to signal it has finished */
     ret = libc_sem_wait(__ipc->trn1);
-    if (-1 == ret) {
-      ASSERT(EINTR != errno);
+    if (-1 == ret)
       goto CLEANUP1;
-    }
 
     smem = *__ipc->smem;
   }
 
+  if (smem >= __value) {
+    __ipc_atomic_inc(__ipc, __value);
+    __ipc_populate(__ipc);
+  }
+
+  /*========================================================================*/
+  CRITICAL_SECTION_END(__ipc);
+  /*========================================================================*/
+
 #if SBMA_VERSION >= 200
   if (smem < __value) {
-    ret = sem_post(__ipc->mtx);
-    if (-1 == ret)
-      goto CLEANUP1;
-
     ret = __ipc_wait(__ipc);
-    if (-1 == ret)
+    if (-1 == ret && EINTR != errno && ETIMEDOUT != errno)
       goto ERREXIT;
 
-    errno = EAGAIN;
-    goto ERREXIT;
-  }
-  else {
-#endif
-    *__ipc->smem -= __value;
-    __ipc->pmem[id] += __value;
-    ret = libc_msync(__ipc->shm, IPC_LEN(__ipc->n_procs), MS_SYNC);
-    if (-1 == ret)
-      goto CLEANUP2;
-
-    if (__ipc->pmem[id] > __ipc->maxpages)
-      __ipc->maxpages = __ipc->pmem[id];
-
-    ret = __ipc_populate(__ipc);
-    if (-1 == ret)
-      goto CLEANUP2;
-
-    ret = sem_post(__ipc->mtx);
-    if (-1 == ret)
-      goto CLEANUP1;
-
-    ASSERT(smem >= __value);
-    ASSERT(0 == __ipc_is_eligible(__ipc));
-    return 0;
-
-    CLEANUP2:
-    *__ipc->smem += __value;
-    __ipc->pmem[id] -= __value;
-    ret = libc_msync(__ipc->shm, IPC_LEN(__ipc->n_procs), MS_SYNC);
-    ASSERT(-1 != ret);
-    goto CLEANUP1;
-#if SBMA_VERSION >= 200
+    goto ERRAGAIN;
   }
 #endif
+
+  ASSERT(smem >= __value);
+  return 0;
 
   CLEANUP1:
   ret = sem_post(__ipc->mtx);
   ASSERT(-1 != ret);
   ERREXIT:
-  ASSERT(0 == __ipc_is_eligible(__ipc));
   return -1;
+  ERRAGAIN:
+  return -2;
 }
 SBMA_EXPORT(internal, int
 __ipc_madmit(struct ipc * const __ipc, size_t const __value));
@@ -814,47 +670,20 @@ __ipc_madmit(struct ipc * const __ipc, size_t const __value));
 SBMA_EXTERN int
 __ipc_mevict(struct ipc * const __ipc, size_t const __value)
 {
-  int ret;
-
   if (0 == __value)
     return 0;
 
-  ASSERT(0 == __ipc_is_eligible(__ipc));
+  /*========================================================================*/
+  CRITICAL_SECTION_BEG(__ipc);
+  /*========================================================================*/
 
-#if 1
-  CALL_LIBC(__ipc, sem_wait(__ipc->mtx), sem_post(__ipc->mtx));
-#else
-  ret = sem_wait(__ipc->mtx);
-  if (-1 == ret) {
-    if (EINTR == errno)
-      errno = EAGAIN;
-    return -1;
-  }
-  else if (1 == __ipc_sigrecvd(__ipc)) {
-    /* Need to release semaphore since this is returning an error. */
-    (void)sem_post(__ipc->mtx);
-    errno = EAGAIN;
-    return -1;
-  }
-#endif
+  __ipc_atomic_dec(__ipc, __value);
 
-  ASSERT(__ipc->pmem[__ipc->id] >= __value);
+  /*========================================================================*/
+  CRITICAL_SECTION_END(__ipc);
+  /*========================================================================*/
 
-  *__ipc->smem += __value;
-  __ipc->pmem[__ipc->id] -= __value;
-  ret = libc_msync((void*)__ipc->smem, sizeof(size_t), MS_SYNC);
-  if (-1 == ret)
-    goto ERREXIT;
-
-  ret = sem_post(__ipc->mtx);
-  if (-1 == ret)
-    goto ERREXIT;
-
-  ASSERT(0 == __ipc_is_eligible(__ipc));
   return 0;
-
-  ERREXIT:
-  return -1;
 }
 SBMA_EXPORT(internal, int
 __ipc_mevict(struct ipc * const __ipc, size_t const __value));
