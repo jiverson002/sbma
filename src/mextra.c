@@ -90,7 +90,7 @@ __sbma_mallinfo(void)
   if (0 == vmm.ipc.init)
     mi.hblks = vmm.ipc.curpages;  /* syspages loaded */
   else
-    mi.hblks = vmm.ipc.pmem[vmm.ipc.id]; /* ... */
+    mi.hblks = vmm.ipc.c_mem[vmm.ipc.id]; /* ... */
   mi.hblkhd   = vmm.ipc.maxpages; /* high water mark for loaded syspages */
   mi.keepcost = vmm.numpages;     /* syspages allocated */
 

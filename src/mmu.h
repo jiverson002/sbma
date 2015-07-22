@@ -35,16 +35,18 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 /*!
  * Memory management unit page status code bits:
  *
- *   bit 0 ==    0: zero fill allowed    1: page must be filled from disk
- *   bit 1 ==    0: page is resident     1: page is not resident
- *   bit 2 ==    0: page is unmodified   1: page is dirty
+ *   bit 0 ==    0: zero fill allowed       1: page must be filled from disk
+ *   bit 1 ==    0: page is resident        1: page is not resident
+ *   bit 2 ==    0: page is unmodified      1: page is dirty
+ *   bit 3 ==    0: page has been charged   1: page is uncharged
  */
 /****************************************************************************/
 enum mmu_status_code
 {
   MMU_ZFILL = 1 << 0,
   MMU_RSDNT = 1 << 1,
-  MMU_DIRTY = 1 << 2
+  MMU_DIRTY = 1 << 2,
+  MMU_CHRGD = 1 << 3
 };
 
 
@@ -53,14 +55,15 @@ enum mmu_status_code
 /****************************************************************************/
 struct ate
 {
-  size_t n_pages;       /*!< number of pages allocated */
-  volatile size_t l_pages;       /*!< number of pages loaded */
-  uintptr_t base;       /*!< starting address fro the allocation */
-  volatile uint8_t * flags;      /*!< status flags for pages */
-  struct ate * prev;    /*!< doubly linked list pointer */
-  struct ate * next;    /*!< doubly linked list pointer */
+  size_t n_pages;           /*!< number of pages allocated */
+  volatile size_t l_pages;  /*!< number of pages loaded */
+  volatile size_t c_pages;  /*!< number of pages charged */
+  uintptr_t base;           /*!< starting address fro the allocation */
+  volatile uint8_t * flags; /*!< status flags for pages */
+  struct ate * prev;        /*!< doubly linked list pointer */
+  struct ate * next;        /*!< doubly linked list pointer */
 #ifdef USE_THREAD
-  pthread_mutex_t lock; /*!< mutex guarding struct */
+  pthread_mutex_t lock;     /*!< mutex guarding struct */
 #endif
 };
 

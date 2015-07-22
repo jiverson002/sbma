@@ -58,9 +58,11 @@ enum __sbma_mallopt_params
 /*!
  * Virtual memory manager option bits:
  *
- *   bit 0 ==    0: aggressive read  1: lazy read
- *   bit 1 ==    0: aggressive write 1: lazy write
- *   bit 2 ==    0:                  1: ghost pages
+ *   bit 0 ==    0:                    1: use standar c library malloc, etc.
+ *   bit 1 ==    0: aggressive read    1: lazy read
+ *   bit 2 ==    0: aggressive write   1: lazy write
+ *   bit 3 ==    0: aggressive charge  1: lazy charge (only valid w/ lazy read)
+ *   bit 4 ==    0:                    1: ghost pages
  */
 /****************************************************************************/
 enum __sbma_vmm_opt_code
@@ -68,7 +70,8 @@ enum __sbma_vmm_opt_code
   VMM_OSVMM = 1 << 0,
   VMM_LZYRD = 1 << 1,
   VMM_LZYWR = 1 << 2,
-  VMM_GHOST = 1 << 3
+  VMM_LZYCH = 1 << 3,
+  VMM_GHOST = 1 << 4
 };
 
 
@@ -82,27 +85,27 @@ extern "C" {
 #endif
 
 /* klmalloc.c */
-int    KL_init(void * unused, ...);
+int    KL_init(void *, ...);
 int    KL_destroy(void);
-void * KL_malloc(size_t const size);
-void * KL_calloc(size_t const num, size_t const size);
-void * KL_realloc(void * const ptr, size_t const size);
-int    KL_free(void * const ptr);
+void * KL_malloc(size_t const);
+void * KL_calloc(size_t const, size_t const);
+void * KL_realloc(void * const, size_t const);
+int    KL_free(void * const);
 
 /* mextra.c */
-int             __sbma_mallopt(int const param, int const value);
+int             __sbma_mallopt(int const, int const);
 struct mallinfo __sbma_mallinfo(void);
 int             __sbma_release(void);
 
 /* mstate.c */
-ssize_t __sbma_mtouch(void * const ptr, size_t const size);
-ssize_t __sbma_mtouch_atomic(void * const ptr, size_t const size, ...);
+ssize_t __sbma_mtouch(void * const, void * const, size_t const);
+ssize_t __sbma_mtouch_atomic(void * const, size_t const, ...);
 ssize_t __sbma_mtouchall(void);
-ssize_t __sbma_mclear(void * const ptr, size_t const size);
+ssize_t __sbma_mclear(void * const, size_t const);
 ssize_t __sbma_mclearall(void);
-ssize_t __sbma_mevict(void * const ptr, size_t const size);
+ssize_t __sbma_mevict(void * const, size_t const);
 ssize_t __sbma_mevictall(void);
-int     __sbma_mexist(void const * const ptr);
+int     __sbma_mexist(void const * const);
 
 #ifdef __cplusplus
 }
@@ -123,7 +126,7 @@ int     __sbma_mexist(void const * const ptr);
 #define SBMA_release            __sbma_release
 
 /* mstate.c */
-#define SBMA_mtouch             __sbma_mtouch
+#define SBMA_mtouch(...)        __sbma_mtouch(NULL, __VA_ARGS__)
 #define SBMA_mtouch_atomic(...) __sbma_mtouch_atomic(__VA_ARGS__, SBMA_ATOMIC_END)
 #define SBMA_mtouchall          __sbma_mtouchall
 #define SBMA_mclear             __sbma_mclear

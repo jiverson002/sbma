@@ -136,9 +136,10 @@ SBMA_STATIC void
 __vmm_sigsegv(int const sig, siginfo_t * const si, void * const ctx)
 {
   int ret;
-  size_t ip, page_size, l_pages, chk_l_pages;
-  ssize_t numrd;
+  size_t ip, page_size, c_pages, _len;
+  ssize_t numrd=0;
   uintptr_t addr;
+  void * _addr;
   volatile uint8_t * flags;
   struct ate * ate;
 
@@ -157,56 +158,37 @@ __vmm_sigsegv(int const sig, siginfo_t * const si, void * const ctx)
   flags = ate->flags;
 
   if (MMU_RSDNT == (flags[ip]&MMU_RSDNT)) {
-    for (;;) {
-      if (VMM_LZYRD == (vmm.opts&VMM_LZYRD))
-        l_pages = 1;
-      else
-        l_pages = ate->n_pages-ate->l_pages;
-
-      /* TODO: in current code, each read fault requires a check with the ipc
-       * memory tracking to ensure there is enough free space. However, in
-       * previous versions of the SIGSEGV handler, this check was only done
-       * once per allocation when lazy reading is enabled. On one hand, the
-       * current implementation is better because it will result in a smaller
-       * number of times that a process is asked to evict all of its memory.
-       * On the other hand, it requires the acquisition of a mutex for every
-       * read fault. */
-
-      chk_l_pages = ate->l_pages;
-
-      ret = __ipc_madmit(&(vmm.ipc), VMM_TO_SYS(l_pages));
-      if (-1 == ret) {
-        (void)__lock_let(&(ate->lock));
-        printf("[%5d] %s:%d %s\n", (int)getpid(), __func__, __LINE__,
-          strerror(errno));
-        ASSERT(0);
-      }
-      else if (-2 != ret) {
-        break;
-      }
-    }
-
-    /* swap in the required memory */
     if (VMM_LZYRD == (vmm.opts&VMM_LZYRD)) {
-      numrd = __vmm_swap_i(ate, ip, 1, vmm.opts&VMM_GHOST);
-      ASSERT(-1 != numrd);
+      _addr = (void*)(ate->base+ip*page_size);
+      _len  = page_size;
     }
     else {
-      numrd = __vmm_swap_i(ate, 0, ate->n_pages, vmm.opts&VMM_GHOST);
-      ASSERT(-1 != numrd);
-      ASSERT(ate->l_pages == ate->n_pages);
+      _addr = (void*)ate->base;
+      _len  = ate->n_pages*page_size;
     }
 
-    ASSERT(l_pages == ate->l_pages-chk_l_pages);
+    ret = __sbma_mtouch(ate, _addr, _len);
+    ASSERT(-1 != ret);
 
-    /* release lock on alloction table entry */
     ret = __lock_let(&(ate->lock));
     ASSERT(-1 != ret);
 
-    /* track number of read faults, syspages read from disk, syspages
-     * currently loaded, and high water mark for syspages loaded */
     VMM_TRACK(numrf, 1);
-    VMM_TRACK(numrd, numrd);
+
+    /* TODO: In current code, each read fault requires a check with the ipc
+     * memory tracking to ensure there is enough free space. However, in
+     * previous versions of the SIGSEGV handler, this check was only done
+     * once per allocation when lazy reading is enabled. On one hand, the
+     * current implementation is better because it will result in a smaller
+     * number of times that a process is asked to evict all of its memory.
+     * On the other hand, it requires the acquisition of a mutex for every
+     * read fault.
+     * UPDATE: In versions >= 0.2.0, I think this actually increases the
+     * number of times that a process is asked to evict memory, since
+     * scanning a single allocation may require the process to evict several
+     * times, versus if a single madmit call was used for the entire
+     * allocation, then it is likely that it would be asked to evict less
+     * due to its higher amount of resident memory. */
   }
   else {
     /* sanity check */
@@ -224,7 +206,6 @@ __vmm_sigsegv(int const sig, siginfo_t * const si, void * const ctx)
     ret = __lock_let(&(ate->lock));
     ASSERT(-1 != ret);
 
-    /* track number of write faults */
     VMM_TRACK(numwf, 1);
   }
 
@@ -239,7 +220,7 @@ SBMA_STATIC void
 __vmm_sigipc(int const sig, siginfo_t * const si, void * const ctx)
 {
   int ret;
-  size_t l_pages, numwr;
+  size_t c_pages, numwr;
 
   /* make sure we received a SIGIPC */
   ASSERT(SIGIPC <= SIGRTMAX);
@@ -255,11 +236,11 @@ __vmm_sigipc(int const sig, siginfo_t * const si, void * const ctx)
      * thus no other processes can signal. */
 
     /* evict all memory */
-    ret = __sbma_mevictall_int(&l_pages, &numwr);
+    ret = __sbma_mevictall_int(&c_pages, &numwr);
     ASSERT(-1 != ret);
 
     /* update ipc memory statistics and unpopulate */
-    __ipc_atomic_dec(&(vmm.ipc), l_pages);
+    __ipc_atomic_dec(&(vmm.ipc), c_pages);
     __ipc_unpopulate(&(vmm.ipc));
 
     /* track number of syspages currently loaded, number of syspages written
@@ -324,11 +305,10 @@ __vmm_swap_i(struct ate * const __ate, size_t const __beg,
   }
 
   /* compute file name */
-  if (0 > snprintf(fname, FILENAME_MAX, "%s%d-%zx", vmm.fstem, (int)getpid(),\
-    (uintptr_t)__ate))
-  {
+  ret = snprintf(fname, FILENAME_MAX, "%s%d-%zx", vmm.fstem, (int)getpid(),\
+    (uintptr_t)__ate);
+  if (0 > ret)
     return -1;
-  }
   /* open the file for reading */
   fd = libc_open(fname, O_RDONLY);
   if (-1 == fd)
@@ -372,12 +352,17 @@ __vmm_swap_i(struct ate * const __ate, size_t const __beg,
     }
 
     if (ip != end) {
-      if (MMU_RSDNT == (flags[ip]&MMU_RSDNT)) {
+      if (MMU_RSDNT == (flags[ip]&MMU_RSDNT)) { /* not resident */
         ASSERT(__ate->l_pages < __ate->n_pages);
         __ate->l_pages++;
 
-        /* flag: *0* */
-        flags[ip] &= ~MMU_RSDNT;
+        if (MMU_CHRGD == (flags[ip]&MMU_CHRGD)) { /* not charged */
+          ASSERT(__ate->c_pages < __ate->n_pages);
+          __ate->c_pages++;
+        }
+
+        /* flag: 0*0* */
+        flags[ip] &= ~(MMU_CHRGD|MMU_RSDNT);
       }
     }
   }
@@ -442,7 +427,7 @@ __vmm_swap_o(struct ate * const __ate, size_t const __beg,
   /* shortcut by checking to see if no pages are currently loaded */
   /* TODO: if we track the number of dirty pages, then this can do a better
    * job of short-cutting */
-  if (0 == __ate->l_pages)
+  if (0 == __ate->c_pages)
     return 0;
 
   /* setup local variables */
@@ -452,11 +437,10 @@ __vmm_swap_o(struct ate * const __ate, size_t const __beg,
   end       = __beg+__num;
 
   /* compute file name */
-  if (0 > snprintf(fname, FILENAME_MAX, "%s%d-%zx", vmm.fstem, (int)getpid(),\
-    (uintptr_t)__ate))
-  {
+  ret = snprintf(fname, FILENAME_MAX, "%s%d-%zx", vmm.fstem, (int)getpid(),\
+    (uintptr_t)__ate);
+  if (0 > ret)
     return -1;
-  }
   /* open the file for writing */
   fd = libc_open(fname, O_WRONLY);
   if (-1 == fd)
@@ -466,27 +450,34 @@ __vmm_swap_o(struct ate * const __ate, size_t const __beg,
    * writes in contigous chunks of changed pages. */
   for (ipfirst=-1,ip=__beg; ip<=end; ++ip) {
     if (ip != end && (MMU_DIRTY != (flags[ip]&MMU_DIRTY))) {
-      if (MMU_RSDNT != (flags[ip]&MMU_RSDNT)) {
+      if (MMU_RSDNT != (flags[ip]&MMU_RSDNT)) {     /* is resident */
+        ASSERT(MMU_CHRGD != (flags[ip]&MMU_CHRGD)); /* is charged */
+
         ASSERT(__ate->l_pages > 0);
         __ate->l_pages--;
+        ASSERT(__ate->c_pages > 0);
+        __ate->c_pages--;
       }
 
-      /* flag: 01* */
+      /* flag: 101* */
       flags[ip] &= MMU_ZFILL;
-      flags[ip] |= MMU_RSDNT;
+      flags[ip] |= (MMU_CHRGD|MMU_RSDNT);
     }
 
     if (ip != end && (MMU_DIRTY == (flags[ip]&MMU_DIRTY))) {
-      ASSERT(MMU_RSDNT != (flags[ip]&MMU_RSDNT)); /* is resident */
-
       if (-1 == ipfirst)
         ipfirst = ip;
 
+      ASSERT(MMU_RSDNT != (flags[ip]&MMU_RSDNT)); /* is resident */
+      ASSERT(MMU_CHRGD != (flags[ip]&MMU_CHRGD)); /* is charged */
+
       ASSERT(__ate->l_pages > 0);
       __ate->l_pages--;
+      ASSERT(__ate->c_pages > 0);
+      __ate->c_pages--;
 
-      /* flag: 011 */
-      flags[ip] = MMU_RSDNT|MMU_ZFILL;
+      /* flag: 1011 */
+      flags[ip] = (MMU_CHRGD|MMU_RSDNT|MMU_ZFILL);
     }
     else if (-1 != ipfirst) {
       ret = __vmm_write(fd, (void*)(addr+(ipfirst*page_size)),\
@@ -565,7 +556,7 @@ __vmm_swap_x(struct ate * const __ate, size_t const __beg,
       if (-1 == ret)
         return -1;
     }
-    /* flag: 0*0 */
+    /* flag: *0*0 */
     flags[ip] &= ~(MMU_DIRTY|MMU_ZFILL);
   }
 

@@ -29,6 +29,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 
 #include <semaphore.h> /* semaphore library */
+#include <signal.h>    /* sig_atomic_t */
 #include <stdint.h>    /* uint8_t */
 #include <stddef.h>    /* size_t */
 
@@ -40,7 +41,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 /*! Compute the length of the IPC shared memory segment. */
 /****************************************************************************/
 #define IPC_LEN(__N_PROCS)\
-  (sizeof(size_t)+(__N_PROCS)*(sizeof(size_t)+sizeof(int)+sizeof(uint8_t))+\
+  (sizeof(size_t)+(__N_PROCS)*(2*sizeof(size_t)+sizeof(int)+sizeof(uint8_t))+\
     sizeof(int))
 
 
@@ -57,7 +58,7 @@ enum ipc_code
 {
   IPC_POPULATED    = 1 << 0,
   IPC_SIGON        = 1 << 1,
-  IPC_MEM_BLOCKED  = 1 << 3,
+  IPC_MEM_BLOCKED  = 1 << 2,
   IPC_ELIGIBLE     = IPC_POPULATED|IPC_SIGON
 };
 
@@ -83,18 +84,18 @@ struct ipc
   sem_t * trn3;     /*!< ... */
   sem_t * cnt;      /*!< ... */
 
-  void * shm;                /*!< shared memory region */
-  int * pid;                 /*!< pointer into shm for pid array */
-  volatile size_t  * smem;   /*!< pointer into shm for smem scalar */
-  volatile size_t  * pmem;   /*!< pointer into shm for pmem array */
-  volatile uint8_t * flags;  /*!< pointer into shm for flags array */
+  void * shm;               /*!< shared memory region */
+  int * pid;                /*!< pointer into shm for pid array */
+  volatile size_t  * smem;  /*!< pointer into shm for smem scalar */
+  volatile size_t  * c_mem; /*!< pointer into shm for ch_mem array */
+  volatile uint8_t * flags; /*!< pointer into shm for flags array */
 };
 
 
 /****************************************************************************/
 /*! Thread-local variable to check for signal received. */
 /****************************************************************************/
-extern volatile __thread int ipc_sigrecvd;
+extern __thread volatile sig_atomic_t ipc_sigrecvd;
 
 
 #ifdef __cplusplus

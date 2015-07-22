@@ -48,9 +48,9 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 
 #if SBMA_VERSION >= 200
-# define SBMA_WAIT_ALGO 0  /* timed wait on trn3 / manual posts */
+//# define SBMA_WAIT_ALGO 0  /* timed wait on trn3 / manual posts */
 //# define SBMA_WAIT_ALGO 1  /* wait on trn3 or all blocked / manual posts */
-//# define SBMA_WAIT_ALGO 2  /* timed sleep */
+# define SBMA_WAIT_ALGO 2  /* timed sleep */
 #else
 # define SBMA_WAIT_ALGO (-1) /* disable all wait algorithm code */
 #endif
@@ -58,8 +58,26 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 /****************************************************************************/
 /*! Thread-local variable to check for signal received. */
+/* TODO: What happens if two threads are admitting, one thread receives a
+ * signal, then shouldn't the other thread also be aware that the process has
+ * received a signal, since its memory (which is shared with the other
+ * thread), will also have been evicted. This could easily be implemented by
+ * using a non-thread-local variable. However, then care must be taken that a
+ * thread entering the blocked state (setting ipc_sigrecvd to zero) does not
+ * overwrite a non-zero value. */
+/* TODO: A possible solution to this could be to have a counter to see how
+ * many threads are blocked, then if the counter is non-zero, do not reset
+ * ipc_sigrecvd to zero. */
+/* TODO: Another probably more robust solution is to allow only a single
+ * thread to admit/evict memory simultaneously. */
+/* TODO: The same problem exists for the sigon/sigoff stuff, what if two
+ * threads call sigon, then one thread calls sigoff. */
+/* TODO: A possible solution would be to keep a counter of the number of
+ * threads in sigon state, but then how to make sure that the signal gets
+ * handled by **a** thread correctly. Does it matter which thread receives
+ * signal? */
 /****************************************************************************/
-volatile __thread int ipc_sigrecvd;
+__thread volatile sig_atomic_t ipc_sigrecvd;
 
 
 /****************************************************************************/
@@ -347,9 +365,9 @@ __ipc_init(struct ipc * const __ipc, int const __uniq, int const __n_procs,
   __ipc->trn3     = trn3;
   __ipc->cnt      = cnt;
   __ipc->smem     = (size_t*)shm;
-  __ipc->pmem     = (size_t*)((uintptr_t)__ipc->smem+sizeof(size_t));
-  __ipc->pid      = (int*)((uintptr_t)__ipc->pmem+(__n_procs*sizeof(size_t)));
-  __ipc->flags    = (uint8_t*)((uintptr_t)__ipc->pid+(__n_procs*sizeof(int))+sizeof(int));
+  __ipc->c_mem    = (size_t*)((uintptr_t)__ipc->smem+sizeof(size_t));
+  __ipc->pid      = (int*)((uintptr_t)__ipc->c_mem+(__n_procs*sizeof(size_t)));
+  __ipc->flags    = (uint8_t*)((uintptr_t)idp+sizeof(int));
 
   /* set my process id */
   __ipc->pid[id] = (int)getpid();
@@ -369,7 +387,7 @@ __ipc_destroy(struct ipc * const __ipc)
 
   __ipc->init = 0;
 
-  __ipc->curpages = __ipc->pmem[__ipc->id];
+  __ipc->curpages = __ipc->c_mem[__ipc->id];
 
   ret = munmap((void*)__ipc->shm, IPC_LEN(__ipc->n_procs));
   if (-1 == ret)
@@ -527,6 +545,7 @@ __ipc_release(struct ipc * const __ipc)
   ERREXIT:
   return -1;
 #else
+  if (NULL == __ipc) {} /* to surpress unused warning */
   return 0;
 #endif
 }
@@ -540,10 +559,10 @@ __ipc_atomic_inc(struct ipc * const __ipc, size_t const __value)
   ASSERT(*__ipc->smem >= __value);
 
   *__ipc->smem -= __value;
-  __ipc->pmem[__ipc->id] += __value;
+  __ipc->c_mem[__ipc->id] += __value;
 
-  if (__ipc->pmem[__ipc->id] > __ipc->maxpages)
-    __ipc->maxpages = __ipc->pmem[__ipc->id];
+  if (__ipc->c_mem[__ipc->id] > __ipc->maxpages)
+    __ipc->maxpages = __ipc->c_mem[__ipc->id];
 }
 SBMA_EXPORT(internal, void
 __ipc_atomic_inc(struct ipc * const __ipc, size_t const __value));
@@ -552,10 +571,10 @@ __ipc_atomic_inc(struct ipc * const __ipc, size_t const __value));
 SBMA_EXTERN void
 __ipc_atomic_dec(struct ipc * const __ipc, size_t const __value)
 {
-  ASSERT(__ipc->pmem[__ipc->id] >= __value);
+  ASSERT(__ipc->c_mem[__ipc->id] >= __value);
 
   *__ipc->smem += __value;
-  __ipc->pmem[__ipc->id] -= __value;
+  __ipc->c_mem[__ipc->id] -= __value;
 }
 SBMA_EXPORT(internal, void
 __ipc_atomic_dec(struct ipc * const __ipc, size_t const __value));
@@ -568,13 +587,13 @@ __ipc_madmit(struct ipc * const __ipc, size_t const __value)
   size_t mxmem, smem;
   int * pid;
   volatile uint8_t * flags;
-  volatile size_t * pmem;
+  volatile size_t * c_mem;
 
   if (0 == __value)
     return 0;
 
   id    = __ipc->id;
-  pmem  = __ipc->pmem;
+  c_mem = __ipc->c_mem;
   pid   = __ipc->pid;
   flags = __ipc->flags;
 
@@ -594,13 +613,13 @@ __ipc_madmit(struct ipc * const __ipc, size_t const __value)
 
       /* skip process which are ineligible */
       if ((IPC_ELIGIBLE != (flags[i]&IPC_ELIGIBLE)) ||\
-          (IPC_MEM_BLOCKED == (flags[i]&IPC_MEM_BLOCKED) && pmem[id]<pmem[i]))
+          (IPC_MEM_BLOCKED == (flags[i]&IPC_MEM_BLOCKED) && c_mem[id]<c_mem[i]))
       {
         continue;
       }
 
       /*
-       *  Choose the process to eject as follows:
+       *  Choose the process to evict as follows:
        *    1) If no candidate process has resident memory greater than the
        *       requested memory, then choose the candidate which has the most
        *       resident memory.
@@ -608,11 +627,11 @@ __ipc_madmit(struct ipc * const __ipc, size_t const __value)
        *       the requested memory, then choose from these, the candidate
        *       which has the least.
        */
-      if (((mxmem < __value-smem && pmem[i] > mxmem) ||\
-          (pmem[i] >= __value-smem && pmem[i] < mxmem)))
+      if (((mxmem < __value-smem && c_mem[i] > mxmem) ||\
+          (c_mem[i] >= __value-smem && c_mem[i] < mxmem)))
       {
         ii = i;
-        mxmem = pmem[i];
+        mxmem = c_mem[i];
       }
     }
 
@@ -647,6 +666,9 @@ __ipc_madmit(struct ipc * const __ipc, size_t const __value)
     ret = __ipc_wait(__ipc);
     if (-1 == ret && EINTR != errno && ETIMEDOUT != errno)
       goto ERREXIT;
+
+    /*printf("[%5d] %s:%d %zu,%zu\n", (int)getpid(), __func__, __LINE__, smem,
+      __value);*/
 
     goto ERRAGAIN;
   }

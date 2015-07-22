@@ -146,5 +146,7 @@ __lock_let_int(char const * const __func, int const __line,
                char const * const __lock_str,
                pthread_mutex_t * const __lock));
 #else
+/* Required incase USE_THREAD is not defined, so that this is not an empty
+ * translation unit. */
 typedef int make_iso_compilers_happy;
 #endif

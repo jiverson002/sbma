@@ -120,6 +120,7 @@ __sbma_malloc(size_t const __size)
   ate          = (struct ate*)addr;
   ate->n_pages = n_pages;
   ate->l_pages = n_pages;
+  ate->c_pages = n_pages;
   ate->base    = addr+(s_pages*page_size);
   ate->flags   = (uint8_t*)(addr+((s_pages+n_pages)*page_size));
 
@@ -193,7 +194,7 @@ SBMA_EXTERN int
 __sbma_free(void * const __ptr)
 {
   int ret, retval;
-  size_t page_size, s_pages, n_pages, f_pages, l_pages;
+  size_t page_size, s_pages, n_pages, f_pages, c_pages;
   struct ate * ate;
   char fname[FILENAME_MAX];
 
@@ -204,7 +205,7 @@ __sbma_free(void * const __ptr)
   s_pages   = 1+((sizeof(struct ate)-1)/page_size);
   ate       = (struct ate*)((uintptr_t)__ptr-(s_pages*page_size));
   n_pages   = ate->n_pages;
-  l_pages   = ate->l_pages;
+  c_pages   = ate->c_pages;
   f_pages   = 1+((n_pages*sizeof(uint8_t)-1)/page_size);
 
   /* Remove the file. */
@@ -233,7 +234,7 @@ __sbma_free(void * const __ptr)
 
   /* Update memory file. */
   for (;;) {
-    retval = __ipc_mevict(&(vmm.ipc), VMM_TO_SYS(s_pages+l_pages+f_pages));
+    retval = __ipc_mevict(&(vmm.ipc), VMM_TO_SYS(s_pages+c_pages+f_pages));
     if (-2 != retval)
       break;
   }
@@ -254,7 +255,7 @@ SBMA_EXTERN void *
 __sbma_realloc(void * const __ptr, size_t const __size)
 {
   int ret;
-  size_t i, page_size, s_pages, on_pages, of_pages, ol_pages;
+  size_t i, page_size, s_pages, on_pages, of_pages, ol_pages, oc_pages;
   size_t nn_pages, nf_pages;
   uintptr_t oaddr, naddr;
   volatile uint8_t * oflags;
@@ -278,6 +279,7 @@ __sbma_realloc(void * const __ptr, size_t const __size)
   on_pages  = ate->n_pages;
   of_pages  = 1+((on_pages*sizeof(uint8_t)-1)/page_size);
   ol_pages  = ate->l_pages;
+  oc_pages  = ate->c_pages;
   nn_pages  = 1+((__size-1)/page_size);
   nf_pages  = 1+((nn_pages*sizeof(uint8_t)-1)/page_size);
 
@@ -285,11 +287,13 @@ __sbma_realloc(void * const __ptr, size_t const __size)
     /* do nothing */
   }
   else if (nn_pages < on_pages) {
-    /* adjust l_pages for the pages which will be unmapped */
+    /* adjust c_pages for the pages which will be unmapped */
     ate->n_pages = nn_pages;
     for (i=nn_pages; i<on_pages; ++i) {
-      if (MMU_RSDNT != (oflags[i]&MMU_RSDNT))
+      if (MMU_RSDNT != (oflags[i]&MMU_RSDNT)) {
         ate->l_pages--;
+        ate->c_pages--;
+      }
     }
 
     /* update protection for new page flags area of allocation */
@@ -317,7 +321,7 @@ __sbma_realloc(void * const __ptr, size_t const __size)
     /* update memory file */
     for (;;) {
       ret = __ipc_mevict(&(vmm.ipc),\
-        VMM_TO_SYS((ol_pages-ate->l_pages)+(of_pages-nf_pages)));
+        VMM_TO_SYS((oc_pages-ate->c_pages)+(of_pages-nf_pages)));
       if (-1 == ret)
         return NULL;
       else if (-2 != ret)
@@ -400,6 +404,7 @@ __sbma_realloc(void * const __ptr, size_t const __size)
     /* populate ate structure */
     ate->n_pages = nn_pages;
     ate->l_pages = ol_pages+((nn_pages-on_pages)+(nf_pages-of_pages));
+    ate->c_pages = oc_pages+((nn_pages-on_pages)+(nf_pages-of_pages));
     ate->base    = naddr+(s_pages*page_size);
     ate->flags   = (uint8_t*)(naddr+((s_pages+nn_pages)*page_size));
 
@@ -452,7 +457,6 @@ __sbma_remap(void * const __nbase, void * const __obase, size_t const __size,
 
   ASSERT((uintptr_t)__obase == oate->base);
   ASSERT((uintptr_t)__nbase == nate->base);
-  ASSERT(nate->l_pages == nate->n_pages);
   ASSERT(oate->n_pages <= nate->n_pages);
 
   /* need to make sure that all bytes are captured, thus beg is a floor
@@ -469,6 +473,8 @@ __sbma_remap(void * const __nbase, void * const __obase, size_t const __size,
     optr, __size, SBMA_ATOMIC_END);
   if (-1 == ret)
     return -1;
+  ASSERT(nate->l_pages == nate->n_pages);
+  ASSERT(nate->c_pages == nate->n_pages);
 
   /* grant read-write permission to new memory */
   ret = mprotect((void*)((uintptr_t)nptr-__off), __size+__off,\
@@ -486,6 +492,7 @@ __sbma_remap(void * const __nbase, void * const __obase, size_t const __size,
 
   for (i=beg; i<end; ++i) {
     ASSERT(MMU_RSDNT != (nflags[i]&MMU_RSDNT));
+    ASSERT(MMU_CHRGD != (nflags[i]&MMU_CHRGD));
 
     /* copy zfill and dirty bit from old flag for clean pages */
     if (MMU_DIRTY != (nflags[i]&MMU_DIRTY))
@@ -506,6 +513,7 @@ __sbma_remap(void * const __nbase, void * const __obase, size_t const __size,
    * else the remap in not beneficial. */
   for (i=end; i<nate->n_pages; ++i) {
     ASSERT(MMU_RSDNT != (nflags[i]&MMU_RSDNT));
+    ASSERT(MMU_CHRGD != (nflags[i]&MMU_CHRGD));
 
     /* change non-dirty disk pages to dirty since, they were overwritten by
      * new file and grant them read-write permission */
@@ -535,17 +543,6 @@ __sbma_remap(void * const __nbase, void * const __obase, size_t const __size,
   /*ret = truncate(nfname, nn_pages*page_size);
   if (-1 == ret)
     return -1;*/
-
-  /*struct stat buf;
-  stat(nfname, &buf);
-  for (i=beg; i<end; ++i) {
-    if (MMU_ZFILL == (nflags[i]&MMU_ZFILL)) {
-      if ((i+1)*page_size > buf.st_size)
-        printf("[%5d] %s:%d (%zu,%zu)\n", (int)getpid(), __func__, __LINE__,
-          (i+1)*page_size, buf.st_size);
-      ASSERT((i+1)*page_size <= buf.st_size);
-    }
-  }*/
 
   return 0;
 }
