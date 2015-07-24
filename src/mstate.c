@@ -56,7 +56,6 @@ __sbma_mtouch_probe(struct ate * const __ate, void * const __addr,
   if (((VMM_LZYRD|VMM_AGGCH) == (vmm.opts&(VMM_AGGCH|VMM_LZYRD))) &&\
       (0 == __ate->c_pages))
   {
-    ASSERT(0);
     return VMM_TO_SYS(__ate->n_pages);
   }
 
@@ -91,7 +90,6 @@ __sbma_mtouch_int(struct ate * const __ate, void * const __addr,
   if (((VMM_LZYRD|VMM_AGGCH) == (vmm.opts&(VMM_AGGCH|VMM_LZYRD))) &&\
       (0 == __ate->c_pages))
   {
-    ASSERT(0);
     for (i=0; i<__ate->n_pages; ++i) {
       /* flag: 0*** */
       __ate->flags[i] &= ~MMU_CHRGD;
