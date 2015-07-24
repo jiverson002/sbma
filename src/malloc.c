@@ -348,6 +348,15 @@ __sbma_realloc(void * const __ptr, size_t const __size)
 
     /* resize allocation */
 #if 1
+    /* TODO: I think the reason that mremap fails so frequently is due to the
+     * fact that oaddr is not seen as a single vma in the kernel, but rather
+     * as several vmas, due to the use of mprotect to manage access to the
+     * memory region. */
+    /* Make sure the kernel sees the entire range as a single vma. */
+    /*ret = mprotect((void*)oaddr, (s_pages+on_pages+of_pages)*page_size,\
+      PROT_NONE);
+    if (-1 == ret)
+      goto CLEANUP1;*/
     naddr = (uintptr_t)mremap((void*)oaddr,\
       (s_pages+on_pages+of_pages)*page_size,\
       (s_pages+nn_pages+nf_pages)*page_size, MREMAP_MAYMOVE);
@@ -356,8 +365,12 @@ __sbma_realloc(void * const __ptr, size_t const __size)
       (s_pages+on_pages+of_pages)*page_size,\
       (s_pages+nn_pages+nf_pages)*page_size, 0);
 #endif
-    if ((uintptr_t)MAP_FAILED == naddr)
+    if ((uintptr_t)MAP_FAILED == naddr) {
+      printf("[%5d] had to malloc(%zu)\n", (int)getpid(), __size);
+      ASSERT(0);
       goto CLEANUP1;
+    }
+    printf("[%5d] got to realloc(%zu)\n", (int)getpid(), __size);
 
     /* copy page flags to new location */
     libc_memmove((void*)(naddr+((s_pages+nn_pages)*page_size)),\
