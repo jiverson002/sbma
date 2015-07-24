@@ -87,6 +87,18 @@ enum __sbma_vmm_opt_code
 
 
 /****************************************************************************/
+/*! Struct to return timer values. */
+/****************************************************************************/
+struct sbma_timeinfo
+{
+  double tv_rd; /*! read timer */
+  double tv_wr; /*! write timer */
+  double tv_ad; /*! admit timer */
+  double tv_ev; /*! evict timer */
+};
+
+
+/****************************************************************************/
 /*!
  * Function prototypes
  */
@@ -104,9 +116,10 @@ void * KL_realloc(void * const, size_t const);
 int    KL_free(void * const);
 
 /* mextra.c */
-int             __sbma_mallopt(int const, int const);
-struct mallinfo __sbma_mallinfo(void);
-int             __sbma_release(void);
+int                  __sbma_mallopt(int const, int const);
+struct mallinfo      __sbma_mallinfo(void);
+int                  __sbma_release(void);
+struct sbma_timeinfo __sbma_timeinfo(void);
 
 /* mstate.c */
 int     __sbma_check(char const * const, int const);
@@ -136,6 +149,7 @@ int     __sbma_mexist(void const * const);
 #define SBMA_mallopt            __sbma_mallopt
 #define SBMA_mallinfo           __sbma_mallinfo
 #define SBMA_release            __sbma_release
+#define SBMA_timeinfo           __sbma_timeinfo
 
 /* mstate.c */
 #define SBMA_mtouch(...)        __sbma_mtouch(NULL, __VA_ARGS__)

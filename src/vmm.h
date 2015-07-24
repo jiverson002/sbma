@@ -53,6 +53,8 @@ struct vmm
   volatile size_t numwf;        /*!< total number of write segfaults */
   volatile size_t numrd;        /*!< total number of pages read */
   volatile size_t numwr;        /*!< total number of pages written */
+  volatile double tmrrd;        /*!< read timer */
+  volatile double tmrwr;        /*!< write timer */
 
   size_t numpages;              /*!< current pages allocated */
 

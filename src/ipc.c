@@ -44,13 +44,12 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "common.h"
 #include "ipc.h"
 #include "sbma.h"
-#include "vmm.h"
 
 
 #if SBMA_VERSION >= 200
-//# define SBMA_WAIT_ALGO 0  /* timed wait on trn3 / manual posts */
+# define SBMA_WAIT_ALGO 0  /* timed wait on trn3 / manual posts */
 //# define SBMA_WAIT_ALGO 1  /* wait on trn3 or all blocked / manual posts */
-# define SBMA_WAIT_ALGO 2  /* timed sleep */
+//# define SBMA_WAIT_ALGO 2  /* timed sleep */
 #else
 # define SBMA_WAIT_ALGO (-1) /* disable all wait algorithm code */
 #endif
@@ -601,7 +600,7 @@ __ipc_madmit(struct ipc * const __ipc, size_t const __value)
   CRITICAL_SECTION_BEG(__ipc);
   /*========================================================================*/
 
-  smem  = *__ipc->smem;
+  smem = *__ipc->smem;
   while (smem < __value) {
     ii = -1;
     mxmem = 0;
@@ -666,9 +665,6 @@ __ipc_madmit(struct ipc * const __ipc, size_t const __value)
     ret = __ipc_wait(__ipc);
     if (-1 == ret && EINTR != errno && ETIMEDOUT != errno)
       goto ERREXIT;
-
-    /*printf("[%5d] %s:%d %zu,%zu\n", (int)getpid(), __func__, __LINE__, smem,
-      __value);*/
 
     goto ERRAGAIN;
   }

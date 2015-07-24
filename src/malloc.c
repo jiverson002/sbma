@@ -89,8 +89,7 @@ __sbma_malloc(size_t const __size)
    * Since the SBMA library bypasses the OS swap space, MAP_NORESERVE is used
    * here to prevent the system for reserving swap space. */
   addr = (uintptr_t)mmap(NULL, (s_pages+n_pages+f_pages)*page_size,
-    PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS|MAP_NORESERVE|MAP_LOCKED,\
-    -1, 0);
+    PROT_READ|PROT_WRITE, SBMA_MMAP_FLAG, -1, 0);
   if ((uintptr_t)MAP_FAILED == addr)
     goto CLEANUP1;
 
@@ -317,11 +316,13 @@ __sbma_realloc(void * const __ptr, size_t const __size)
     if (-1 == ret)
       return NULL;
 
+#if MAP_LOCKED == (SBMA_MMAP_FLAG&MAP_LOCKED)
     /* lock new page flags area of allocation into RAM */
     ret = libc_mlock((void*)(oaddr+((s_pages+nn_pages)*page_size)),\
       nf_pages*page_size);
     if (-1 == ret)
       return NULL;
+#endif
 
     /* copy page flags to new location */
     libc_memmove((void*)(oaddr+((s_pages+nn_pages)*page_size)),\
@@ -378,17 +379,18 @@ __sbma_realloc(void * const __ptr, size_t const __size)
     if (-1 == ret)
       goto CLEANUP;
 
+#if MAP_LOCKED == (SBMA_MMAP_FLAG&MAP_LOCKED)
     /* lock new area of allocation into RAM */
     ret = libc_mlock((void*)(naddr+(s_pages+on_pages)*page_size),\
       ((nn_pages-on_pages)+nf_pages)*page_size);
     if (-1 == ret)
       goto CLEANUP;
+#endif
 
-    if (0 > snprintf(nfname, FILENAME_MAX, "%s%d-%zx", vmm.fstem,\
-      (int)getpid(), naddr))
-    {
+    ret = snprintf(nfname, FILENAME_MAX, "%s%d-%zx", vmm.fstem,\
+      (int)getpid(), naddr);
+    if (0 > ret)
       return NULL;
-    }
     /* if the allocation has moved */
     if (oaddr != naddr) {
       /* move old file to new file and trucate to size */

@@ -37,6 +37,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <stdio.h>    /* FILENAME_MAX */
 #include <string.h>   /* strncpy */
 #include <sys/mman.h> /* mmap, mremap, madvise, mprotect */
+#include <time.h>     /* struct timespec */
 #include <unistd.h>   /* sysconf */
 #include "common.h"
 #include "ipc.h"
@@ -206,6 +207,7 @@ __vmm_sigipc(int const sig, siginfo_t * const si, void * const ctx)
 {
   int ret;
   size_t c_pages, numwr;
+  struct timespec tmr;
 
   /* make sure we received a SIGIPC */
   ASSERT(SIGIPC <= SIGRTMAX);
@@ -220,6 +222,10 @@ __vmm_sigipc(int const sig, siginfo_t * const si, void * const ctx)
      * the process which signaled it should be waiting on vmm.ipc.trn1, and
      * thus no other processes can signal. */
 
+    /*======================================================================*/
+    TIMER_START(&(tmr));
+    /*======================================================================*/
+
     /* evict all memory */
     ret = __sbma_mevictall_int(&c_pages, &numwr);
     ASSERT(-1 != ret);
@@ -228,9 +234,14 @@ __vmm_sigipc(int const sig, siginfo_t * const si, void * const ctx)
     __ipc_atomic_dec(&(vmm.ipc), c_pages);
     __ipc_unpopulate(&(vmm.ipc));
 
+    /*======================================================================*/
+    TIMER_STOP(&(tmr));
+    /*======================================================================*/
+
     /* track number of syspages currently loaded, number of syspages written
      * to disk, and high water mark for syspages loaded */
     VMM_TRACK(numwr, numwr);
+    VMM_TRACK(tmrwr, (double)tmr.tv_sec+(double)tmr.tv_nsec/1000000000.0);
     VMM_TRACK(numhipc, 1);
 
     ipc_sigrecvd = 1;
@@ -279,8 +290,8 @@ __vmm_swap_i(struct ate * const __ate, size_t const __beg,
 
   if (VMM_GHOST == __ghost) {
     /* mmap temporary memory with write protection for loading from disk */
-    addr = (uintptr_t)mmap(NULL, __num*page_size, PROT_WRITE,\
-      MAP_PRIVATE|MAP_ANONYMOUS|MAP_NORESERVE|MAP_LOCKED, -1, 0);
+    addr = (uintptr_t)mmap(NULL, __num*page_size, PROT_WRITE, SBMA_MMAP_FLAG,\
+      -1, 0);
     if ((uintptr_t)MAP_FAILED == addr)
       return -1;
   }
@@ -386,22 +397,6 @@ __vmm_swap_i(struct ate * const __ate, size_t const __beg,
     }
   }
 
-  if (1) {
-    size_t l_pages=0, c_pages=0;
-    for (ip=0; ip<__ate->n_pages; ++ip) {
-      if (MMU_DIRTY == (flags[ip]&MMU_DIRTY))       /* is dirty */
-        ASSERT(MMU_RSDNT != (flags[ip]&MMU_RSDNT));
-      if (MMU_RSDNT != (flags[ip]&MMU_RSDNT)) {     /* is resident */
-        ASSERT(MMU_CHRGD != (flags[ip]&MMU_CHRGD));
-        l_pages++;
-      }
-      if (MMU_CHRGD != (flags[ip]&MMU_CHRGD))       /* is charged */
-        c_pages++;
-    }
-    ASSERT(l_pages == __ate->l_pages);
-    ASSERT(c_pages == __ate->c_pages);
-  }
-
   /* return the number of pages read from disk */
   return numrd;
 }
@@ -503,10 +498,12 @@ __vmm_swap_o(struct ate * const __ate, size_t const __beg,
   if (-1 == ret)
     return -1;
 
+#if MAP_LOCKED == (SBMA_MMAP_FLAG&MAP_LOCKED)
   /* unlock the memory from RAM */
   ret = munlock((void*)(addr+(__beg*page_size)), __num*page_size);
   if (-1 == ret)
     return -1;
+#endif
 
   /* update its protection to none */
   ret = mprotect((void*)(addr+(__beg*page_size)), __num*page_size, PROT_NONE);
@@ -519,22 +516,6 @@ __vmm_swap_o(struct ate * const __ate, size_t const __beg,
     MADV_DONTNEED);
   if (-1 == ret)
     return -1;
-
-  if (1) {
-    size_t l_pages=0, c_pages=0;
-    for (ip=0; ip<__ate->n_pages; ++ip) {
-      if (MMU_DIRTY == (flags[ip]&MMU_DIRTY))       /* is dirty */
-        ASSERT(MMU_RSDNT != (flags[ip]&MMU_RSDNT));
-      if (MMU_RSDNT != (flags[ip]&MMU_RSDNT)) {     /* is resident */
-        ASSERT(MMU_CHRGD != (flags[ip]&MMU_CHRGD));
-        l_pages++;
-      }
-      if (MMU_CHRGD != (flags[ip]&MMU_CHRGD))       /* is charged */
-        c_pages++;
-    }
-    ASSERT(l_pages == __ate->l_pages);
-    ASSERT(c_pages == __ate->c_pages);
-  }
 
   /* return the number of pages written to disk */
   return numwr;
@@ -611,6 +592,8 @@ __vmm_init(struct vmm * const __vmm, char const * const __fstem,
   __vmm->numwf    = 0;
   __vmm->numrd    = 0;
   __vmm->numwr    = 0;
+  __vmm->tmrrd    = 0.0;
+  __vmm->tmrwr    = 0.0;
   __vmm->numpages = 0;
 
   /* copy file stem */

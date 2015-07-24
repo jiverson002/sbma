@@ -101,6 +101,27 @@ __sbma_mallinfo(void));
 
 
 /****************************************************************************/
+/*! Return some timing statistics */
+/****************************************************************************/
+SBMA_EXTERN struct sbma_timeinfo
+__sbma_timeinfo(void)
+{
+  struct sbma_timeinfo ti;
+
+  memset(&ti, 0, sizeof(struct sbma_timeinfo));
+
+  ti.tv_rd = vmm.tmrrd;
+  ti.tv_wr = vmm.tmrwr;
+  //ti.tv_ad = vmm.tmrad;
+  //ti.tv_ev = vmm.tmrev;
+
+  return ti;
+}
+SBMA_EXPORT(default, struct sbma_timeinfo
+__sbma_timeinfo(void));
+
+
+/****************************************************************************/
 /*! Inform runtime to release a memory blocked process. */
 /****************************************************************************/
 SBMA_EXTERN int

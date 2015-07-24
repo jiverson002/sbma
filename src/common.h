@@ -57,15 +57,50 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 
 /****************************************************************************/
+/*! Relevant constants. */
+/****************************************************************************/
+//#define SBMA_MMAP_FLAG (MAP_PRIVATE|MAP_ANONYMOUS|MAP_NORESERVE|MAP_LOCKED)
+#define SBMA_MMAP_FLAG (MAP_PRIVATE|MAP_ANONYMOUS|MAP_NORESERVE)
+
+
+/****************************************************************************/
 /*! Assert function. */
 /****************************************************************************/
-# define ASSERT(COND)                                                       \
+#define ASSERT(COND)                                                        \
 do {                                                                        \
   if (0 == (COND)) {                                                        \
     fprintf(stderr, "[%5d] assertion failed: %s:%d: %s\n", (int)getpid(),   \
       basename(__FILE__), __LINE__, #COND);                                 \
     abort();                                                                \
   }                                                                         \
+} while (0)
+
+
+/****************************************************************************/
+/*! Wall timer functions. */
+/****************************************************************************/
+#define TIMER_START(__TS)\
+do {\
+  struct timespec __TIMER_ts;\
+  if (-1 == clock_gettime(CLOCK_MONOTONIC, &__TIMER_ts))\
+    ASSERT(0);\
+  (__TS)->tv_sec  = __TIMER_ts.tv_sec;\
+  (__TS)->tv_nsec = __TIMER_ts.tv_nsec;\
+} while (0)
+
+#define TIMER_STOP(__TS)\
+do {\
+  struct timespec __TIMER_ts;\
+  if (-1 == clock_gettime(CLOCK_MONOTONIC, &__TIMER_ts))\
+    ASSERT(0);\
+  if ((__TS)->tv_sec == __TIMER_ts.tv_sec) {\
+    (__TS)->tv_sec  = __TIMER_ts.tv_sec-(__TS)->tv_sec;\
+    (__TS)->tv_nsec = __TIMER_ts.tv_nsec-(__TS)->tv_nsec;\
+  }\
+  else {\
+    (__TS)->tv_sec  = __TIMER_ts.tv_sec-(__TS)->tv_sec-1;\
+    (__TS)->tv_nsec = __TIMER_ts.tv_nsec+1000000000l-(__TS)->tv_nsec;\
+  }\
 } while (0)
 
 
@@ -89,6 +124,5 @@ int     libc_sem_wait(sem_t * const);
 #ifdef __cplusplus
 }
 #endif
-
 
 #endif
