@@ -63,6 +63,9 @@ __sbma_malloc(size_t const __size)
   if (0 == __size)
     return NULL;
 
+  ret = __sbma_check(__func__, __LINE__);
+  ASSERT(-1 != ret);
+
   /* Default return value. */
   retval = NULL;
 
@@ -134,6 +137,9 @@ __sbma_malloc(size_t const __size)
   if (-1 == ret)
     goto CLEANUP4;
 
+  ret = __sbma_check(__func__, __LINE__);
+  ASSERT(-1 != ret);
+
   /**************************************************************************/
   /* Successful exit -- return pointer to appliction memory. */
   /**************************************************************************/
@@ -201,6 +207,9 @@ __sbma_free(void * const __ptr)
   /* Default return value. */
   retval = 0;
 
+  ret = __sbma_check(__func__, __LINE__);
+  ASSERT(-1 != ret);
+
   page_size = vmm.page_size;
   s_pages   = 1+((sizeof(struct ate)-1)/page_size);
   ate       = (struct ate*)((uintptr_t)__ptr-(s_pages*page_size));
@@ -239,6 +248,9 @@ __sbma_free(void * const __ptr)
       break;
   }
 
+  ret = __sbma_check(__func__, __LINE__);
+  ASSERT(-1 != ret);
+
   /**************************************************************************/
   /* Return point -- make sure vmm is in valid state and return. */
   /**************************************************************************/
@@ -270,6 +282,9 @@ __sbma_realloc(void * const __ptr, size_t const __size)
 
   if (0 == __size)
     return NULL;
+
+  ret = __sbma_check(__func__, __LINE__);
+  ASSERT(-1 != ret);
 
   page_size = vmm.page_size;
   s_pages   = 1+((sizeof(struct ate)-1)/page_size);
@@ -419,8 +434,14 @@ __sbma_realloc(void * const __ptr, size_t const __size)
       else if (-2 != ret)
         break;
     }
+
+    ret = __sbma_check(__func__, __LINE__);
+    ASSERT(-1 != ret);
     return NULL;
   }
+
+  ret = __sbma_check(__func__, __LINE__);
+  ASSERT(-1 != ret);
 
   DONE:
   return (void*)ate->base;
@@ -443,6 +464,9 @@ __sbma_remap(void * const __nbase, void * const __obase, size_t const __size,
   volatile uint8_t * oflags, * nflags;
   struct ate * oate, * nate;
   char ofname[FILENAME_MAX], nfname[FILENAME_MAX];
+
+  ret = __sbma_check(__func__, __LINE__);
+  ASSERT(-1 != ret);
 
   page_size = vmm.page_size;
   s_pages   = 1+((sizeof(struct ate)-1)/page_size);
@@ -543,6 +567,9 @@ __sbma_remap(void * const __nbase, void * const __obase, size_t const __size,
   /*ret = truncate(nfname, nn_pages*page_size);
   if (-1 == ret)
     return -1;*/
+
+  ret = __sbma_check(__func__, __LINE__);
+  ASSERT(-1 != ret);
 
   return 0;
 }

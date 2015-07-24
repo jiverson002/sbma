@@ -58,19 +58,30 @@ enum __sbma_mallopt_params
 /*!
  * Virtual memory manager option bits:
  *
- *   bit 0 ==    0:                    1: use standar c library malloc, etc.
- *   bit 1 ==    0: aggressive read    1: lazy read
- *   bit 2 ==    0: aggressive write   1: lazy write
- *   bit 3 ==    0: aggressive charge  1: lazy charge (only valid w/ lazy read)
- *   bit 4 ==    0:                    1: ghost pages
+ *   bit 0 ==    0:                   1: use standar c library malloc, etc.
+ *   bit 1 ==    0: aggressive read   1: lazy read
+ *   bit 2 ==    0: aggressive write  1: lazy write
+ *   bit 3 ==    0:                   1: aggressive charge (only valid w/ lazy read)
+ *   bit 4 ==    0:                   1: ghost pages
  */
 /****************************************************************************/
+/* NOTE: If VMM_AGGCH is not selected, then under VMM_LZYRD, each read fault
+ * requires a check with the ipc memory tracking to ensure there is enough
+ * free space. If it is enabled, then the entire allocation will be charged
+ * atomically, the first time that it is accessed. On one hand, the
+ * inidividual charging is better because it will result in a smaller number
+ * of times that a process is asked to evict all of its memory. However, in
+ * versions >= 0.2.0, I think this actually increases the number of times that
+ * a process is asked to evict memory, since scanning a single allocation may
+ * require the process to evict several times, versus if a single madmit call
+ * was used for the entire allocation, then it is likely that it would be
+ * asked to evict less due to its higher amount of resident memory. */
 enum __sbma_vmm_opt_code
 {
   VMM_OSVMM = 1 << 0,
   VMM_LZYRD = 1 << 1,
   VMM_LZYWR = 1 << 2,
-  VMM_LZYCH = 1 << 3,
+  VMM_AGGCH = 1 << 3,
   VMM_GHOST = 1 << 4
 };
 
@@ -98,6 +109,7 @@ struct mallinfo __sbma_mallinfo(void);
 int             __sbma_release(void);
 
 /* mstate.c */
+int     __sbma_check(char const * const, int const);
 ssize_t __sbma_mtouch(void * const, void * const, size_t const);
 ssize_t __sbma_mtouch_atomic(void * const, size_t const, ...);
 ssize_t __sbma_mtouchall(void);

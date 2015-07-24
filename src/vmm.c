@@ -99,7 +99,7 @@ __vmm_read(int const __fd, void * const __buf, size_t __len, size_t __off)
 /****************************************************************************/
 SBMA_STATIC int
 __vmm_write(int const __fd, void const * const __buf, size_t __len,
-              size_t __off)
+            size_t __off)
 {
   ssize_t len;
   char * buf = (char*)__buf;
@@ -174,21 +174,6 @@ __vmm_sigsegv(int const sig, siginfo_t * const si, void * const ctx)
     ASSERT(-1 != ret);
 
     VMM_TRACK(numrf, 1);
-
-    /* TODO: In current code, each read fault requires a check with the ipc
-     * memory tracking to ensure there is enough free space. However, in
-     * previous versions of the SIGSEGV handler, this check was only done
-     * once per allocation when lazy reading is enabled. On one hand, the
-     * current implementation is better because it will result in a smaller
-     * number of times that a process is asked to evict all of its memory.
-     * On the other hand, it requires the acquisition of a mutex for every
-     * read fault.
-     * UPDATE: In versions >= 0.2.0, I think this actually increases the
-     * number of times that a process is asked to evict memory, since
-     * scanning a single allocation may require the process to evict several
-     * times, versus if a single madmit call was used for the entire
-     * allocation, then it is likely that it would be asked to evict less
-     * due to its higher amount of resident memory. */
   }
   else {
     /* sanity check */
@@ -282,8 +267,10 @@ __vmm_swap_i(struct ate * const __ate, size_t const __beg,
     return 0;
 
   /* shortcut by checking to see if all pages are already loaded */
-  if (__ate->l_pages == __ate->n_pages)
+  if (__ate->l_pages == __ate->n_pages) {
+    ASSERT(__ate->c_pages == __ate->n_pages);
     return 0;
+  }
 
   /* setup local variables */
   page_size = vmm.page_size;
@@ -364,6 +351,9 @@ __vmm_swap_i(struct ate * const __ate, size_t const __beg,
         /* flag: 0*0* */
         flags[ip] &= ~(MMU_CHRGD|MMU_RSDNT);
       }
+      else {
+        ASSERT(MMU_CHRGD != (flags[ip]&MMU_CHRGD)); /* is charged */
+      }
     }
   }
 
@@ -394,6 +384,22 @@ __vmm_swap_i(struct ate * const __ate, size_t const __beg,
           return -1;
       }
     }
+  }
+
+  if (1) {
+    size_t l_pages=0, c_pages=0;
+    for (ip=0; ip<__ate->n_pages; ++ip) {
+      if (MMU_DIRTY == (flags[ip]&MMU_DIRTY))       /* is dirty */
+        ASSERT(MMU_RSDNT != (flags[ip]&MMU_RSDNT));
+      if (MMU_RSDNT != (flags[ip]&MMU_RSDNT)) {     /* is resident */
+        ASSERT(MMU_CHRGD != (flags[ip]&MMU_CHRGD));
+        l_pages++;
+      }
+      if (MMU_CHRGD != (flags[ip]&MMU_CHRGD))       /* is charged */
+        c_pages++;
+    }
+    ASSERT(l_pages == __ate->l_pages);
+    ASSERT(c_pages == __ate->c_pages);
   }
 
   /* return the number of pages read from disk */
@@ -450,11 +456,12 @@ __vmm_swap_o(struct ate * const __ate, size_t const __beg,
    * writes in contigous chunks of changed pages. */
   for (ipfirst=-1,ip=__beg; ip<=end; ++ip) {
     if (ip != end && (MMU_DIRTY != (flags[ip]&MMU_DIRTY))) {
-      if (MMU_RSDNT != (flags[ip]&MMU_RSDNT)) {     /* is resident */
-        ASSERT(MMU_CHRGD != (flags[ip]&MMU_CHRGD)); /* is charged */
+      if (MMU_CHRGD != (flags[ip]&MMU_CHRGD)) {   /* is charged */
+        if (MMU_RSDNT != (flags[ip]&MMU_RSDNT)) { /* is resident */
+          ASSERT(__ate->l_pages > 0);
+          __ate->l_pages--;
+        }
 
-        ASSERT(__ate->l_pages > 0);
-        __ate->l_pages--;
         ASSERT(__ate->c_pages > 0);
         __ate->c_pages--;
       }
@@ -512,6 +519,22 @@ __vmm_swap_o(struct ate * const __ate, size_t const __beg,
     MADV_DONTNEED);
   if (-1 == ret)
     return -1;
+
+  if (1) {
+    size_t l_pages=0, c_pages=0;
+    for (ip=0; ip<__ate->n_pages; ++ip) {
+      if (MMU_DIRTY == (flags[ip]&MMU_DIRTY))       /* is dirty */
+        ASSERT(MMU_RSDNT != (flags[ip]&MMU_RSDNT));
+      if (MMU_RSDNT != (flags[ip]&MMU_RSDNT)) {     /* is resident */
+        ASSERT(MMU_CHRGD != (flags[ip]&MMU_CHRGD));
+        l_pages++;
+      }
+      if (MMU_CHRGD != (flags[ip]&MMU_CHRGD))       /* is charged */
+        c_pages++;
+    }
+    ASSERT(l_pages == __ate->l_pages);
+    ASSERT(c_pages == __ate->c_pages);
+  }
 
   /* return the number of pages written to disk */
   return numwr;
