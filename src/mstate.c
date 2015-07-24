@@ -563,7 +563,10 @@ __sbma_mclear(void * const __addr, size_t const __len)
   /* can only clear pages fully within range, thus beg is a ceil
    * operation and end is a floor operation, except for when addr+len
    * consumes all of the last page, then end just equals n_pages. */
-  beg = 1+(((uintptr_t)__addr-ate->base-1)/page_size);
+  if ((uintptr_t)__addr == ate->base)
+    beg = 0;
+  else
+    beg = 1+(((uintptr_t)__addr-ate->base-1)/page_size);
   end = ((uintptr_t)__addr+__len-ate->base)/page_size;
 
   if (beg <= end) {

@@ -63,9 +63,6 @@ __sbma_malloc(size_t const __size)
   if (0 == __size)
     return NULL;
 
-  ret = __sbma_check(__func__, __LINE__);
-  ASSERT(-1 != ret);
-
   /* Default return value. */
   retval = NULL;
 
@@ -136,9 +133,6 @@ __sbma_malloc(size_t const __size)
   if (-1 == ret)
     goto CLEANUP4;
 
-  ret = __sbma_check(__func__, __LINE__);
-  ASSERT(-1 != ret);
-
   /**************************************************************************/
   /* Successful exit -- return pointer to appliction memory. */
   /**************************************************************************/
@@ -206,9 +200,6 @@ __sbma_free(void * const __ptr)
   /* Default return value. */
   retval = 0;
 
-  ret = __sbma_check(__func__, __LINE__);
-  ASSERT(-1 != ret);
-
   page_size = vmm.page_size;
   s_pages   = 1+((sizeof(struct ate)-1)/page_size);
   ate       = (struct ate*)((uintptr_t)__ptr-(s_pages*page_size));
@@ -247,9 +238,6 @@ __sbma_free(void * const __ptr)
       break;
   }
 
-  ret = __sbma_check(__func__, __LINE__);
-  ASSERT(-1 != ret);
-
   /**************************************************************************/
   /* Return point -- make sure vmm is in valid state and return. */
   /**************************************************************************/
@@ -281,9 +269,6 @@ __sbma_realloc(void * const __ptr, size_t const __size)
 
   if (0 == __size)
     return NULL;
-
-  ret = __sbma_check(__func__, __LINE__);
-  ASSERT(-1 != ret);
 
   page_size = vmm.page_size;
   s_pages   = 1+((sizeof(struct ate)-1)/page_size);
@@ -356,6 +341,11 @@ __sbma_realloc(void * const __ptr, size_t const __size)
         break;
     }
 
+    /* remove old ate from mmu */
+    ret = __mmu_invalidate_ate(&(vmm.mmu), ate);
+    if (-1 == ret)
+      goto CLEANUP;
+
     /* resize allocation */
 #if 1
     naddr = (uintptr_t)mremap((void*)oaddr,\
@@ -367,7 +357,7 @@ __sbma_realloc(void * const __ptr, size_t const __size)
       (s_pages+nn_pages+nf_pages)*page_size, 0);
 #endif
     if ((uintptr_t)MAP_FAILED == naddr)
-      goto CLEANUP;
+      goto CLEANUP1;
 
     /* copy page flags to new location */
     libc_memmove((void*)(naddr+((s_pages+nn_pages)*page_size)),\
@@ -394,29 +384,25 @@ __sbma_realloc(void * const __ptr, size_t const __size)
     /* if the allocation has moved */
     if (oaddr != naddr) {
       /* move old file to new file and trucate to size */
-      if (0 > snprintf(ofname, FILENAME_MAX, "%s%d-%zx", vmm.fstem,\
-        (int)getpid(), oaddr))
-      {
+      ret = snprintf(ofname, FILENAME_MAX, "%s%d-%zx", vmm.fstem,\
+        (int)getpid(), oaddr);
+      if (0 > ret)
         goto CLEANUP;
-      }
-      if (-1 == rename(ofname, nfname))
+      ret = rename(ofname, nfname);
+      if (-1 == ret)
         goto CLEANUP;
 
       /* set pointer for the allocation table entry */
       ate = (struct ate*)naddr;
-
-      /* remove old ate from mmu */
-      ret = __mmu_invalidate_ate(&(vmm.mmu), ate);
-      if (-1 == ret)
-        goto CLEANUP;
-
-      /* insert new ate into mmu */
-      ret = __mmu_insert_ate(&(vmm.mmu), ate);
-      if (-1 == ret)
-        goto CLEANUP;
     }
-    /*if (-1 == truncate(nfname, nn_pages*page_size))
+    /*ret = truncate(nfname, nn_pages*page_size);
+    if (-1 == ret)
       return NULL;*/
+
+    /* insert new ate into mmu */
+    ret = __mmu_insert_ate(&(vmm.mmu), ate);
+    if (-1 == ret)
+      goto CLEANUP;
 
     /* populate ate structure */
     ate->n_pages = nn_pages;
@@ -427,6 +413,10 @@ __sbma_realloc(void * const __ptr, size_t const __size)
 
     goto DONE;
 
+    CLEANUP1:
+    /* insert old ate back into mmu */
+    ret = __mmu_insert_ate(&(vmm.mmu), ate);
+    ASSERT(-1 != ret);
     CLEANUP:
     for (;;) {
       ret = __ipc_mevict(&(vmm.ipc),\
@@ -437,13 +427,8 @@ __sbma_realloc(void * const __ptr, size_t const __size)
         break;
     }
 
-    ret = __sbma_check(__func__, __LINE__);
-    ASSERT(-1 != ret);
     return NULL;
   }
-
-  ret = __sbma_check(__func__, __LINE__);
-  ASSERT(-1 != ret);
 
   DONE:
   return (void*)ate->base;
@@ -452,6 +437,7 @@ SBMA_EXPORT(default, void *
 __sbma_realloc(void * const __ptr, size_t const __size));
 
 
+#if 0
 /****************************************************************************/
 /*! Remap an address range to a new address. */
 /****************************************************************************/
@@ -466,9 +452,6 @@ __sbma_remap(void * const __nbase, void * const __obase, size_t const __size,
   volatile uint8_t * oflags, * nflags;
   struct ate * oate, * nate;
   char ofname[FILENAME_MAX], nfname[FILENAME_MAX];
-
-  ret = __sbma_check(__func__, __LINE__);
-  ASSERT(-1 != ret);
 
   page_size = vmm.page_size;
   s_pages   = 1+((sizeof(struct ate)-1)/page_size);
@@ -570,11 +553,80 @@ __sbma_remap(void * const __nbase, void * const __obase, size_t const __size,
   if (-1 == ret)
     return -1;*/
 
-  ret = __sbma_check(__func__, __LINE__);
-  ASSERT(-1 != ret);
-
   return 0;
 }
 SBMA_EXPORT(internal, int
 __sbma_remap(void * const __nbase, void * const __obase, size_t const __size,
              size_t const __off));
+#else
+/****************************************************************************/
+/*! Remap an address range to a new LARGER address range. */
+/****************************************************************************/
+SBMA_EXTERN int
+__sbma_remap(void * const __nbase, void * const __obase, size_t const __size)
+{
+  int ret;
+  size_t i, page_size, s_pages;
+  void * optr, * nptr;
+  volatile uint8_t * oflags, * nflags;
+  struct ate * oate, * nate;
+  char ofname[FILENAME_MAX], nfname[FILENAME_MAX];
+
+  if (0 == __size)
+    return -1;
+
+  page_size = vmm.page_size;
+  s_pages   = 1+((sizeof(struct ate)-1)/page_size);
+  oate      = (struct ate*)((uintptr_t)__obase-(s_pages*page_size));
+  oflags    = oate->flags;
+  nate      = (struct ate*)((uintptr_t)__nbase-(s_pages*page_size));
+  nflags    = nate->flags;
+
+  ASSERT((uintptr_t)__obase == oate->base);
+  ASSERT((uintptr_t)__nbase == nate->base);
+  ASSERT(oate->n_pages <= nate->n_pages);
+
+  /* Make sure that old memory is stored in file */
+  ret = __sbma_mevict((void*)oate->base, oate->n_pages*page_size);
+  if (-1 == ret)
+    return -1;
+  /* Make sure that new memory is uninitialized */
+  ret = __sbma_mclear((void*)nate->base, nate->n_pages*page_size);
+  if (-1 == ret)
+    return -1;
+  /* Make sure that new memory has no read permissions so that it will load
+   * from disk any necessary pages. */
+  ret = __sbma_mevict((void*)nate->base, nate->n_pages*page_size);
+  if (-1 == ret)
+    return -1;
+
+  for (i=0; i<oate->n_pages; ++i) {
+    ASSERT(MMU_DIRTY != (nflags[i]&MMU_DIRTY)); /* not dirty */
+    ASSERT(MMU_ZFILL != (nflags[i]&MMU_ZFILL)); /* not on disk */
+
+    /* copy zfill bit from old flag */
+    nflags[i] |= (oflags[i]&MMU_ZFILL);
+  }
+
+  /* move old file to new file and truncate to size. */
+  ret = snprintf(nfname, FILENAME_MAX, "%s%d-%zx", vmm.fstem, (int)getpid(),\
+    (uintptr_t)nate);
+  if (ret < 0)
+    return -1;
+  ret = snprintf(ofname, FILENAME_MAX, "%s%d-%zx", vmm.fstem, (int)getpid(),\
+    (uintptr_t)oate);
+  if (ret < 0)
+    return -1;
+  ret = rename(ofname, nfname);
+  if (-1 == ret)
+    return -1;
+  /*ret = truncate(nfname, nn_pages*page_size);
+  if (-1 == ret)
+    return -1;*/
+
+  return 0;
+}
+SBMA_EXPORT(internal, int
+__sbma_remap(void * const __nbase, void * const __obase,
+             size_t const __size));
+#endif

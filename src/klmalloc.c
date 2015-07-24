@@ -327,14 +327,13 @@ int    __sbma_destroy(void);
 void * __sbma_malloc(size_t const size);
 void * __sbma_realloc(void * const ptr, size_t const size);
 int    __sbma_free(void * const ptr);
-int    __sbma_remap(void * const nptr, void * const ptr, size_t const num,
-                    size_t const off);
+int    __sbma_remap(void * const nptr, void * const ptr, size_t const num);
 # define SYS_ALLOC_FAIL NULL
 # define CALL_SYS_INIT(L)          __sbma_vinit(L)
 # define CALL_SYS_DESTROY()        __sbma_destroy()
 # define CALL_SYS_ALLOC(P,S)       ((P)=__sbma_malloc(S))
 # define CALL_SYS_REALLOC(N,O,S,F) ((N)=__sbma_realloc(O,F))
-# define CALL_SYS_REMAP(N,O,S,F)   __sbma_remap(N,O,S,F)
+# define CALL_SYS_REMAP(N,O,S)     __sbma_remap(N,O,S)
 # define CALL_SYS_FREE(P,S)        __sbma_free(P)
 # define CALL_SYS_BZERO(P,S)
 #endif
@@ -1682,6 +1681,42 @@ kl_chunk_get(kl_mem_t * const mem, size_t const size)
 
 
 /****************************************************************************/
+/* Populate appropriate fields for a chunk from a var block */
+/****************************************************************************/
+static kl_chunk_t *
+kl_chunk_hdr(kl_mem_t * const mem, kl_var_block_t * const block,
+             size_t const size)
+{
+  size_t block_size;
+  kl_chunk_t * chunk;
+
+  GET_LOCK(&(mem->lock));
+
+  /* Compute block size */
+  block_size = KL_BLOCK_SIZE(KL_CHUNK_SIZE(size));
+  assert(block_size > BLOCK_DEFAULT_SIZE);
+
+  /* Set block header and footer size. */
+  BLOCK_HDR(block) = BLOCK_HEADER_ALIGN;
+  BLOCK_FTR(block, block_size) = BLOCK_HDR(block);
+
+  /* Set the chunk to be returned. */
+  chunk = (kl_chunk_t*)BLOCK_PTR(block);
+
+  /* Set chunk header and footer size (set chunk as in use). */
+  CHUNK_HDR(chunk) = KL_CHUNK_SIZE(size);
+  CHUNK_FTR(chunk) = 0;
+
+  /* Sanity check. */
+  assert(block_size == KL_BLOCK_SIZE(KL_G_SIZE(chunk)));
+  assert(block_size == KL_BLOCK_SIZE(KL_CHUNK_SIZE(size)));
+
+  LET_LOCK(&(mem->lock));
+  return chunk;
+}
+
+
+/****************************************************************************/
 /* Allocate a singular chunk */
 /****************************************************************************/
 static kl_chunk_t *
@@ -1701,20 +1736,7 @@ kl_chunk_solo(kl_mem_t * const mem, size_t const size)
   if (NULL == block)
     goto FAILURE;
 
-  /* Set block header and footer size. */
-  BLOCK_HDR(block) = BLOCK_HEADER_ALIGN;
-  BLOCK_FTR(block, block_size) = BLOCK_HDR(block);
-
-  /* Set the chunk to be returned. */
-  chunk = (kl_chunk_t*)BLOCK_PTR(block);
-
-  /* Set chunk header and footer size (set chunk as in use). */
-  CHUNK_HDR(chunk) = KL_CHUNK_SIZE(size);
-  CHUNK_FTR(chunk) = 0;
-
-  /* Sanity check. */
-  assert(block_size == KL_BLOCK_SIZE(KL_G_SIZE(chunk)));
-  assert(block_size == KL_BLOCK_SIZE(KL_CHUNK_SIZE(size)));
+  chunk = kl_chunk_hdr(mem, block, size);
 
   LET_LOCK(&(mem->lock));
   return chunk;
@@ -1898,10 +1920,10 @@ KL_EXPORT void *
 KL_realloc(void * const ptr, size_t const size)
 {
   int ret;
-  size_t osize, block_size, off;
-  void * nptr;
+  size_t osize, obsize, block_size, off;
+  void * nptr, * nnptr;
   kl_chunk_t * chunk;
-  kl_var_block_t * block;
+  kl_var_block_t * block, * oblock;
 
   /* Enabled check. */
   GET_LOCK(&(mem.init_lock));
@@ -1916,6 +1938,8 @@ KL_realloc(void * const ptr, size_t const size)
   assert(0 != osize);
 
   /* See if current allocation is large enough. */
+  /* TODO: this is a bit of a memory leak, since the system will still see the
+   * process as having the full amount of memory. */
   if (KL_BRICK_SIZE(size) <= osize)
     return ptr;
   else if (KL_CHUNK_SIZE(size) <= osize)
@@ -1923,8 +1947,6 @@ KL_realloc(void * const ptr, size_t const size)
 
 #ifdef CALL_SYS_REALLOC
   if (osize > FIXED_MAX_SIZE) {
-    GET_LOCK(&(mem.lock));
-
     block = (kl_var_block_t*)KL_G_PREV(chunk);
     assert(BLOCK_HEADER_ALIGN == BLOCK_HDR(block));
     assert(BLOCK_HEADER_ALIGN == BLOCK_FTR(block, KL_BLOCK_SIZE(osize)));
@@ -1935,30 +1957,17 @@ KL_realloc(void * const ptr, size_t const size)
 
     block = (kl_var_block_t*)kl_block_realloc(&mem, block,\
       KL_BLOCK_SIZE(osize), block_size);
-    if (NULL == block) {
-      LET_LOCK(&(mem.lock));
+    if (NULL == block)
       goto MALLOC;
-    }
 
-    /* Set block header and footer size. */
-    BLOCK_HDR(block) = BLOCK_HEADER_ALIGN;
-    BLOCK_FTR(block, block_size) = BLOCK_HDR(block);
+    chunk = kl_chunk_hdr(&mem, block, size);
+    nptr  = CHUNK_PTR(chunk);
 
-    /* Set the chunk to be returned. */
-    chunk = (kl_chunk_t*)BLOCK_PTR(block);
-
-    /* Set chunk header and footer size (set chunk as in use). */
-    CHUNK_HDR(chunk) = KL_CHUNK_SIZE(size);
-    CHUNK_FTR(chunk) = 0;
-
-    /* Sanity check. */
     assert(KL_CHUNK_SIZE(size) == KL_G_SIZE(chunk));
     assert(block_size == KL_BLOCK_SIZE(KL_G_SIZE(chunk)));
     assert(block_size == KL_BLOCK_SIZE(KL_CHUNK_SIZE(size)));
 
-    LET_LOCK(&(mem.lock));
-
-    return CHUNK_PTR(chunk);
+    goto DONE;
   }
 
   MALLOC:
@@ -1970,14 +1979,33 @@ KL_realloc(void * const ptr, size_t const size)
 
 #ifdef CALL_SYS_REMAP
   if (osize > FIXED_MAX_SIZE) {
-    off = (uintptr_t)ptr-(uintptr_t)KL_G_PREV(KL_G_ALLOC(ptr));
-    assert(off == (uintptr_t)nptr-(uintptr_t)KL_G_PREV(KL_G_ALLOC(nptr)));
+    /* Need to get these before CALL_SYS_REMAP since they will not be
+     * available afterwards. */
+    oblock = (kl_var_block_t*)KL_G_PREV(KL_G_ALLOC(ptr));
+    obsize = KL_BLOCK_SIZE(KL_G_SIZE(KL_G_ALLOC(ptr)));
+
+    block = (kl_var_block_t*)KL_G_PREV(KL_G_ALLOC(nptr));
 
     /* Remap old memory to new memory. */
-    ret = CALL_SYS_REMAP(KL_G_PREV(KL_G_ALLOC(nptr)),\
-      KL_G_PREV(KL_G_ALLOC(ptr)), osize, off);
+    ret = CALL_SYS_REMAP(block, oblock, osize);
     if (-1 == ret)
       return NULL;
+
+    /* Need to re-establish the chunk after remapping, since CALL_SYS_REMAP
+     * can re-initialize the entire allocation. */
+    chunk = kl_chunk_hdr(&mem, block, size);
+    if (nptr != CHUNK_PTR(chunk))
+      return NULL;
+
+    GET_LOCK(&(mem.lock));
+    /* Accounting. */
+    mem.mem_total -= obsize;
+    LET_LOCK(&(mem.lock));
+
+    /* Release old memory region. */
+    CALL_SYS_FREE(oblock, obsize);
+
+    goto DONE;
   }
   else {
 #endif
@@ -1990,6 +2018,7 @@ KL_realloc(void * const ptr, size_t const size)
   /* Release old memory region. */
   KL_free(ptr);
 
+  DONE:
   if (size <= KL_brick_max_size())
     assert(KL_BRICK == KL_TYPEOF(KL_G_ALLOC(nptr)));
   else
