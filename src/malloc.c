@@ -366,11 +366,10 @@ __sbma_realloc(void * const __ptr, size_t const __size)
       (s_pages+nn_pages+nf_pages)*page_size, 0);
 #endif
     if ((uintptr_t)MAP_FAILED == naddr) {
-      printf("[%5d] had to malloc(%zu)\n", (int)getpid(), __size);
-      ASSERT(0);
+      //printf("[%5d] had to malloc(%zu)\n", (int)getpid(), __size);
       goto CLEANUP1;
     }
-    printf("[%5d] got to realloc(%zu)\n", (int)getpid(), __size);
+    //printf("[%5d] got to realloc(%zu)\n", (int)getpid(), __size);
 
     /* copy page flags to new location */
     libc_memmove((void*)(naddr+((s_pages+nn_pages)*page_size)),\
