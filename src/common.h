@@ -59,6 +59,10 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 /****************************************************************************/
 /*! Relevant constants. */
 /****************************************************************************/
+#define SBMA_STATE_RESIDENT 0
+#define SBMA_STATE_EVICTED  1
+#define SBMA_DEFAULT_STATE  SBMA_STATE_EVICTED
+
 //#define SBMA_MMAP_FLAG (MAP_PRIVATE|MAP_ANONYMOUS|MAP_NORESERVE|MAP_LOCKED)
 #define SBMA_MMAP_FLAG (MAP_PRIVATE|MAP_ANONYMOUS|MAP_NORESERVE)
 

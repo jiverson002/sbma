@@ -75,7 +75,11 @@ __sbma_malloc(size_t const __size)
   /* Check memory file to see if there is enough free memory to complete this
    * allocation. */
   for (;;) {
+#if SBMA_DEFAULT_STATE == SBMA_STATE_RESIDENT
     ret = __ipc_madmit(&(vmm.ipc), VMM_TO_SYS(s_pages+n_pages+f_pages));
+#else
+    ret = __ipc_madmit(&(vmm.ipc), VMM_TO_SYS(s_pages+f_pages));
+#endif
     if (-1 == ret)
       goto RETURN;
     else if (-2 != ret)
@@ -90,10 +94,17 @@ __sbma_malloc(size_t const __size)
   if ((uintptr_t)MAP_FAILED == addr)
     goto CLEANUP1;
 
+#if SBMA_DEFAULT_STATE == SBMA_STATE_RESIDENT
   /* Read-only protect application pages -- this will avoid the double SIGSEGV
    * for new allocations. */
   ret = mprotect((void*)(addr+(s_pages*page_size)), n_pages*page_size,\
     PROT_READ);
+#else
+  /* Remove all protectection from application pages -- this reduces the
+   * amount of memory which is admitted by default. */
+  ret = mprotect((void*)(addr+(s_pages*page_size)), n_pages*page_size,\
+    PROT_NONE);
+#endif
   if (-1 == ret)
     goto CLEANUP2;
 
@@ -118,10 +129,21 @@ __sbma_malloc(size_t const __size)
   /* Set and populate ate structure. */
   ate          = (struct ate*)addr;
   ate->n_pages = n_pages;
+#if SBMA_DEFAULT_STATE == SBMA_STATE_RESIDENT
   ate->l_pages = n_pages;
   ate->c_pages = n_pages;
+#else
+  ate->l_pages = 0;
+  ate->c_pages = 0;
+#endif
   ate->base    = addr+(s_pages*page_size);
   ate->flags   = (uint8_t*)(addr+((s_pages+n_pages)*page_size));
+
+#if SBMA_DEFAULT_STATE != SBMA_STATE_RESIDENT
+  size_t i;
+  for (i=0; i<n_pages; ++i)
+    ate->flags[i] |= (MMU_CHRGD|MMU_RSDNT);
+#endif
 
   /* Initialize ate lock. */
   ret = __lock_init(&(ate->lock));
@@ -156,13 +178,16 @@ __sbma_malloc(size_t const __size)
   ASSERT(-1 != ret);
   CLEANUP1:
   for (;;) {
+#if SBMA_DEFAULT_STATE == SBMA_STATE_RESIDENT
     ret = __ipc_mevict(&(vmm.ipc), VMM_TO_SYS(s_pages+n_pages+f_pages));
+#else
+    ret = __ipc_mevict(&(vmm.ipc), VMM_TO_SYS(s_pages+f_pages));
+#endif
     if (-1 == ret)
       goto RETURN;
     else if (-2 != ret)
       break;
   }
-  retval = NULL;
 
   /**************************************************************************/
   /* Return point -- make sure vmm is in valid state and return. */
@@ -333,8 +358,12 @@ __sbma_realloc(void * const __ptr, size_t const __size)
     /* check memory file to see if there is enough free memory to complete
      * this allocation. */
     for (;;) {
+#if SBMA_DEFAULT_STATE == SBMA_STATE_RESIDENT
       ret = __ipc_madmit(&(vmm.ipc),\
         VMM_TO_SYS((nn_pages-on_pages)+(nf_pages-of_pages)));
+#else
+      ret = __ipc_madmit(&(vmm.ipc), VMM_TO_SYS(nf_pages-of_pages));
+#endif
       if (-1 == ret)
         return NULL;
       else if (-2 != ret)
@@ -375,9 +404,15 @@ __sbma_realloc(void * const __ptr, size_t const __size)
     libc_memmove((void*)(naddr+((s_pages+nn_pages)*page_size)),\
       (void*)(naddr+((s_pages+on_pages)*page_size)), of_pages*page_size);
 
+#if SBMA_DEFAULT_STATE == SBMA_STATE_RESIDENT
     /* grant read-only permission to extended area of application memory */
     ret = mprotect((void*)(naddr+((s_pages+on_pages)*page_size)),\
       (nn_pages-on_pages)*page_size, PROT_READ);
+#else
+    /* grant no permission to extended area of application memory */
+    ret = mprotect((void*)(naddr+((s_pages+on_pages)*page_size)),\
+      (nn_pages-on_pages)*page_size, PROT_NONE);
+#endif
     if (-1 == ret)
       goto CLEANUP;
 
@@ -418,10 +453,21 @@ __sbma_realloc(void * const __ptr, size_t const __size)
 
     /* populate ate structure */
     ate->n_pages = nn_pages;
+#if SBMA_DEFAULT_STATE == SBMA_STATE_RESIDENT
     ate->l_pages = ol_pages+((nn_pages-on_pages)+(nf_pages-of_pages));
     ate->c_pages = oc_pages+((nn_pages-on_pages)+(nf_pages-of_pages));
+#else
+    ate->l_pages = ol_pages+(nf_pages-of_pages);
+    ate->c_pages = oc_pages+(nf_pages-of_pages);
+#endif
     ate->base    = naddr+(s_pages*page_size);
     ate->flags   = (uint8_t*)(naddr+((s_pages+nn_pages)*page_size));
+
+#if SBMA_DEFAULT_STATE != SBMA_STATE_RESIDENT
+  size_t i;
+  for (i=on_pages; i<nn_pages; ++i)
+    ate->flags[i] |= (MMU_CHRGD|MMU_RSDNT);
+#endif
 
     goto DONE;
 
@@ -431,8 +477,12 @@ __sbma_realloc(void * const __ptr, size_t const __size)
     ASSERT(-1 != ret);
     CLEANUP:
     for (;;) {
+#if SBMA_DEFAULT_STATE == SBMA_STATE_RESIDENT
       ret = __ipc_mevict(&(vmm.ipc),\
         VMM_TO_SYS((nn_pages-on_pages)+(nf_pages-of_pages)));
+#else
+      ret = __ipc_mevict(&(vmm.ipc), VMM_TO_SYS(nf_pages-of_pages));
+#endif
       if (-1 == ret)
         return NULL;
       else if (-2 != ret)
