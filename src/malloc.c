@@ -53,7 +53,7 @@ SBMA_EXTERN void *
 __sbma_malloc(size_t const __size)
 {
   int ret, fd;
-  size_t page_size, s_pages, n_pages, f_pages;
+  size_t i, page_size, s_pages, n_pages, f_pages;
   uintptr_t addr;
   void * retval;
   struct ate * ate;
@@ -75,7 +75,7 @@ __sbma_malloc(size_t const __size)
   /* Check memory file to see if there is enough free memory to complete this
    * allocation. */
   for (;;) {
-#if SBMA_DEFAULT_STATE == SBMA_STATE_RESIDENT
+#if SBMA_RESIDENT_DEFAULT == 1
     ret = __ipc_madmit(&(vmm.ipc), VMM_TO_SYS(s_pages+n_pages+f_pages));
 #else
     ret = __ipc_madmit(&(vmm.ipc), VMM_TO_SYS(s_pages+f_pages));
@@ -94,7 +94,7 @@ __sbma_malloc(size_t const __size)
   if ((uintptr_t)MAP_FAILED == addr)
     goto CLEANUP1;
 
-#if SBMA_DEFAULT_STATE == SBMA_STATE_RESIDENT
+#if SBMA_RESIDENT_DEFAULT == 1
   /* Read-only protect application pages -- this will avoid the double SIGSEGV
    * for new allocations. */
   ret = mprotect((void*)(addr+(s_pages*page_size)), n_pages*page_size,\
@@ -122,14 +122,16 @@ __sbma_malloc(size_t const __size)
   /* Truncating file to size is unnecessary as it will be resized when writes
    * are made to it. Doing this now however, will let the application know if
    * the filesystem has room to support all allocations up to this point. */
-  /*ret = truncate(fname, n_pages*page_size);
+#if SBMA_FILE_RESERVE == 1
+  ret = truncate(fname, n_pages*page_size);
   if (-1 == ret)
-    return NULL;*/
+    return NULL;
+#endif
 
   /* Set and populate ate structure. */
   ate          = (struct ate*)addr;
   ate->n_pages = n_pages;
-#if SBMA_DEFAULT_STATE == SBMA_STATE_RESIDENT
+#if SBMA_RESIDENT_DEFAULT == 1
   ate->l_pages = n_pages;
   ate->c_pages = n_pages;
 #else
@@ -139,8 +141,7 @@ __sbma_malloc(size_t const __size)
   ate->base    = addr+(s_pages*page_size);
   ate->flags   = (uint8_t*)(addr+((s_pages+n_pages)*page_size));
 
-#if SBMA_DEFAULT_STATE != SBMA_STATE_RESIDENT
-  size_t i;
+#if SBMA_RESIDENT_DEFAULT == 0
   for (i=0; i<n_pages; ++i)
     ate->flags[i] |= (MMU_CHRGD|MMU_RSDNT);
 #endif
@@ -178,7 +179,7 @@ __sbma_malloc(size_t const __size)
   ASSERT(-1 != ret);
   CLEANUP1:
   for (;;) {
-#if SBMA_DEFAULT_STATE == SBMA_STATE_RESIDENT
+#if SBMA_RESIDENT_DEFAULT == 1
     ret = __ipc_mevict(&(vmm.ipc), VMM_TO_SYS(s_pages+n_pages+f_pages));
 #else
     ret = __ipc_mevict(&(vmm.ipc), VMM_TO_SYS(s_pages+f_pages));
@@ -279,10 +280,11 @@ SBMA_EXTERN void *
 __sbma_realloc(void * const __ptr, size_t const __size)
 {
   int ret;
-  size_t i, page_size, s_pages, on_pages, of_pages, ol_pages, oc_pages;
+  size_t i, ifirst, page_size, s_pages, on_pages, of_pages, ol_pages, oc_pages;
   size_t nn_pages, nf_pages;
+  uint8_t oflag;
   uintptr_t oaddr, naddr;
-  volatile uint8_t * oflags;
+  volatile uint8_t * oflags, * nflags;
   struct ate * ate;
   char ofname[FILENAME_MAX], nfname[FILENAME_MAX];
 
@@ -358,7 +360,7 @@ __sbma_realloc(void * const __ptr, size_t const __size)
     /* check memory file to see if there is enough free memory to complete
      * this allocation. */
     for (;;) {
-#if SBMA_DEFAULT_STATE == SBMA_STATE_RESIDENT
+#if SBMA_RESIDENT_DEFAULT == 1
       ret = __ipc_madmit(&(vmm.ipc),\
         VMM_TO_SYS((nn_pages-on_pages)+(nf_pages-of_pages)));
 #else
@@ -375,46 +377,114 @@ __sbma_realloc(void * const __ptr, size_t const __size)
     if (-1 == ret)
       goto CLEANUP;
 
-    /* resize allocation */
-#if 1
+#if SBMA_MERGE_VMA == 1
     /* TODO: I think the reason that mremap fails so frequently is due to the
      * fact that oaddr is not seen as a single vma in the kernel, but rather
      * as several vmas, due to the use of mprotect to manage access to the
      * memory region. */
     /* Make sure the kernel sees the entire range as a single vma. */
-    /*ret = mprotect((void*)oaddr, (s_pages+on_pages+of_pages)*page_size,\
+    ret = mprotect((void*)oaddr, (s_pages+on_pages+of_pages)*page_size,\
       PROT_NONE);
     if (-1 == ret)
-      goto CLEANUP1;*/
+      goto CLEANUP1;
+#endif
+
+    /* resize allocation */
     naddr = (uintptr_t)mremap((void*)oaddr,\
       (s_pages+on_pages+of_pages)*page_size,\
       (s_pages+nn_pages+nf_pages)*page_size, MREMAP_MAYMOVE);
-#else
-    naddr = (uintptr_t)mremap((void*)oaddr,\
-      (s_pages+on_pages+of_pages)*page_size,\
-      (s_pages+nn_pages+nf_pages)*page_size, 0);
-#endif
     if ((uintptr_t)MAP_FAILED == naddr) {
-      //printf("[%5d] had to malloc(%zu)\n", (int)getpid(), __size);
+      printf("[%5d] %s:%d %s\n", (int)getpid(), __func__, __LINE__, strerror(errno));
       goto CLEANUP1;
     }
-    //printf("[%5d] got to realloc(%zu)\n", (int)getpid(), __size);
+
+    /* Update protection for book-keeping memory and temporarily for
+     * application memory. */
+#if SBMA_MERGE_VMA == 1
+    ret = mprotect((void*)naddr, s_pages*page_size, PROT_READ|PROT_WRITE);
+    if (-1 == ret)
+      goto CLEANUP;
+    ret = mprotect((void*)(naddr+(s_pages+on_pages)*page_size),\
+      of_pages*page_size, PROT_READ);
+    if (-1 == ret)
+      goto CLEANUP;
+    ret = mprotect((void*)(naddr+(s_pages+nn_pages)*page_size),\
+      nf_pages*page_size, PROT_READ|PROT_WRITE);
+    if (-1 == ret)
+      goto CLEANUP;
+#endif
 
     /* copy page flags to new location */
     libc_memmove((void*)(naddr+((s_pages+nn_pages)*page_size)),\
       (void*)(naddr+((s_pages+on_pages)*page_size)), of_pages*page_size);
 
-#if SBMA_DEFAULT_STATE == SBMA_STATE_RESIDENT
+#if SBMA_MERGE_VMA == 1
+# if SBMA_RESIDENT_DEFAULT == 1
+    /* grant read-only permission to extended area of application memory */
+    ret = mprotect((void*)(naddr+(s_pages*page_size)), nn_pages*page_size,\
+      PROT_READ);
+# else
+    /* grant no permission to extended area of application memory */
+    ret = mprotect((void*)(naddr+(s_pages*page_size)), nn_pages*page_size,\
+      PROT_NONE);
+# endif
+#else
+# if SBMA_RESIDENT_DEFAULT == 1
     /* grant read-only permission to extended area of application memory */
     ret = mprotect((void*)(naddr+((s_pages+on_pages)*page_size)),\
       (nn_pages-on_pages)*page_size, PROT_READ);
-#else
+# else
     /* grant no permission to extended area of application memory */
     ret = mprotect((void*)(naddr+((s_pages+on_pages)*page_size)),\
       (nn_pages-on_pages)*page_size, PROT_NONE);
+# endif
 #endif
     if (-1 == ret)
       goto CLEANUP;
+
+#if SBMA_MERGE_VMA == 1
+# if 0
+    /* Update memory protection according to the existing page flags. */
+    nflags = (uint8_t*)(naddr+((s_pages+nn_pages)*page_size));
+    ifirst = 0;
+    oflag  = nflags[0];
+    for (i=0; i<=on_pages; ++i) {
+      if (i == on_pages || oflag != (nflags[i]&(MMU_RSDNT|MMU_DIRTY))) {
+        if (MMU_DIRTY == (oflag&MMU_DIRTY)) {
+          ret = mprotect((void*)(naddr+(s_pages+ifirst)*page_size),\
+            (i-ifirst)*page_size, PROT_READ|PROT_WRITE);
+        }
+        else if (MMU_RSDNT != (oflag&MMU_RSDNT)) {
+          ret = mprotect((void*)(naddr+(s_pages+i)*page_size),\
+            (i-ifirst)*page_size, PROT_READ);
+        }
+        if (-1 == ret)
+          goto CLEANUP;
+
+        if (i != on_pages) {
+          ifirst = i;
+          oflag  = nflags[i];
+        }
+      }
+    }
+# else
+    nflags = (uint8_t*)(naddr+((s_pages+nn_pages)*page_size));
+    for (i=0; i<on_pages; ++i) {
+      if (MMU_DIRTY == (nflags[i]&MMU_DIRTY)) {
+        ret = mprotect((void*)(naddr+(s_pages+i)*page_size), page_size,\
+          PROT_READ|PROT_WRITE);
+        if (-1 == ret)
+          goto CLEANUP;
+      }
+      else if (MMU_RSDNT != (nflags[i]&MMU_RSDNT)) {
+        ret = mprotect((void*)(naddr+(s_pages+i)*page_size), page_size,\
+          PROT_READ);
+        if (-1 == ret)
+          goto CLEANUP;
+      }
+    }
+# endif
+#endif
 
 #if MAP_LOCKED == (SBMA_MMAP_FLAG&MAP_LOCKED)
     /* lock new area of allocation into RAM */
@@ -442,9 +512,11 @@ __sbma_realloc(void * const __ptr, size_t const __size)
       /* set pointer for the allocation table entry */
       ate = (struct ate*)naddr;
     }
-    /*ret = truncate(nfname, nn_pages*page_size);
+#if SBMA_FILE_RESERVE == 1
+    ret = truncate(nfname, nn_pages*page_size);
     if (-1 == ret)
-      return NULL;*/
+      return NULL;
+#endif
 
     /* insert new ate into mmu */
     ret = __mmu_insert_ate(&(vmm.mmu), ate);
@@ -453,7 +525,7 @@ __sbma_realloc(void * const __ptr, size_t const __size)
 
     /* populate ate structure */
     ate->n_pages = nn_pages;
-#if SBMA_DEFAULT_STATE == SBMA_STATE_RESIDENT
+#if SBMA_RESIDENT_DEFAULT == 1
     ate->l_pages = ol_pages+((nn_pages-on_pages)+(nf_pages-of_pages));
     ate->c_pages = oc_pages+((nn_pages-on_pages)+(nf_pages-of_pages));
 #else
@@ -463,8 +535,7 @@ __sbma_realloc(void * const __ptr, size_t const __size)
     ate->base    = naddr+(s_pages*page_size);
     ate->flags   = (uint8_t*)(naddr+((s_pages+nn_pages)*page_size));
 
-#if SBMA_DEFAULT_STATE != SBMA_STATE_RESIDENT
-  size_t i;
+#if SBMA_RESIDENT_DEFAULT == 0
   for (i=on_pages; i<nn_pages; ++i)
     ate->flags[i] |= (MMU_CHRGD|MMU_RSDNT);
 #endif
@@ -477,7 +548,7 @@ __sbma_realloc(void * const __ptr, size_t const __size)
     ASSERT(-1 != ret);
     CLEANUP:
     for (;;) {
-#if SBMA_DEFAULT_STATE == SBMA_STATE_RESIDENT
+#if SBMA_RESIDENT_DEFAULRESIDENT_DEFAULT
       ret = __ipc_mevict(&(vmm.ipc),\
         VMM_TO_SYS((nn_pages-on_pages)+(nf_pages-of_pages)));
 #else
@@ -499,128 +570,6 @@ SBMA_EXPORT(default, void *
 __sbma_realloc(void * const __ptr, size_t const __size));
 
 
-#if 0
-/****************************************************************************/
-/*! Remap an address range to a new address. */
-/****************************************************************************/
-SBMA_EXTERN int
-__sbma_remap(void * const __nbase, void * const __obase, size_t const __size,
-             size_t const __off)
-{
-  int ret;
-  size_t i, page_size, s_pages, beg, end;
-  uintptr_t oaddr, naddr;
-  void * optr, * nptr;
-  volatile uint8_t * oflags, * nflags;
-  struct ate * oate, * nate;
-  char ofname[FILENAME_MAX], nfname[FILENAME_MAX];
-
-  page_size = vmm.page_size;
-  s_pages   = 1+((sizeof(struct ate)-1)/page_size);
-  oate      = (struct ate*)((uintptr_t)__obase-(s_pages*page_size));
-  oaddr     = (uintptr_t)oate;
-  oflags    = oate->flags;
-  optr      = (void*)((uintptr_t)__obase+__off);
-  nate      = (struct ate*)((uintptr_t)__nbase-(s_pages*page_size));
-  naddr     = (uintptr_t)nate;
-  nflags    = nate->flags;
-  nptr      = (void*)((uintptr_t)__nbase+__off);
-
-  ASSERT((uintptr_t)__obase == oate->base);
-  ASSERT((uintptr_t)__nbase == nate->base);
-  ASSERT(oate->n_pages <= nate->n_pages);
-
-  /* need to make sure that all bytes are captured, thus beg is a floor
-   * operation and end is a ceil operation. */
-  beg = ((uintptr_t)nptr-nate->base)/page_size;
-  end = 1+(((uintptr_t)nptr+__size-nate->base-1)/page_size);
-
-  ASSERT(0 == beg);
-  ASSERT(end <= oate->n_pages);
-  ASSERT(end <= nate->n_pages);
-
-  /* load new and old memory */
-  ret = __sbma_mtouch_atomic((void*)nate->base, nate->n_pages*page_size,\
-    optr, __size, SBMA_ATOMIC_END);
-  if (-1 == ret)
-    return -1;
-  ASSERT(nate->l_pages == nate->n_pages);
-  ASSERT(nate->c_pages == nate->n_pages);
-
-  /* grant read-write permission to new memory */
-  ret = mprotect((void*)((uintptr_t)nptr-__off), __size+__off,\
-    PROT_READ|PROT_WRITE);
-  if (-1 == ret)
-    return -1;
-
-  /* copy memory */
-  libc_memcpy(nptr, optr, __size);
-
-  /* grant read-only permission to new memory */
-  ret = mprotect((void*)((uintptr_t)nptr-__off), __size+__off, PROT_READ);
-  if (-1 == ret)
-    return -1;
-
-  for (i=beg; i<end; ++i) {
-    ASSERT(MMU_RSDNT != (nflags[i]&MMU_RSDNT));
-    ASSERT(MMU_CHRGD != (nflags[i]&MMU_CHRGD));
-
-    /* copy zfill and dirty bit from old flag for clean pages */
-    if (MMU_DIRTY != (nflags[i]&MMU_DIRTY))
-      nflags[i] |= (oflags[i]&(MMU_ZFILL|MMU_DIRTY));
-
-    /* grant read-write permission to dirty pages of new memory */
-    if (MMU_DIRTY == (nflags[i]&MMU_DIRTY)) {
-      ret = mprotect((void*)((uintptr_t)__nbase+(i*page_size)), page_size,\
-        PROT_READ|PROT_WRITE);
-      if (-1 == ret)
-        return -1;
-    }
-  }
-
-  /* This loop addresses the trailing bytes of the new file (>= __off+__size)
-   * which are necessarily overwritten when the old file is renamed to the new
-   * file. The assumption here is that the number of such pages will be small,
-   * else the remap in not beneficial. */
-  for (i=end; i<nate->n_pages; ++i) {
-    ASSERT(MMU_RSDNT != (nflags[i]&MMU_RSDNT));
-    ASSERT(MMU_CHRGD != (nflags[i]&MMU_CHRGD));
-
-    /* change non-dirty disk pages to dirty since, they were overwritten by
-     * new file and grant them read-write permission */
-    if (MMU_ZFILL == (nflags[i]&(MMU_DIRTY|MMU_ZFILL))) {
-      nflags[i] &= ~MMU_ZFILL;
-      nflags[i] |= MMU_DIRTY;
-
-      ret = mprotect((void*)((uintptr_t)__nbase+(i*page_size)), page_size,\
-        PROT_READ|PROT_WRITE);
-      if (-1 == ret)
-        return -1;
-    }
-  }
-
-  /* move old file to new file and truncate to size. */
-  ret = snprintf(nfname, FILENAME_MAX, "%s%d-%zx", vmm.fstem, (int)getpid(),\
-    naddr);
-  if (ret < 0)
-    return -1;
-  ret = snprintf(ofname, FILENAME_MAX, "%s%d-%zx", vmm.fstem, (int)getpid(),\
-    oaddr);
-  if (ret < 0)
-    return -1;
-  ret = rename(ofname, nfname);
-  if (-1 == ret)
-    return -1;
-  /*ret = truncate(nfname, nn_pages*page_size);
-  if (-1 == ret)
-    return -1;*/
-
-  return 0;
-}
-SBMA_EXPORT(internal, int
-__sbma_remap(void * const __nbase, void * const __obase, size_t const __size,
-             size_t const __off));
-#else
 /****************************************************************************/
 /*! Remap an address range to a new LARGER address range. */
 /****************************************************************************/
@@ -682,13 +631,14 @@ __sbma_remap(void * const __nbase, void * const __obase, size_t const __size)
   ret = rename(ofname, nfname);
   if (-1 == ret)
     return -1;
-  /*ret = truncate(nfname, nn_pages*page_size);
+#if SBMA_FILE_RESERVE == 1
+  ret = truncate(nfname, nn_pages*page_size);
   if (-1 == ret)
-    return -1;*/
+    return -1;
+#endif
 
   return 0;
 }
 SBMA_EXPORT(internal, int
 __sbma_remap(void * const __nbase, void * const __obase,
              size_t const __size));
-#endif

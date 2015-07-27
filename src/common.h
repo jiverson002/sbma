@@ -57,11 +57,11 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 
 /****************************************************************************/
-/*! Relevant constants. */
+/*! Compile-time options. */
 /****************************************************************************/
-#define SBMA_STATE_RESIDENT 0
-#define SBMA_STATE_EVICTED  1
-#define SBMA_DEFAULT_STATE  SBMA_STATE_EVICTED
+#define SBMA_RESIDENT_DEFAULT 0
+#define SBMA_MERGE_VMA        1
+#define SBMA_FILE_RESERVE     0
 
 //#define SBMA_MMAP_FLAG (MAP_PRIVATE|MAP_ANONYMOUS|MAP_NORESERVE|MAP_LOCKED)
 #define SBMA_MMAP_FLAG (MAP_PRIVATE|MAP_ANONYMOUS|MAP_NORESERVE)
