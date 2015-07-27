@@ -62,21 +62,36 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #define SBMA_RESIDENT_DEFAULT 0
 #define SBMA_MERGE_VMA        1
 #define SBMA_FILE_RESERVE     0
+#define SBMA_CHARGE_META      0
 
 //#define SBMA_MMAP_FLAG (MAP_PRIVATE|MAP_ANONYMOUS|MAP_NORESERVE|MAP_LOCKED)
 #define SBMA_MMAP_FLAG (MAP_PRIVATE|MAP_ANONYMOUS|MAP_NORESERVE)
 
 
 /****************************************************************************/
+/*! Check the consistency of the runtime state. */
+/****************************************************************************/
+#if 0
+# define SBMA_STATE_CHECK()\
+do {\
+  int ret = __sbma_check(__func__, __LINE__);\
+  ASSERT(-1 != ret);\
+} while (0)
+#else
+# define SBMA_STATE_CHECK() (void)0
+#endif
+
+
+/****************************************************************************/
 /*! Assert function. */
 /****************************************************************************/
-#define ASSERT(COND)                                                        \
-do {                                                                        \
-  if (0 == (COND)) {                                                        \
-    fprintf(stderr, "[%5d] assertion failed: %s:%d: %s\n", (int)getpid(),   \
-      basename(__FILE__), __LINE__, #COND);                                 \
-    abort();                                                                \
-  }                                                                         \
+#define ASSERT(COND)\
+do {\
+  if (0 == (COND)) {\
+    fprintf(stderr, "[%5d] assertion failed: %s:%d: %s\n", (int)getpid(),\
+      basename(__FILE__), __LINE__, #COND);\
+    abort();\
+  }\
 } while (0)
 
 

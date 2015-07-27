@@ -172,6 +172,7 @@ SBMA_EXTERN int
 __sbma_check(char const * const __func, int const __line)
 {
   int ret, retval=0;
+  /*size_t i, c, l;*/
   size_t c_pages=0, s_pages, f_pages;
   struct ate * ate;
 
@@ -184,9 +185,31 @@ __sbma_check(char const * const __func, int const __line)
     if (-1 == ret)
       goto CLEANUP2;
 
+#if SBMA_CHARGE_META == 1
     s_pages  = 1+((sizeof(struct ate)-1)/vmm.page_size);
     f_pages  = 1+((ate->n_pages*sizeof(uint8_t)-1)/vmm.page_size);
+#else
+    s_pages  = 0;
+    f_pages  = 0;
+#endif
     c_pages += s_pages+ate->c_pages+f_pages;
+
+    /*for (l=0,c=0,i=0; i<ate->n_pages; ++i) {
+      if (MMU_RSDNT != (ate->flags[i]&MMU_RSDNT))
+        l++;
+      if (MMU_CHRGD != (ate->flags[i]&MMU_CHRGD))
+        c++;
+    }
+    if (l != ate->l_pages) {
+      printf("[%5d] %s:%d l (%zu) != l_pages (%zu)\n", (int)getpid(),
+        __func, __line, l, ate->l_pages);
+      goto CLEANUP2;
+    }
+    if (c != ate->c_pages) {
+      printf("[%5d] %s:%d c (%zu) != c_pages (%zu)\n", (int)getpid(),
+        __func, __line, c, ate->c_pages);
+      goto CLEANUP2;
+    }*/
 
     ret = __lock_let(&(ate->lock));
     if (-1 == ret)
@@ -229,6 +252,7 @@ __sbma_mtouch(void * const __ate, void * const __addr, size_t const __len)
   struct ate * ate;
 
   /*========================================================================*/
+  SBMA_STATE_CHECK();
   TIMER_START(&(tmr));
   /*========================================================================*/
 
@@ -274,6 +298,7 @@ __sbma_mtouch(void * const __ate, void * const __addr, size_t const __len)
 
   /*========================================================================*/
   TIMER_STOP(&(tmr));
+  SBMA_STATE_CHECK();
   /*========================================================================*/
 
   VMM_TRACK(numrd, numrd);
@@ -315,6 +340,7 @@ __sbma_mtouch_atomic(void * const __addr, size_t const __len, ...)
     return 0;
 
   /*========================================================================*/
+  SBMA_STATE_CHECK();
   TIMER_START(&(tmr));
   /*========================================================================*/
 
@@ -427,6 +453,7 @@ __sbma_mtouch_atomic(void * const __addr, size_t const __len, ...)
 
   /*========================================================================*/
   TIMER_STOP(&(tmr));
+  SBMA_STATE_CHECK();
   /*========================================================================*/
 
   VMM_TRACK(numrd, numrd);
@@ -460,6 +487,7 @@ __sbma_mtouchall(void)
   struct ate * ate, * start=NULL, * stop=NULL;
 
   /*========================================================================*/
+  SBMA_STATE_CHECK();
   TIMER_START(&(tmr));
   /*========================================================================*/
 
@@ -523,6 +551,7 @@ __sbma_mtouchall(void)
 
   /*========================================================================*/
   TIMER_STOP(&(tmr));
+  SBMA_STATE_CHECK();
   /*========================================================================*/
 
   VMM_TRACK(numrd, numrd);
@@ -638,6 +667,7 @@ __sbma_mevict(void * const __addr, size_t const __len)
   struct ate * ate;
 
   /*========================================================================*/
+  SBMA_STATE_CHECK();
   TIMER_START(&(tmr));
   /*========================================================================*/
 
@@ -664,6 +694,7 @@ __sbma_mevict(void * const __addr, size_t const __len)
 
   /*========================================================================*/
   TIMER_STOP(&(tmr));
+  SBMA_STATE_CHECK();
   /*========================================================================*/
 
   VMM_TRACK(numwr, numwr);
@@ -745,6 +776,7 @@ __sbma_mevictall(void)
   struct timespec tmr;
 
   /*========================================================================*/
+  SBMA_STATE_CHECK();
   TIMER_START(&(tmr));
   /*========================================================================*/
 
@@ -767,6 +799,7 @@ __sbma_mevictall(void)
 
   /*========================================================================*/
   TIMER_STOP(&(tmr));
+  SBMA_STATE_CHECK();
   /*========================================================================*/
 
   VMM_TRACK(numwr, numwr);

@@ -63,6 +63,8 @@ __sbma_malloc(size_t const __size)
   if (0 == __size)
     return NULL;
 
+  SBMA_STATE_CHECK();
+
   /* Default return value. */
   retval = NULL;
 
@@ -75,10 +77,18 @@ __sbma_malloc(size_t const __size)
   /* Check memory file to see if there is enough free memory to complete this
    * allocation. */
   for (;;) {
-#if SBMA_RESIDENT_DEFAULT == 1
+#if SBMA_CHARGE_META == 1
+# if SBMA_RESIDENT_DEFAULT == 1
     ret = __ipc_madmit(&(vmm.ipc), VMM_TO_SYS(s_pages+n_pages+f_pages));
-#else
+# else
     ret = __ipc_madmit(&(vmm.ipc), VMM_TO_SYS(s_pages+f_pages));
+# endif
+#else
+# if SBMA_RESIDENT_DEFAULT == 1
+    ret = __ipc_madmit(&(vmm.ipc), VMM_TO_SYS(n_pages));
+# else
+    ret = 0;
+# endif
 #endif
     if (-1 == ret)
       goto RETURN;
@@ -179,10 +189,18 @@ __sbma_malloc(size_t const __size)
   ASSERT(-1 != ret);
   CLEANUP1:
   for (;;) {
-#if SBMA_RESIDENT_DEFAULT == 1
+#if SBMA_CHARGE_META == 1
+# if SBMA_RESIDENT_DEFAULT == 1
     ret = __ipc_mevict(&(vmm.ipc), VMM_TO_SYS(s_pages+n_pages+f_pages));
-#else
+# else
     ret = __ipc_mevict(&(vmm.ipc), VMM_TO_SYS(s_pages+f_pages));
+# endif
+#else
+# if SBMA_RESIDENT_DEFAULT == 1
+    ret = __ipc_mevict(&(vmm.ipc), VMM_TO_SYS(n_pages));
+# else
+    ret = 0;
+# endif
 #endif
     if (-1 == ret)
       goto RETURN;
@@ -194,6 +212,7 @@ __sbma_malloc(size_t const __size)
   /* Return point -- make sure vmm is in valid state and return. */
   /**************************************************************************/
   RETURN:
+  SBMA_STATE_CHECK();
   return retval;
 }
 SBMA_EXPORT(default, void *
@@ -222,6 +241,8 @@ __sbma_free(void * const __ptr)
   size_t page_size, s_pages, n_pages, f_pages, c_pages;
   struct ate * ate;
   char fname[FILENAME_MAX];
+
+  SBMA_STATE_CHECK();
 
   /* Default return value. */
   retval = 0;
@@ -259,7 +280,11 @@ __sbma_free(void * const __ptr)
 
   /* Update memory file. */
   for (;;) {
+#if SBMA_CHARGE_META == 1
     retval = __ipc_mevict(&(vmm.ipc), VMM_TO_SYS(s_pages+c_pages+f_pages));
+#else
+    retval = __ipc_mevict(&(vmm.ipc), VMM_TO_SYS(c_pages));
+#endif
     if (-2 != retval)
       break;
   }
@@ -267,6 +292,7 @@ __sbma_free(void * const __ptr)
   /**************************************************************************/
   /* Return point -- make sure vmm is in valid state and return. */
   /**************************************************************************/
+  SBMA_STATE_CHECK();
   return retval;
 }
 SBMA_EXPORT(default, int
@@ -297,6 +323,8 @@ __sbma_realloc(void * const __ptr, size_t const __size)
   if (0 == __size)
     return NULL;
 
+  SBMA_STATE_CHECK();
+
   page_size = vmm.page_size;
   s_pages   = 1+((sizeof(struct ate)-1)/page_size);
   ate       = (struct ate*)((uintptr_t)__ptr-(s_pages*page_size));
@@ -309,6 +337,28 @@ __sbma_realloc(void * const __ptr, size_t const __size)
   nn_pages  = 1+((__size-1)/page_size);
   nf_pages  = 1+((nn_pages*sizeof(uint8_t)-1)/page_size);
 
+  size_t chk_c_mem   = vmm.ipc.c_mem[vmm.ipc.id];
+  size_t chk_c_pages = 0;
+  struct ate * _ate;
+  ret = __lock_get(&(vmm.lock));
+  if (-1 == ret)
+    goto CLEANUP1;
+  for (_ate=vmm.mmu.a_tbl; NULL!=_ate; _ate=_ate->next) {
+    ret = __lock_get(&(_ate->lock));
+    ASSERT(-1 != ret);
+
+    size_t s_pages  = 1+((sizeof(struct ate)-1)/vmm.page_size);
+    size_t f_pages  = 1+((_ate->n_pages*sizeof(uint8_t)-1)/vmm.page_size);
+    chk_c_pages += s_pages+_ate->c_pages+f_pages;
+
+    ret = __lock_let(&(_ate->lock));
+    ASSERT(-1 != ret);
+  }
+  ret = __lock_let(&(vmm.lock));
+  if (-1 == ret)
+    goto CLEANUP1;
+
+
   if (nn_pages == on_pages) {
     /* do nothing */
   }
@@ -317,7 +367,11 @@ __sbma_realloc(void * const __ptr, size_t const __size)
     ate->n_pages = nn_pages;
     for (i=nn_pages; i<on_pages; ++i) {
       if (MMU_RSDNT != (oflags[i]&MMU_RSDNT)) {
+        ASSERT(ate->l_pages > 0);
         ate->l_pages--;
+      }
+      if (MMU_CHRGD != (oflags[i]&MMU_CHRGD)) {
+        ASSERT(ate->c_pages > 0);
         ate->c_pages--;
       }
     }
@@ -360,11 +414,18 @@ __sbma_realloc(void * const __ptr, size_t const __size)
     /* check memory file to see if there is enough free memory to complete
      * this allocation. */
     for (;;) {
-#if SBMA_RESIDENT_DEFAULT == 1
+#if SBMA_CHARGE_META == 1
+# if SBMA_RESIDENT_DEFAULT == 1
       ret = __ipc_madmit(&(vmm.ipc),\
         VMM_TO_SYS((nn_pages-on_pages)+(nf_pages-of_pages)));
-#else
+# else
       ret = __ipc_madmit(&(vmm.ipc), VMM_TO_SYS(nf_pages-of_pages));
+# endif
+# if SBMA_RESIDENT_DEFAULT == 1
+      ret = __ipc_madmit(&(vmm.ipc), VMM_TO_SYS((nn_pages-on_pages)));
+# else
+      ret = 0;
+# endif
 #endif
       if (-1 == ret)
         return NULL;
@@ -384,7 +445,7 @@ __sbma_realloc(void * const __ptr, size_t const __size)
      * memory region. */
     /* Make sure the kernel sees the entire range as a single vma. */
     ret = mprotect((void*)oaddr, (s_pages+on_pages+of_pages)*page_size,\
-      PROT_NONE);
+      PROT_READ);
     if (-1 == ret)
       goto CLEANUP1;
 #endif
@@ -404,10 +465,6 @@ __sbma_realloc(void * const __ptr, size_t const __size)
     ret = mprotect((void*)naddr, s_pages*page_size, PROT_READ|PROT_WRITE);
     if (-1 == ret)
       goto CLEANUP;
-    ret = mprotect((void*)(naddr+(s_pages+on_pages)*page_size),\
-      of_pages*page_size, PROT_READ);
-    if (-1 == ret)
-      goto CLEANUP;
     ret = mprotect((void*)(naddr+(s_pages+nn_pages)*page_size),\
       nf_pages*page_size, PROT_READ|PROT_WRITE);
     if (-1 == ret)
@@ -420,11 +477,11 @@ __sbma_realloc(void * const __ptr, size_t const __size)
 
 #if SBMA_MERGE_VMA == 1
 # if SBMA_RESIDENT_DEFAULT == 1
-    /* grant read-only permission to extended area of application memory */
+    /* grant read-only permission application memory */
     ret = mprotect((void*)(naddr+(s_pages*page_size)), nn_pages*page_size,\
       PROT_READ);
 # else
-    /* grant no permission to extended area of application memory */
+    /* grant no permission to application memory */
     ret = mprotect((void*)(naddr+(s_pages*page_size)), nn_pages*page_size,\
       PROT_NONE);
 # endif
@@ -443,7 +500,7 @@ __sbma_realloc(void * const __ptr, size_t const __size)
       goto CLEANUP;
 
 #if SBMA_MERGE_VMA == 1
-# if 0
+# if 1
     /* Update memory protection according to the existing page flags. */
     nflags = (uint8_t*)(naddr+((s_pages+nn_pages)*page_size));
     ifirst = 0;
@@ -526,11 +583,11 @@ __sbma_realloc(void * const __ptr, size_t const __size)
     /* populate ate structure */
     ate->n_pages = nn_pages;
 #if SBMA_RESIDENT_DEFAULT == 1
-    ate->l_pages = ol_pages+((nn_pages-on_pages)+(nf_pages-of_pages));
-    ate->c_pages = oc_pages+((nn_pages-on_pages)+(nf_pages-of_pages));
+    ate->l_pages = ol_pages+((nn_pages-on_pages);
+    ate->c_pages = oc_pages+((nn_pages-on_pages);
 #else
-    ate->l_pages = ol_pages+(nf_pages-of_pages);
-    ate->c_pages = oc_pages+(nf_pages-of_pages);
+    ate->l_pages = ol_pages;
+    ate->c_pages = oc_pages;
 #endif
     ate->base    = naddr+(s_pages*page_size);
     ate->flags   = (uint8_t*)(naddr+((s_pages+nn_pages)*page_size));
@@ -548,11 +605,19 @@ __sbma_realloc(void * const __ptr, size_t const __size)
     ASSERT(-1 != ret);
     CLEANUP:
     for (;;) {
-#if SBMA_RESIDENT_DEFAULRESIDENT_DEFAULT
+#if SBMA_CHARGE_META == 1
+# if SBMA_RESIDENT_DEFAULT == 1
       ret = __ipc_mevict(&(vmm.ipc),\
         VMM_TO_SYS((nn_pages-on_pages)+(nf_pages-of_pages)));
-#else
+# else
       ret = __ipc_mevict(&(vmm.ipc), VMM_TO_SYS(nf_pages-of_pages));
+# endif
+#else
+# if SBMA_RESIDENT_DEFAULT == 1
+      ret = __ipc_mevict(&(vmm.ipc), VMM_TO_SYS((nn_pages-on_pages)));
+# else
+      ret = 0;
+# endif
 #endif
       if (-1 == ret)
         return NULL;
@@ -564,6 +629,16 @@ __sbma_realloc(void * const __ptr, size_t const __size)
   }
 
   DONE:
+  //SBMA_STATE_CHECK();
+  do {
+    int ret = __sbma_check(__func__, __LINE__);
+    if (-1 == ret) {
+      printf("[%5d] %s:%d %zu,%zu,%zu,%zu,%zu,%zu\n", (int)getpid(),
+        __func__, __LINE__, oc_pages, ate->c_pages, chk_c_mem,
+        VMM_TO_SYS(chk_c_pages), on_pages, nn_pages);
+    }
+    ASSERT(-1 != ret);
+  } while (0);
   return (void*)ate->base;
 }
 SBMA_EXPORT(default, void *
