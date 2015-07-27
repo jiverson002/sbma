@@ -30,12 +30,21 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 
 #include <malloc.h> /* struct mallinfo */
-#include <string.h> /* memset */
+#include <string.h> /* memset, strncmp */
 #include "common.h"
 #include "ipc.h"
 #include "lock.h"
 #include "sbma.h"
 #include "vmm.h"
+
+
+/****************************************************************************/
+/*! Compate two strings and check if the option has been seen before. */
+/****************************************************************************/
+#define SBMA_OPTCMP(__OPT, __SEEN, __TOK, __STR, __NUM)\
+  ((0 == strncmp(__TOK, __STR, __NUM)) &&\
+   ('\0' == __TOK[__NUM]) &&\
+   ((__OPT) == (((__SEEN)^=(__OPT))&(__OPT))))
 
 
 /****************************************************************************/
@@ -52,21 +61,129 @@ __sbma_mallopt(int const __param, int const __value)
 
   switch (__param) {
     case M_VMMOPTS:
+    if (VMM_INVLD == (__value&VMM_INVLD))
+      goto CLEANUP;
     vmm.opts = __value;
     break;
 
     default:
-    return -1;
+    goto CLEANUP;
   }
 
   ret = __lock_let(&(vmm.lock));
   if (-1 == ret)
-    return -1;
+    goto CLEANUP;
 
   return 0;
+
+  CLEANUP:
+  ret = __lock_let(&(vmm.lock));
+  ASSERT(-1 != ret);
+  return -1;
 }
 SBMA_EXPORT(default, int
 __sbma_mallopt(int const __param, int const __value));
+
+
+/****************************************************************************/
+/*! Parse a string into options. */
+/****************************************************************************/
+SBMA_EXTERN int
+__sbma_parse_optstr(char const * const __opt_str)
+{
+  int opts=0, seen=0;
+  char * tok;
+  char str[512];
+
+  strncpy(str, __opt_str, sizeof(str));
+
+  printf("[%5d] %s ", (int)getpid(), __opt_str);
+
+  tok = strtok(str, ",");
+  while (NULL != tok) {
+    if (SBMA_OPTCMP(VMM_RSDNT, seen, tok, "evict", 5)) {
+    }
+    else if (SBMA_OPTCMP(VMM_RSDNT, seen, tok, "rsdnt", 5)) {
+      opts |= VMM_RSDNT;
+    }
+    else if (SBMA_OPTCMP(VMM_AGGRD, seen, tok, "noaggrd", 7)) {
+    }
+    else if (SBMA_OPTCMP(VMM_AGGRD, seen, tok, "aggrd", 5)) {
+      opts |= VMM_AGGRD;
+    }
+    else if (SBMA_OPTCMP(VMM_AGGCH, seen, tok, "noaggch", 7)) {
+    }
+    else if (SBMA_OPTCMP(VMM_AGGCH, seen, tok, "aggch", 5)) {
+      opts |= VMM_AGGCH;
+    }
+    else if (SBMA_OPTCMP(VMM_GHOST, seen, tok, "noghost", 7)) {
+    }
+    else if (SBMA_OPTCMP(VMM_GHOST, seen, tok, "ghost", 5)) {
+      opts |= VMM_GHOST;
+    }
+    else if (SBMA_OPTCMP(VMM_MERGE, seen, tok, "nomerge", 7)) {
+    }
+    else if (SBMA_OPTCMP(VMM_MERGE, seen, tok, "merge", 5)) {
+      opts |= VMM_MERGE;
+    }
+    else if (SBMA_OPTCMP(VMM_METACH, seen, tok, "nometach", 8)) {
+    }
+    else if (SBMA_OPTCMP(VMM_METACH, seen, tok, "metach", 6)) {
+      opts |= VMM_METACH;
+    }
+    else if (SBMA_OPTCMP(VMM_MLOCK, seen, tok, "nomlock", 7)) {
+    }
+    else if (SBMA_OPTCMP(VMM_MLOCK, seen, tok, "mlock", 5)) {
+      opts |= VMM_MLOCK;
+    }
+    else if (SBMA_OPTCMP(VMM_CHECK, seen, tok, "nocheck", 7)) {
+      seen |= VMM_EXTRA; /* mark this also */
+    }
+    else if (SBMA_OPTCMP(VMM_CHECK, seen, tok, "check", 5)) {
+      opts |= VMM_CHECK;
+    }
+    else if (SBMA_OPTCMP(VMM_EXTRA, seen, tok, "nocheck", 7)) {
+      seen |= VMM_CHECK; /* mark this also */
+    }
+    else if (SBMA_OPTCMP(VMM_EXTRA, seen, tok, "extra", 5)) {
+      opts |= VMM_EXTRA;
+    }
+    else if (SBMA_OPTCMP(VMM_OSVMM, seen, tok, "noosvmm", 7)) {
+    }
+    else if (SBMA_OPTCMP(VMM_OSVMM, seen, tok, "osvmm", 5)) {
+      opts |= VMM_OSVMM;
+    }
+    else {
+      goto CLEANUP;
+    }
+
+    tok = strtok(NULL, ",");
+  }
+
+  /* VMM_OSVMM is not valid with any other options */
+  if (VMM_OSVMM == (opts&VMM_OSVMM) && VMM_OSVMM != opts)
+    goto CLEANUP;
+
+  /* VMM_AGGCH is only valid without VMM_AGGRD */
+  if ((VMM_AGGRD|VMM_AGGCH) == (opts&(VMM_AGGRD|VMM_AGGCH)))
+    goto CLEANUP;
+
+  /* VMM_EXTRA is only valid with VMM_CHECK */
+  if (VMM_EXTRA == (opts&(VMM_CHECK|VMM_EXTRA)))
+    goto CLEANUP;
+
+  printf("0x%x\n", opts);
+
+  goto RETURN;
+
+  CLEANUP:
+  opts = VMM_INVLD;
+
+  RETURN:
+  return opts;
+}
+SBMA_EXPORT(default, int
+__sbma_parse_optstr(char const * const __opt_str));
 
 
 /****************************************************************************/

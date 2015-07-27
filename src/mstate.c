@@ -54,7 +54,7 @@ __sbma_mtouch_probe(struct ate * const __ate, void * const __addr,
   size_t ip, beg, end, page_size, c_pages;
   volatile uint8_t * flags;
 
-  if (((VMM_LZYRD|VMM_AGGCH) == (vmm.opts&(VMM_AGGCH|VMM_LZYRD))) &&\
+  if ((VMM_AGGCH == (vmm.opts&(VMM_AGGCH|VMM_AGGRD))) &&\
       (0 == __ate->c_pages))
   {
     return VMM_TO_SYS(__ate->n_pages);
@@ -89,7 +89,7 @@ __sbma_mtouch_int(struct ate * const __ate, void * const __addr,
   size_t i, beg, end, page_size;
   ssize_t numrd;
 
-  if (((VMM_LZYRD|VMM_AGGCH) == (vmm.opts&(VMM_AGGCH|VMM_LZYRD))) &&\
+  if ((VMM_AGGCH == (vmm.opts&(VMM_AGGCH|VMM_AGGRD))) &&\
       (0 == __ate->c_pages))
   {
     for (i=0; i<__ate->n_pages; ++i) {
@@ -174,59 +174,67 @@ SBMA_EXTERN int
 __sbma_check(char const * const __func, int const __line)
 {
   int ret, retval=0;
-  /*size_t i, c, l;*/
+  size_t i, c, l;
   size_t c_pages=0, s_pages, f_pages;
   struct ate * ate;
 
-  ret = __lock_get(&(vmm.lock));
-  if (-1 == ret)
-    goto CLEANUP1;
-
-  for (ate=vmm.mmu.a_tbl; NULL!=ate; ate=ate->next) {
-    ret = __lock_get(&(ate->lock));
+  if (VMM_CHECK == (vmm.opts&VMM_CHECK)) {
+    ret = __lock_get(&(vmm.lock));
     if (-1 == ret)
-      goto CLEANUP2;
+      goto CLEANUP1;
 
-#if SBMA_CHARGE_META == 1
-    s_pages  = 1+((sizeof(struct ate)-1)/vmm.page_size);
-    f_pages  = 1+((ate->n_pages*sizeof(uint8_t)-1)/vmm.page_size);
-#else
-    s_pages  = 0;
-    f_pages  = 0;
-#endif
-    c_pages += s_pages+ate->c_pages+f_pages;
+    for (ate=vmm.mmu.a_tbl; NULL!=ate; ate=ate->next) {
+      ret = __lock_get(&(ate->lock));
+      if (-1 == ret)
+        goto CLEANUP2;
 
-    /*for (l=0,c=0,i=0; i<ate->n_pages; ++i) {
-      if (MMU_RSDNT != (ate->flags[i]&MMU_RSDNT))
-        l++;
-      if (MMU_CHRGD != (ate->flags[i]&MMU_CHRGD))
-        c++;
+      if (VMM_METACH == (vmm.opts&VMM_METACH)) {
+        s_pages  = 1+((sizeof(struct ate)-1)/vmm.page_size);
+        f_pages  = 1+((ate->n_pages*sizeof(uint8_t)-1)/vmm.page_size);
+      }
+      else {
+        s_pages  = 0;
+        f_pages  = 0;
+      }
+      c_pages += s_pages+ate->c_pages+f_pages;
+
+      if (VMM_EXTRA == (vmm.opts&VMM_EXTRA)) {
+        for (l=0,c=0,i=0; i<ate->n_pages; ++i) {
+          if (MMU_RSDNT != (ate->flags[i]&MMU_RSDNT))
+            l++;
+          if (MMU_CHRGD != (ate->flags[i]&MMU_CHRGD))
+            c++;
+        }
+        if (l != ate->l_pages) {
+          printf("[%5d] %s:%d l (%zu) != l_pages (%zu)\n", (int)getpid(),
+            __func, __line, l, ate->l_pages);
+          goto CLEANUP2;
+        }
+        if (c != ate->c_pages) {
+          printf("[%5d] %s:%d c (%zu) != c_pages (%zu)\n", (int)getpid(),
+            __func, __line, c, ate->c_pages);
+          goto CLEANUP2;
+        }
+      }
+
+      ret = __lock_let(&(ate->lock));
+      if (-1 == ret)
+        goto CLEANUP2;
     }
-    if (l != ate->l_pages) {
-      printf("[%5d] %s:%d l (%zu) != l_pages (%zu)\n", (int)getpid(),
-        __func, __line, l, ate->l_pages);
-      goto CLEANUP2;
-    }
-    if (c != ate->c_pages) {
-      printf("[%5d] %s:%d c (%zu) != c_pages (%zu)\n", (int)getpid(),
-        __func, __line, c, ate->c_pages);
-      goto CLEANUP2;
-    }*/
 
-    ret = __lock_let(&(ate->lock));
+    if (VMM_TO_SYS(c_pages) != vmm.ipc.c_mem[vmm.ipc.id]) {
+      printf("[%5d] %s:%d c_pages (%zu) != c_mem[id] (%zu)\n", (int)getpid(),
+        __func, __line, VMM_TO_SYS(c_pages), vmm.ipc.c_mem[vmm.ipc.id]);
+      retval = -1;
+    }
+
+    ret = __lock_let(&(vmm.lock));
     if (-1 == ret)
-      goto CLEANUP2;
+      goto CLEANUP1;
   }
-
-  if (VMM_TO_SYS(c_pages) != vmm.ipc.c_mem[vmm.ipc.id]) {
-    printf("[%5d] %s:%d c_pages (%zu) != c_mem[id] (%zu)\n", (int)getpid(),
-      __func, __line, VMM_TO_SYS(c_pages), vmm.ipc.c_mem[vmm.ipc.id]);
-    retval = -1;
+  else {
+    retval = 0;
   }
-
-  ret = __lock_let(&(vmm.lock));
-  if (-1 == ret)
-    goto CLEANUP1;
 
   return retval;
 
@@ -323,7 +331,8 @@ SBMA_EXTERN ssize_t
 __sbma_mtouch_atomic(void * const __addr, size_t const __len, ...)
 {
   int ret;
-  size_t i, num, _len, c_pages, mnlen_, mxlen_;
+  size_t i, num, _len, c_pages;
+  size_t mnlen_, mxlen_, mnbeg_, mxbeg_, mnend_, mxend_;
   ssize_t _c_pages, _numrd, numrd;
   uintptr_t min_, max_;
   va_list args;
@@ -332,7 +341,7 @@ __sbma_mtouch_atomic(void * const __addr, size_t const __len, ...)
   int dup[SBMA_ATOMIC_MAX];
   size_t len[SBMA_ATOMIC_MAX];
   void * addr[SBMA_ATOMIC_MAX];
-  struct ate * _ate, * ate[SBMA_ATOMIC_MAX];
+  struct ate * _ate, * mnate_, * mxate_, * ate[SBMA_ATOMIC_MAX];
 
   if (NULL == __addr)
     return 0;
@@ -351,14 +360,22 @@ __sbma_mtouch_atomic(void * const __addr, size_t const __len, ...)
     _ate = __mmu_lookup_ate(&(vmm.mmu), _addr);
 
     for (i=0; i<num; ++i) {
+      /* these could have pages overlapping even if the actual addresses don't
+       * overlap */
       if (_ate == ate[i]) {
-        min_ = (uintptr_t)(_addr < addr[i] ? _addr : addr[i]);
-        max_ = (uintptr_t)(_addr > addr[i] ? _addr : addr[i]);
-        mnlen_ = _addr < addr[i] ? _len : len[i];
-        mxlen_ = _addr > addr[i] ? _len : len[i];
+        min_   = (uintptr_t)(_addr < addr[i] ? _addr : addr[i]);
+        max_   = (uintptr_t)((uintptr_t)_addr != min_ ? _addr : addr[i]);
+        mnlen_ = (uintptr_t)_addr == min_ ? _len : len[i];
+        mxlen_ = (uintptr_t)_addr == max_ ? _len : len[i];
+        mnate_ = (uintptr_t)_addr == min_ ? _ate : ate[i];
+        mxate_ = (uintptr_t)_addr == max_ ? _ate : ate[i];
+        mnbeg_ = (min_-mnate_->base)/vmm.page_size;
+        mnend_ = 1+((min_+mnlen_-mnate_->base-1)/vmm.page_size);
+        mxbeg_ = (max_-mxate_->base)/vmm.page_size;
+        mxend_ = 1+((max_+mxlen_-mxate_->base-1)/vmm.page_size);
 
-        /* overlapping ranges of _ate */
-        if (min_+mnlen_ >= max_) {
+        /* overlapping page ranges of _ate */
+        if (mnend_ >= mxbeg_) {
           /* [max_..max_+mxlen_) is completely overlapped by [min_..min_+minlen_) */
           if (min_+mnlen_ >= max_+mxlen_) {
             addr[i] = (void*)min_;
@@ -401,10 +418,6 @@ __sbma_mtouch_atomic(void * const __addr, size_t const __len, ...)
    * required amount of memory. */
   for (;;) {
     for (c_pages=0,i=0; i<num; ++i) {
-      _c_pages = __sbma_mtouch_probe(ate[i], addr[i], len[i]);
-      if (-1 == _c_pages)
-        goto CLEANUP;
-
       /* This is to avoid double counting under the following circumstances.
        * If aggressive charging is enabled (only applicable to lazy reading),
        * then if the number of pages charged to the current ate is zero
@@ -418,10 +431,17 @@ __sbma_mtouch_atomic(void * const __addr, size_t const __len, ...)
        *  3) mprobe actually computes the number of pages to be charged,
        *     doesn't just shortcut and return ate->n_pages. It is sufficient
        *     to check if 0 != ate[i]->c_pages to satisfy this. */
-      if (((VMM_LZYRD|VMM_AGGCH) != (vmm.opts&(VMM_LZYRD|VMM_AGGCH))) ||\
+      if ((VMM_AGGCH != (vmm.opts&(VMM_AGGCH|VMM_AGGRD))) ||\
           (0 == dup[i]) || (0 != ate[i]->c_pages))
       {
+        _c_pages = __sbma_mtouch_probe(ate[i], addr[i], len[i]);
+        if (-1 == _c_pages)
+          goto CLEANUP;
+
         c_pages += _c_pages;
+      }
+      else {
+        ASSERT(0);
       }
     }
 
@@ -451,6 +471,17 @@ __sbma_mtouch_atomic(void * const __addr, size_t const __len, ...)
 
   /*========================================================================*/
   TIMER_STOP(&(tmr));
+  do {
+    int ret = __sbma_check(__func__, __LINE__);
+    if (-1 == ret) {
+      printf("[%5d] %zu\n", (int)getpid(), c_pages);
+      for (i=0; i<num; ++i) {
+        printf("  (%d,%zu,%zu,%zu)\n", dup[i], (uintptr_t)ate[i],
+          (uintptr_t)addr[i], (uintptr_t)addr[i]+len[i]);
+      }
+    }
+    ASSERT(-1 != ret);
+  } while (0);
   SBMA_STATE_CHECK();
   /*========================================================================*/
 
