@@ -97,8 +97,6 @@ __sbma_parse_optstr(char const * const __opt_str)
 
   strncpy(str, __opt_str, sizeof(str));
 
-  printf("[%5d] %s ", (int)getpid(), __opt_str);
-
   tok = strtok(str, ",");
   while (NULL != tok) {
     if (SBMA_OPTCMP(VMM_RSDNT, seen, tok, "evict", 5)) {
@@ -171,8 +169,6 @@ __sbma_parse_optstr(char const * const __opt_str)
   /* VMM_EXTRA is only valid with VMM_CHECK */
   if (VMM_EXTRA == (opts&(VMM_CHECK|VMM_EXTRA)))
     goto CLEANUP;
-
-  printf("0x%x\n", opts);
 
   goto RETURN;
 

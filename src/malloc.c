@@ -433,10 +433,8 @@ __sbma_realloc(void * const __ptr, size_t const __size)
     naddr = (uintptr_t)mremap((void*)oaddr,\
       (s_pages+on_pages+of_pages)*page_size,\
       (s_pages+nn_pages+nf_pages)*page_size, MREMAP_MAYMOVE);
-    if ((uintptr_t)MAP_FAILED == naddr) {
-      printf("[%5d] %s:%d %s\n", (int)getpid(), __func__, __LINE__, strerror(errno));
+    if ((uintptr_t)MAP_FAILED == naddr)
       goto CLEANUP1;
-    }
 
     if (VMM_MERGE == (vmm.opts&VMM_MERGE)) {
       /* Update protection for book-keeping memory and temporarily for
