@@ -1712,6 +1712,9 @@ kl_chunk_hdr(kl_mem_t * const mem, kl_var_block_t * const block,
   assert(block_size == KL_BLOCK_SIZE(KL_CHUNK_SIZE(size)));
 
   LET_LOCK(&(mem->lock));
+
+  if (NULL == mem) {} /* surpress unused warning when not using threads */
+
   return chunk;
 }
 
@@ -1920,8 +1923,8 @@ KL_EXPORT void *
 KL_realloc(void * const ptr, size_t const size)
 {
   int ret;
-  size_t osize, obsize, block_size, off;
-  void * nptr, * nnptr;
+  size_t osize, obsize, block_size;
+  void * nptr;
   kl_chunk_t * chunk;
   kl_var_block_t * block, * oblock;
 

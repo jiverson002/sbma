@@ -86,7 +86,8 @@ SBMA_STATIC ssize_t
 __sbma_mtouch_int(struct ate * const __ate, void * const __addr,
                   size_t const __len)
 {
-  size_t i, numrd, beg, end, page_size;
+  size_t i, beg, end, page_size;
+  ssize_t numrd;
 
   if (((VMM_LZYRD|VMM_AGGCH) == (vmm.opts&(VMM_AGGCH|VMM_LZYRD))) &&\
       (0 == __ate->c_pages))
@@ -149,7 +150,8 @@ SBMA_STATIC ssize_t
 __sbma_mevict_int(struct ate * const __ate, void * const __addr,
                   size_t const __len)
 {
-  size_t numwr, beg, end, page_size;
+  size_t beg, end, page_size;
+  ssize_t numwr;
 
   page_size = vmm.page_size;
 
@@ -247,7 +249,7 @@ SBMA_EXTERN ssize_t
 __sbma_mtouch(void * const __ate, void * const __addr, size_t const __len)
 {
   int ret;
-  ssize_t c_pages, numrd=0, chk_c_pages;
+  ssize_t c_pages, numrd=0;
   struct timespec tmr;
   struct ate * ate;
 
@@ -272,8 +274,6 @@ __sbma_mtouch(void * const __ate, void * const __addr, size_t const __len)
     if (-1 == c_pages)
       goto CLEANUP;
 
-    chk_c_pages = VMM_TO_SYS(ate->c_pages);
-
     if (0 == c_pages)
       break;
 
@@ -287,8 +287,6 @@ __sbma_mtouch(void * const __ate, void * const __addr, size_t const __len)
   numrd = __sbma_mtouch_int(ate, __addr, __len);
   if (-1 == numrd)
     goto CLEANUP;
-
-  ASSERT(chk_c_pages+c_pages == VMM_TO_SYS(ate->c_pages));
 
   if (NULL == __ate) {
     ret = __lock_let(&(ate->lock));

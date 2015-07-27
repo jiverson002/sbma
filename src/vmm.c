@@ -137,8 +137,7 @@ SBMA_STATIC void
 __vmm_sigsegv(int const sig, siginfo_t * const si, void * const ctx)
 {
   int ret;
-  size_t ip, page_size, c_pages, _len;
-  ssize_t numrd=0;
+  size_t ip, page_size, _len;
   uintptr_t addr;
   void * _addr;
   volatile uint8_t * flags;

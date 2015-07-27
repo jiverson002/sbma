@@ -337,28 +337,6 @@ __sbma_realloc(void * const __ptr, size_t const __size)
   nn_pages  = 1+((__size-1)/page_size);
   nf_pages  = 1+((nn_pages*sizeof(uint8_t)-1)/page_size);
 
-  size_t chk_c_mem   = vmm.ipc.c_mem[vmm.ipc.id];
-  size_t chk_c_pages = 0;
-  struct ate * _ate;
-  ret = __lock_get(&(vmm.lock));
-  if (-1 == ret)
-    goto CLEANUP1;
-  for (_ate=vmm.mmu.a_tbl; NULL!=_ate; _ate=_ate->next) {
-    ret = __lock_get(&(_ate->lock));
-    ASSERT(-1 != ret);
-
-    size_t s_pages  = 1+((sizeof(struct ate)-1)/vmm.page_size);
-    size_t f_pages  = 1+((_ate->n_pages*sizeof(uint8_t)-1)/vmm.page_size);
-    chk_c_pages += s_pages+_ate->c_pages+f_pages;
-
-    ret = __lock_let(&(_ate->lock));
-    ASSERT(-1 != ret);
-  }
-  ret = __lock_let(&(vmm.lock));
-  if (-1 == ret)
-    goto CLEANUP1;
-
-
   if (nn_pages == on_pages) {
     /* do nothing */
   }
@@ -421,6 +399,7 @@ __sbma_realloc(void * const __ptr, size_t const __size)
 # else
       ret = __ipc_madmit(&(vmm.ipc), VMM_TO_SYS(nf_pages-of_pages));
 # endif
+#else
 # if SBMA_RESIDENT_DEFAULT == 1
       ret = __ipc_madmit(&(vmm.ipc), VMM_TO_SYS((nn_pages-on_pages)));
 # else
@@ -629,16 +608,7 @@ __sbma_realloc(void * const __ptr, size_t const __size)
   }
 
   DONE:
-  //SBMA_STATE_CHECK();
-  do {
-    int ret = __sbma_check(__func__, __LINE__);
-    if (-1 == ret) {
-      printf("[%5d] %s:%d %zu,%zu,%zu,%zu,%zu,%zu\n", (int)getpid(),
-        __func__, __LINE__, oc_pages, ate->c_pages, chk_c_mem,
-        VMM_TO_SYS(chk_c_pages), on_pages, nn_pages);
-    }
-    ASSERT(-1 != ret);
-  } while (0);
+  SBMA_STATE_CHECK();
   return (void*)ate->base;
 }
 SBMA_EXPORT(default, void *
@@ -653,7 +623,6 @@ __sbma_remap(void * const __nbase, void * const __obase, size_t const __size)
 {
   int ret;
   size_t i, page_size, s_pages;
-  void * optr, * nptr;
   volatile uint8_t * oflags, * nflags;
   struct ate * oate, * nate;
   char ofname[FILENAME_MAX], nfname[FILENAME_MAX];
