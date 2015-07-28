@@ -331,8 +331,6 @@ __sbma_realloc(void * const __ptr, size_t const __size)
   oflags    = ate->flags;
   on_pages  = ate->n_pages;
   of_pages  = 1+((on_pages*sizeof(uint8_t)-1)/page_size);
-  ol_pages  = ate->l_pages;
-  oc_pages  = ate->c_pages;
   nn_pages  = 1+((__size-1)/page_size);
   nf_pages  = 1+((nn_pages*sizeof(uint8_t)-1)/page_size);
 
@@ -379,6 +377,9 @@ __sbma_realloc(void * const __ptr, size_t const __size)
 
     /* update memory file */
     for (;;) {
+      ol_pages = ate->l_pages;
+      oc_pages = ate->c_pages;
+
       ret = __ipc_mevict(&(vmm.ipc),\
         VMM_TO_SYS((oc_pages-ate->c_pages)+(of_pages-nf_pages)));
       if (-1 == ret)
@@ -391,6 +392,9 @@ __sbma_realloc(void * const __ptr, size_t const __size)
     /* check memory file to see if there is enough free memory to complete
      * this allocation. */
     for (;;) {
+      ol_pages = ate->l_pages;
+      oc_pages = ate->c_pages;
+
       if (VMM_METACH == (vmm.opts&VMM_METACH)) {
         if (VMM_RSDNT == (vmm.opts&VMM_RSDNT)) {
           ret = __ipc_madmit(&(vmm.ipc),\
@@ -401,8 +405,10 @@ __sbma_realloc(void * const __ptr, size_t const __size)
         }
       }
       else {
-        if (VMM_RSDNT == (vmm.opts&VMM_RSDNT))
-          ret = __ipc_madmit(&(vmm.ipc), VMM_TO_SYS((nn_pages-on_pages)));
+        if (VMM_RSDNT == (vmm.opts&VMM_RSDNT)) {
+          ret = __ipc_madmit(&(vmm.ipc), VMM_TO_SYS(nn_pages-on_pages));
+          check1 = 1;
+        }
         else
           ret = 0;
       }
@@ -566,13 +572,14 @@ __sbma_realloc(void * const __ptr, size_t const __size)
     if (VMM_RSDNT == (vmm.opts&VMM_RSDNT)) {
       ate->l_pages = ol_pages+(nn_pages-on_pages);
       ate->c_pages = oc_pages+(nn_pages-on_pages);
+      check2 = 1;
     }
     else {
       ate->l_pages = ol_pages;
       ate->c_pages = oc_pages;
     }
-    ate->base    = naddr+(s_pages*page_size);
-    ate->flags   = (uint8_t*)(naddr+((s_pages+nn_pages)*page_size));
+    ate->base  = naddr+(s_pages*page_size);
+    ate->flags = (uint8_t*)(naddr+((s_pages+nn_pages)*page_size));
 
     if (VMM_RSDNT != (vmm.opts&VMM_RSDNT)) {
       for (i=on_pages; i<nn_pages; ++i)
