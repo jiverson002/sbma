@@ -92,6 +92,8 @@ SBMA_EXTERN int
 __sbma_parse_optstr(char const * const __opt_str)
 {
   int opts=0, seen=0;
+  int all=(VMM_RSDNT|VMM_LZYRD|VMM_AGGCH|VMM_GHOST|VMM_MERGE|VMM_METACH|\
+    VMM_MLOCK|VMM_CHECK|VMM_EXTRA|VMM_OSVMM);
   char * tok;
   char str[512];
 
@@ -104,10 +106,10 @@ __sbma_parse_optstr(char const * const __opt_str)
     else if (SBMA_OPTCMP(VMM_RSDNT, seen, tok, "rsdnt", 5)) {
       opts |= VMM_RSDNT;
     }
-    else if (SBMA_OPTCMP(VMM_AGGRD, seen, tok, "noaggrd", 7)) {
+    else if (SBMA_OPTCMP(VMM_LZYRD, seen, tok, "aggrd", 5)) {
     }
-    else if (SBMA_OPTCMP(VMM_AGGRD, seen, tok, "aggrd", 5)) {
-      opts |= VMM_AGGRD;
+    else if (SBMA_OPTCMP(VMM_LZYRD, seen, tok, "lzyrd", 5)) {
+      opts |= VMM_LZYRD;
     }
     else if (SBMA_OPTCMP(VMM_AGGCH, seen, tok, "noaggch", 7)) {
     }
@@ -134,22 +136,23 @@ __sbma_parse_optstr(char const * const __opt_str)
     else if (SBMA_OPTCMP(VMM_MLOCK, seen, tok, "mlock", 5)) {
       opts |= VMM_MLOCK;
     }
-    else if (SBMA_OPTCMP(VMM_CHECK, seen, tok, "nocheck", 7)) {
-      seen |= VMM_EXTRA; /* mark this also */
+    else if (SBMA_OPTCMP((VMM_CHECK|VMM_EXTRA), seen, tok, "nocheck", 7)) {
     }
-    else if (SBMA_OPTCMP(VMM_CHECK, seen, tok, "check", 5)) {
+    else if (SBMA_OPTCMP((VMM_CHECK|VMM_EXTRA), seen, tok, "check", 5)) {
       opts |= VMM_CHECK;
     }
-    else if (SBMA_OPTCMP(VMM_EXTRA, seen, tok, "nocheck", 7)) {
-      seen |= VMM_CHECK; /* mark this also */
+    else if (SBMA_OPTCMP((VMM_CHECK|VMM_EXTRA), seen, tok, "nocheck", 7)) {
     }
-    else if (SBMA_OPTCMP(VMM_EXTRA, seen, tok, "extra", 5)) {
+    else if (SBMA_OPTCMP((VMM_CHECK|VMM_EXTRA), seen, tok, "extra", 5)) {
       opts |= VMM_EXTRA;
     }
     else if (SBMA_OPTCMP(VMM_OSVMM, seen, tok, "noosvmm", 7)) {
     }
     else if (SBMA_OPTCMP(VMM_OSVMM, seen, tok, "osvmm", 5)) {
       opts |= VMM_OSVMM;
+    }
+    else if (SBMA_OPTCMP(all, seen, tok, "default", 7)) {
+      opts |= (VMM_LZYRD|VMM_MERGE);
     }
     else {
       goto CLEANUP;
@@ -162,8 +165,8 @@ __sbma_parse_optstr(char const * const __opt_str)
   if (VMM_OSVMM == (opts&VMM_OSVMM) && VMM_OSVMM != opts)
     goto CLEANUP;
 
-  /* VMM_AGGCH is only valid without VMM_AGGRD */
-  if ((VMM_AGGRD|VMM_AGGCH) == (opts&(VMM_AGGRD|VMM_AGGCH)))
+  /* VMM_AGGCH is only valid without VMM_LZYRD */
+  if (VMM_AGGCH == (opts&(VMM_LZYRD|VMM_AGGCH)))
     goto CLEANUP;
 
   /* VMM_EXTRA is only valid with VMM_CHECK */

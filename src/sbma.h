@@ -70,30 +70,31 @@ enum __sbma_mallopt_params
  *   bit  9 ==    0:                      1: use standard c library malloc, etc.
  *   bit 10 ==    0:                      1: invalid options
  *
- * rsdnt|evict
- *   Determines the state of memory pages when the are allocated. If rsdnt is
- *   selected, memory pages are allocated in the resident state. If evict is
- *   selected, memory pages are allocated in the evicted state. There is a
- *   trade-off between the two states. In the resident state, a double
- *   segmentation fault is avoided when writing to the newly allocated memory,
- *   but allocation requires calling SBMA_madmit(). In the evicted state, a
- *   double segmentation fault is generated when writing to the newly
- *   allocated memory, but SBMA_madmit() is only called for the meta-info if
- *   metach is selected or avoided entirely if nometach is selected. Default
- *   is evict.
+ * evict|rsdnt
+ *   Determines the state of memory pages when the are allocated. If evict is
+ *   selected, memory pages are allocated in the evicted state. If rsdnt is
+ *   selected, memory pages are allocated in the resident state. There is a
+ *   trade-off between the two states. In the evicted state, a double
+ *   segmentation fault is generated when writing to the newly allocated
+ *   memory, but SBMA_madmit() is only called for the meta-info if metach is
+ *   selected or avoided entirely if nometach is selected. In the resident
+ *   state, a double segmentation fault is avoided when writing to the newly
+ *   allocated memory, but allocation always requires calling SBMA_madmit().
+ *   Default is evict.
  *
- * noaggrd|aggrd
+ * aggrd|lzyrd
  *   Determines the memory reading strategy to be used by the SBMA runtime. If
- *   ar is selected, memory is made resident at the allocation granularity.
+ *   aggrd is selected, memory is made resident at the allocation granularity.
  *   This means that when a non-resident page is accessed, all non-resident
  *   pages in the allocation are read from secondary storage simultaneously.
- *   If lr is selected, memory is made resident at the page granularity. This
- *   means that when a non-resident page is accessed, only the page itself is
- *   read from secondary storage. There is a trade-off between the two memory
- *   reading strategies. In the ar strategy, reading is more efficient if the
- *   entire allocation will be accessed before being evicted. In the lr
- *   strategy, unnecessary reading is avoided when only subsets of allocations
- *   are accessed between successive evictions. Default is lr.
+ *   If lzyrd is selected, memory is made resident at the page granularity.
+ *   This means that when a non-resident page is accessed, only the page
+ *   itself is read from secondary storage. There is a trade-off between the
+ *   two memory reading strategies. In the aggrd strategy, reading is more
+ *   efficient if the entire allocation will be accessed before being evicted.
+ *   In the lzyrd strategy, unnecessary reading is avoided when only subsets
+ *   of allocations are accessed between successive evictions. Default is
+ *   aggrd.
  *
  * noaggch|aggch
  *   Enables aggressive charging of allocations. This is only valid with lraw
@@ -146,13 +147,13 @@ enum __sbma_mallopt_params
  *   is noosvmm.
  *
  * default
- *   evict,noaggrd,noaggch,noghost,nomerge,nometach,nomlock,nocheck,noosvmm
+ *   evict,lzyrd,noaggch,noghost,merge,nometach,nomlock,nocheck,noosvmm
  */
 /****************************************************************************/
 enum __sbma_vmm_opt_code
 {
   VMM_RSDNT  = 1 << 0,
-  VMM_AGGRD  = 1 << 1,
+  VMM_LZYRD  = 1 << 1,
   VMM_AGGCH  = 1 << 2,
   VMM_GHOST  = 1 << 3,
   VMM_MERGE  = 1 << 4,

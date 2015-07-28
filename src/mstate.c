@@ -54,7 +54,7 @@ __sbma_mtouch_probe(struct ate * const __ate, void * const __addr,
   size_t ip, beg, end, page_size, c_pages;
   volatile uint8_t * flags;
 
-  if ((VMM_AGGCH == (vmm.opts&(VMM_AGGCH|VMM_AGGRD))) &&\
+  if (((VMM_AGGCH|VMM_LZYRD) == (vmm.opts&(VMM_AGGCH|VMM_LZYRD))) &&\
       (0 == __ate->c_pages))
   {
     return VMM_TO_SYS(__ate->n_pages);
@@ -89,7 +89,7 @@ __sbma_mtouch_int(struct ate * const __ate, void * const __addr,
   size_t i, beg, end, page_size;
   ssize_t numrd;
 
-  if ((VMM_AGGCH == (vmm.opts&(VMM_AGGCH|VMM_AGGRD))) &&\
+  if (((VMM_AGGCH|VMM_LZYRD) == (vmm.opts&(VMM_AGGCH|VMM_LZYRD))) &&\
       (0 == __ate->c_pages))
   {
     for (i=0; i<__ate->n_pages; ++i) {
@@ -431,7 +431,7 @@ __sbma_mtouch_atomic(void * const __addr, size_t const __len, ...)
        *  3) mprobe actually computes the number of pages to be charged,
        *     doesn't just shortcut and return ate->n_pages. It is sufficient
        *     to check if 0 != ate[i]->c_pages to satisfy this. */
-      if ((VMM_AGGCH != (vmm.opts&(VMM_AGGCH|VMM_AGGRD))) ||\
+      if (((VMM_AGGCH|VMM_LZYRD) != (vmm.opts&(VMM_AGGCH|VMM_LZYRD))) ||\
           (0 == dup[i]) || (0 != ate[i]->c_pages))
       {
         _c_pages = __sbma_mtouch_probe(ate[i], addr[i], len[i]);

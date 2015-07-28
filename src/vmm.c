@@ -158,13 +158,13 @@ __vmm_sigsegv(int const sig, siginfo_t * const si, void * const ctx)
   flags = ate->flags;
 
   if (MMU_RSDNT == (flags[ip]&MMU_RSDNT)) {
-    if (VMM_AGGRD == (vmm.opts&VMM_AGGRD)) {
-      _addr = (void*)ate->base;
-      _len  = ate->n_pages*page_size;
-    }
-    else {
+    if (VMM_LZYRD == (vmm.opts&VMM_LZYRD)) {
       _addr = (void*)(ate->base+ip*page_size);
       _len  = page_size;
+    }
+    else {
+      _addr = (void*)ate->base;
+      _len  = ate->n_pages*page_size;
     }
 
     ret = __sbma_mtouch(ate, _addr, _len);
