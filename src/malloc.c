@@ -407,7 +407,6 @@ __sbma_realloc(void * const __ptr, size_t const __size)
       else {
         if (VMM_RSDNT == (vmm.opts&VMM_RSDNT)) {
           ret = __ipc_madmit(&(vmm.ipc), VMM_TO_SYS(nn_pages-on_pages));
-          check1 = 1;
         }
         else
           ret = 0;
@@ -572,7 +571,6 @@ __sbma_realloc(void * const __ptr, size_t const __size)
     if (VMM_RSDNT == (vmm.opts&VMM_RSDNT)) {
       ate->l_pages = ol_pages+(nn_pages-on_pages);
       ate->c_pages = oc_pages+(nn_pages-on_pages);
-      check2 = 1;
     }
     else {
       ate->l_pages = ol_pages;

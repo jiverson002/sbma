@@ -332,7 +332,7 @@ __sbma_mtouch_atomic(void * const __addr, size_t const __len, ...)
 {
   int ret;
   size_t i, num, _len, c_pages;
-  size_t mnlen_, mxlen_, mnbeg_, mxbeg_, mnend_, mxend_;
+  size_t mnlen_, mxlen_, mxbeg_, mnend_;
   ssize_t _c_pages, _numrd, numrd;
   uintptr_t min_, max_;
   va_list args;
@@ -369,10 +369,8 @@ __sbma_mtouch_atomic(void * const __addr, size_t const __len, ...)
         mxlen_ = (uintptr_t)_addr == max_ ? _len : len[i];
         mnate_ = (uintptr_t)_addr == min_ ? _ate : ate[i];
         mxate_ = (uintptr_t)_addr == max_ ? _ate : ate[i];
-        mnbeg_ = (min_-mnate_->base)/vmm.page_size;
         mnend_ = 1+((min_+mnlen_-mnate_->base-1)/vmm.page_size);
         mxbeg_ = (max_-mxate_->base)/vmm.page_size;
-        mxend_ = 1+((max_+mxlen_-mxate_->base-1)/vmm.page_size);
 
         /* overlapping page ranges of _ate */
         if (mnend_ >= mxbeg_) {
