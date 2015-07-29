@@ -135,7 +135,7 @@ __sbma_malloc(size_t const __size)
 #if SBMA_FILE_RESERVE == 1
   ret = truncate(fname, n_pages*page_size);
   if (-1 == ret)
-    return NULL;
+    goto CLEANUP3;
 #endif
 
   /* Set and populate ate structure. */
@@ -309,6 +309,7 @@ __sbma_realloc(void * const __ptr, size_t const __size)
   size_t nn_pages, nf_pages;
   uint8_t oflag;
   uintptr_t oaddr, naddr;
+  void * retval;
   volatile uint8_t * oflags, * nflags;
   struct ate * ate;
   char ofname[FILENAME_MAX], nfname[FILENAME_MAX];
@@ -319,15 +320,18 @@ __sbma_realloc(void * const __ptr, size_t const __size)
    * incorrect. So, if an error occurs, then mevict must be called to offset
    * and correct the state of vmm.ipc. */
 
+  SBMA_STATE_CHECK();
+
   if (0 == __size)
     return NULL;
 
-  SBMA_STATE_CHECK();
+  /* Default return value. */
+  retval = NULL;
 
   page_size = vmm.page_size;
   s_pages   = 1+((sizeof(struct ate)-1)/page_size);
   ate       = (struct ate*)((uintptr_t)__ptr-(s_pages*page_size));
-  oaddr     = ate->base-(s_pages*page_size);
+  oaddr     = (uintptr_t)ate;
   oflags    = ate->flags;
   on_pages  = ate->n_pages;
   of_pages  = 1+((on_pages*sizeof(uint8_t)-1)/page_size);
@@ -336,6 +340,7 @@ __sbma_realloc(void * const __ptr, size_t const __size)
 
   if (nn_pages == on_pages) {
     /* do nothing */
+    retval = (void*)ate->base;
   }
   else if (nn_pages < on_pages) {
     /* adjust c_pages for the pages which will be unmapped */
@@ -387,6 +392,8 @@ __sbma_realloc(void * const __ptr, size_t const __size)
       else if (-2 != ret)
         break;
     }
+
+    retval = (void*)ate->base;
   }
   else {
     /* check memory file to see if there is enough free memory to complete
@@ -412,7 +419,7 @@ __sbma_realloc(void * const __ptr, size_t const __size)
           ret = 0;
       }
       if (-1 == ret)
-        return NULL;
+        goto RETURN;
       else if (-2 != ret)
         break;
     }
@@ -429,7 +436,7 @@ __sbma_realloc(void * const __ptr, size_t const __size)
        * memory region. */
       /* Make sure the kernel sees the entire range as a single vma. */
       ret = mprotect((void*)oaddr, (s_pages+on_pages+of_pages)*page_size,\
-        PROT_READ);
+        PROT_READ|PROT_WRITE);
       if (-1 == ret)
         goto CLEANUP1;
     }
@@ -439,19 +446,7 @@ __sbma_realloc(void * const __ptr, size_t const __size)
       (s_pages+on_pages+of_pages)*page_size,\
       (s_pages+nn_pages+nf_pages)*page_size, MREMAP_MAYMOVE);
     if ((uintptr_t)MAP_FAILED == naddr)
-      goto CLEANUP1;
-
-    if (VMM_MERGE == (vmm.opts&VMM_MERGE)) {
-      /* Update protection for book-keeping memory and temporarily for
-       * application memory. */
-      ret = mprotect((void*)naddr, s_pages*page_size, PROT_READ|PROT_WRITE);
-      if (-1 == ret)
-        goto CLEANUP;
-      ret = mprotect((void*)(naddr+(s_pages+nn_pages)*page_size),\
-        nf_pages*page_size, PROT_READ|PROT_WRITE);
-      if (-1 == ret)
-        goto CLEANUP;
-    }
+      goto CLEANUP2;
 
     /* copy page flags to new location */
     libc_memmove((void*)(naddr+((s_pages+nn_pages)*page_size)),\
@@ -483,7 +478,7 @@ __sbma_realloc(void * const __ptr, size_t const __size)
       }
     }
     if (-1 == ret)
-      goto CLEANUP;
+      goto FATAL;
 
     if (VMM_MERGE == (vmm.opts&VMM_MERGE)) {
 #if 1
@@ -502,7 +497,7 @@ __sbma_realloc(void * const __ptr, size_t const __size)
               (i-ifirst)*page_size, PROT_READ);
           }
           if (-1 == ret)
-            goto CLEANUP;
+            goto FATAL;
 
           if (i != on_pages) {
             ifirst = i;
@@ -516,15 +511,13 @@ __sbma_realloc(void * const __ptr, size_t const __size)
         if (MMU_DIRTY == (nflags[i]&MMU_DIRTY)) {
           ret = mprotect((void*)(naddr+(s_pages+i)*page_size), page_size,\
             PROT_READ|PROT_WRITE);
-          if (-1 == ret)
-            goto CLEANUP;
         }
         else if (MMU_RSDNT != (nflags[i]&MMU_RSDNT)) {
           ret = mprotect((void*)(naddr+(s_pages+i)*page_size), page_size,\
             PROT_READ);
-          if (-1 == ret)
-            goto CLEANUP;
         }
+        if (-1 == ret)
+          goto FATAL;
       }
 #endif
     }
@@ -534,23 +527,23 @@ __sbma_realloc(void * const __ptr, size_t const __size)
       ret = libc_mlock((void*)(naddr+(s_pages+on_pages)*page_size),\
         ((nn_pages-on_pages)+nf_pages)*page_size);
       if (-1 == ret)
-        goto CLEANUP;
+        goto FATAL;
     }
 
     ret = snprintf(nfname, FILENAME_MAX, "%s%d-%zx", vmm.fstem,\
       (int)getpid(), naddr);
     if (0 > ret)
-      return NULL;
+      goto FATAL;
     /* if the allocation has moved */
     if (oaddr != naddr) {
       /* move old file to new file and trucate to size */
       ret = snprintf(ofname, FILENAME_MAX, "%s%d-%zx", vmm.fstem,\
         (int)getpid(), oaddr);
       if (0 > ret)
-        goto CLEANUP;
+        goto FATAL;
       ret = rename(ofname, nfname);
       if (-1 == ret)
-        goto CLEANUP;
+        goto FATAL;
 
       /* set pointer for the allocation table entry */
       ate = (struct ate*)naddr;
@@ -558,13 +551,13 @@ __sbma_realloc(void * const __ptr, size_t const __size)
 #if SBMA_FILE_RESERVE == 1
     ret = truncate(nfname, nn_pages*page_size);
     if (-1 == ret)
-      return NULL;
+      goto FATAL;
 #endif
 
     /* insert new ate into mmu */
     ret = __mmu_insert_ate(&(vmm.mmu), ate);
     if (-1 == ret)
-      goto CLEANUP;
+      goto FATAL;
 
     /* populate ate structure */
     ate->n_pages = nn_pages;
@@ -584,8 +577,37 @@ __sbma_realloc(void * const __ptr, size_t const __size)
         ate->flags[i] |= (MMU_CHRGD|MMU_RSDNT);
     }
 
-    goto DONE;
+    /************************************************************************/
+    /* Successful exit -- return pointer to appliction memory. */
+    /************************************************************************/
+    retval = (void*)ate->base;
+    goto RETURN;
 
+    /************************************************************************/
+    /* Error exit -- revert changes to vmm state, release any memory, and
+     * remove any files created, then return NULL. */
+    /************************************************************************/
+    CLEANUP2:
+    if (VMM_MERGE == (vmm.opts&VMM_MERGE)) {
+      /* grant no permission to application memory */
+      ret = mprotect((void*)(oaddr+(s_pages*page_size)), on_pages*page_size,\
+        PROT_NONE);
+      ASSERT(-1 != ret);
+
+      /* revert memory protection according to existing flags */
+      oflags = (uint8_t*)(oaddr+((s_pages+on_pages)*page_size));
+      for (i=0; i<on_pages; ++i) {
+        if (MMU_DIRTY == (oflags[i]&MMU_DIRTY)) {
+          ret = mprotect((void*)(oaddr+(s_pages+i)*page_size), page_size,\
+            PROT_READ|PROT_WRITE);
+        }
+        else if (MMU_RSDNT != (oflags[i]&MMU_RSDNT)) {
+          ret = mprotect((void*)(oaddr+(s_pages+i)*page_size), page_size,\
+            PROT_READ);
+        }
+        ASSERT(-1 != ret);
+      }
+    }
     CLEANUP1:
     /* insert old ate back into mmu */
     ret = __mmu_insert_ate(&(vmm.mmu), ate);
@@ -608,17 +630,28 @@ __sbma_realloc(void * const __ptr, size_t const __size)
           ret = 0;
       }
       if (-1 == ret)
-        return NULL;
+        goto RETURN;
       else if (-2 != ret)
         break;
     }
 
-    return NULL;
+    goto RETURN;
   }
 
-  DONE:
+  /**************************************************************************/
+  /* Return point -- make sure vmm is in valid state and return. */
+  /**************************************************************************/
+  RETURN:
   SBMA_STATE_CHECK();
-  return (void*)ate->base;
+  return retval;
+
+  /**************************************************************************/
+  /* Fatal error -- an unrecoverable error has occured, the previously
+   * allocated memory has been lost and no new memory could be successfully
+   * allocated. */
+  /**************************************************************************/
+  FATAL:
+  ASSERT(0);
 }
 SBMA_EXPORT(default, void *
 __sbma_realloc(void * const __ptr, size_t const __size));
@@ -665,6 +698,7 @@ __sbma_remap(void * const __nbase, void * const __obase, size_t const __size)
     return -1;
 
   for (i=0; i<oate->n_pages; ++i) {
+    ASSERT(MMU_DIRTY != (oflags[i]&MMU_DIRTY)); /* not dirty */
     ASSERT(MMU_DIRTY != (nflags[i]&MMU_DIRTY)); /* not dirty */
     ASSERT(MMU_ZFILL != (nflags[i]&MMU_ZFILL)); /* not on disk */
 

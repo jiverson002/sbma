@@ -152,6 +152,7 @@ __vmm_sigsegv(int const sig, siginfo_t * const si, void * const ctx)
 
   /* lookup allocation table entry */
   ate = __mmu_lookup_ate(&(vmm.mmu), (void*)addr);
+  ASSERT((struct ate*)-1 != ate);
   ASSERT(NULL != ate);
 
   ip    = (addr-ate->base)/page_size;
@@ -257,8 +258,8 @@ __vmm_sigipc(int const sig, siginfo_t * const si, void * const ctx)
 
 
 SBMA_EXTERN ssize_t
-__vmm_swap_i(struct ate * const __ate, size_t const __beg,
-             size_t const __num, int const __ghost)
+__vmm_swap_i(struct ate * const __ate, size_t const __beg, size_t const __num,
+             int const __ghost)
 {
   int ret, fd;
   size_t ip, page_size, end, numrd=0;
@@ -292,24 +293,24 @@ __vmm_swap_i(struct ate * const __ate, size_t const __beg,
     addr = (uintptr_t)mmap(NULL, __num*page_size, PROT_WRITE, SBMA_MMAP_FLAG,\
       -1, 0);
     if ((uintptr_t)MAP_FAILED == addr)
-      return -1;
+      goto ERREXIT;
   }
   else {
     addr = __ate->base+(__beg*page_size);
     ret  = mprotect((void*)addr, __num*page_size, PROT_WRITE);
     if (-1 == ret)
-      return -1;
+      goto ERREXIT;
   }
 
   /* compute file name */
   ret = snprintf(fname, FILENAME_MAX, "%s%d-%zx", vmm.fstem, (int)getpid(),\
     (uintptr_t)__ate);
   if (0 > ret)
-    return -1;
+    goto ERREXIT;
   /* open the file for reading */
   fd = libc_open(fname, O_RDONLY);
   if (-1 == fd)
-    return -1;
+    goto ERREXIT;
 
   /* load only those pages which were previously written to disk and have
    * not since been dumped */
@@ -326,21 +327,21 @@ __vmm_swap_i(struct ate * const __ate, size_t const __beg,
       ret = __vmm_read(fd, (void*)(addr+((ipfirst-__beg)*page_size)),
         (ip-ipfirst)*page_size, ipfirst*page_size);
       if (-1 == ret)
-        return -1;
+        goto ERREXIT;
 
       if (VMM_GHOST == __ghost) {
         /* give read permission to temporary pages */
         ret = mprotect((void*)(addr+((ipfirst-__beg)*page_size)),\
           (ip-ipfirst)*page_size, PROT_READ);
         if (-1 == ret)
-          return -1;
+          goto ERREXIT;
         /* remap temporary pages into persistent memory */
         raddr = (uintptr_t)mremap((void*)(addr+((ipfirst-__beg)*page_size)),\
           (ip-ipfirst)*page_size, (ip-ipfirst)*page_size,\
-          MREMAP_MAYMOVE|MREMAP_FIXED,
+          MREMAP_MAYMOVE|MREMAP_FIXED,\
           (void*)(__ate->base+(ipfirst*page_size)));
         if (MAP_FAILED == (void*)raddr)
-          return -1;
+          goto ERREXIT;
       }
 
       numrd += (ip-ipfirst);
@@ -370,19 +371,19 @@ __vmm_swap_i(struct ate * const __ate, size_t const __beg,
   /* close file */
   ret = close(fd);
   if (-1 == ret)
-    return -1;
+    goto ERREXIT;
 
   if (VMM_GHOST == __ghost) {
     /* unmap any remaining temporary pages */
     ret = munmap((void*)addr, __num*page_size);
     if (-1 == ret)
-      return -1;
+      goto ERREXIT;
   }
   else {
     /* update protection of temporary mapping to read-only */
     ret = mprotect((void*)addr, __num*page_size, PROT_READ);
     if (-1 == ret)
-      return -1;
+      goto ERREXIT;
 
     /* update protection of temporary mapping and copy data for any dirty pages
      * */
@@ -391,22 +392,24 @@ __vmm_swap_i(struct ate * const __ate, size_t const __beg,
         ret = mprotect((void*)(addr+((ip-__beg)*page_size)), page_size,\
           PROT_READ|PROT_WRITE);
         if (-1 == ret)
-          return -1;
+          goto ERREXIT;
       }
     }
   }
 
   /* return the number of pages read from disk */
   return numrd;
+
+  ERREXIT:
+  return -1;
 }
 SBMA_EXPORT(internal, ssize_t
-__vmm_swap_i(struct ate * const __ate, size_t const __beg,
-             size_t const __num, int const __ghost));
+__vmm_swap_i(struct ate * const __ate, size_t const __beg, size_t const __num,
+             int const __ghost));
 
 
 SBMA_EXTERN ssize_t
-__vmm_swap_o(struct ate * const __ate, size_t const __beg,
-             size_t const __num)
+__vmm_swap_o(struct ate * const __ate, size_t const __beg, size_t const __num)
 {
   int ret, fd;
   size_t ip, page_size, end, numwr=0;
@@ -440,11 +443,11 @@ __vmm_swap_o(struct ate * const __ate, size_t const __beg,
   ret = snprintf(fname, FILENAME_MAX, "%s%d-%zx", vmm.fstem, (int)getpid(),\
     (uintptr_t)__ate);
   if (0 > ret)
-    return -1;
+    goto ERREXIT;
   /* open the file for writing */
   fd = libc_open(fname, O_WRONLY);
   if (-1 == fd)
-    return -1;
+    goto ERREXIT;
 
   /* go over the pages and write the ones that have changed. perform the
    * writes in contigous chunks of changed pages. */
@@ -484,7 +487,7 @@ __vmm_swap_o(struct ate * const __ate, size_t const __beg,
       ret = __vmm_write(fd, (void*)(addr+(ipfirst*page_size)),\
         (ip-ipfirst)*page_size, ipfirst*page_size);
       if (-1 == ret)
-        return -1;
+        goto ERREXIT;
 
       numwr += (ip-ipfirst);
 
@@ -495,29 +498,32 @@ __vmm_swap_o(struct ate * const __ate, size_t const __beg,
   /* close file */
   ret = close(fd);
   if (-1 == ret)
-    return -1;
+    goto ERREXIT;
 
   if (VMM_MLOCK == (vmm.opts&VMM_MLOCK)) {
     /* unlock the memory from RAM */
     ret = munlock((void*)(addr+(__beg*page_size)), __num*page_size);
     if (-1 == ret)
-      return -1;
+      goto ERREXIT;
   }
 
   /* update its protection to none */
   ret = mprotect((void*)(addr+(__beg*page_size)), __num*page_size, PROT_NONE);
   if (-1 == ret)
-    return -1;
+    goto ERREXIT;
 
   /* unlock the memory, update its protection to none and advise kernel to
    * release its associated resources */
   ret = madvise((void*)(addr+(__beg*page_size)), __num*page_size,\
     MADV_DONTNEED);
   if (-1 == ret)
-    return -1;
+    goto ERREXIT;
 
   /* return the number of pages written to disk */
   return numwr;
+
+  ERREXIT:
+  return -1;
 }
 SBMA_EXPORT(internal, ssize_t
 __vmm_swap_o(struct ate * const __ate, size_t const __beg,

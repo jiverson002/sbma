@@ -109,7 +109,6 @@ __sbma_mtouch_int(struct ate * const __ate, void * const __addr,
   numrd = __vmm_swap_i(__ate, beg, end-beg, vmm.opts&VMM_GHOST);
   if (-1 == numrd)
     return -1;
-
   return VMM_TO_SYS(numrd);
 }
 
@@ -133,10 +132,8 @@ __sbma_mevict_probe(struct ate * const __ate, void * const __addr,
   end = 1+(((uintptr_t)__addr+__len-__ate->base-1)/page_size);
 
   for (c_pages=0,ip=beg; ip<end; ++ip) {
-    if (MMU_RSDNT != (flags[ip]&MMU_RSDNT)) { /* is resident */
-      ASSERT(MMU_CHRGD != (flags[ip]&MMU_CHRGD)); /* is charged */
+    if (MMU_CHRGD != (flags[ip]&MMU_CHRGD)) /* is charged */
       c_pages++;
-    }
   }
 
   return VMM_TO_SYS(c_pages);
@@ -271,7 +268,9 @@ __sbma_mtouch(void * const __ate, void * const __addr, size_t const __len)
   }
   else {
     ate = __mmu_lookup_ate(&(vmm.mmu), __addr);
-    if (NULL == ate)
+    if ((struct ate*)-1 == ate)
+      goto CLEANUP;
+    else if (NULL == ate)
       goto ERREXIT;
   }
 
@@ -358,6 +357,10 @@ __sbma_mtouch_atomic(void * const __addr, size_t const __len, ...)
   va_start(args, __len);
   while (SBMA_ATOMIC_END != _addr) {
     _ate = __mmu_lookup_ate(&(vmm.mmu), _addr);
+    if (NULL == _ate)
+      goto NEXT;
+    else if ((struct ate*)-1 == _ate)
+      goto CLEANUP;
 
     for (i=0; i<num; ++i) {
       /* these could have pages overlapping even if the actual addresses don't
@@ -406,6 +409,7 @@ __sbma_mtouch_atomic(void * const __addr, size_t const __len, ...)
       ate[num++] = _ate;
     }
 
+    NEXT:
     _addr = va_arg(args, void *);
     if (SBMA_ATOMIC_END != _addr)
       _len = va_arg(args, size_t);
@@ -469,17 +473,6 @@ __sbma_mtouch_atomic(void * const __addr, size_t const __len, ...)
 
   /*========================================================================*/
   TIMER_STOP(&(tmr));
-  do {
-    int ret = __sbma_check(__func__, __LINE__);
-    if (-1 == ret) {
-      printf("[%5d] %zu\n", (int)getpid(), c_pages);
-      for (i=0; i<num; ++i) {
-        printf("  (%d,%zu,%zu,%zu)\n", dup[i], (uintptr_t)ate[i],
-          (uintptr_t)addr[i], (uintptr_t)addr[i]+len[i]);
-      }
-    }
-    ASSERT(-1 != ret);
-  } while (0);
   SBMA_STATE_CHECK();
   /*========================================================================*/
 
@@ -611,7 +604,9 @@ __sbma_mclear(void * const __addr, size_t const __len)
   struct ate * ate;
 
   ate = __mmu_lookup_ate(&(vmm.mmu), __addr);
-  if (NULL == ate)
+  if ((struct ate*)-1 == ate)
+    goto CLEANUP;
+  else if (NULL == ate)
     goto ERREXIT;
 
   page_size = vmm.page_size;
@@ -699,7 +694,9 @@ __sbma_mevict(void * const __addr, size_t const __len)
   /*========================================================================*/
 
   ate = __mmu_lookup_ate(&(vmm.mmu), __addr);
-  if (NULL == ate)
+  if ((struct ate*)-1 == ate)
+    goto CLEANUP;
+  else if (NULL == ate)
     goto ERREXIT;
 
   c_pages = __sbma_mevict_probe(ate, __addr, __len);
@@ -851,14 +848,21 @@ __sbma_mexist(void const * const __addr)
   struct ate * ate;
 
   ate = __mmu_lookup_ate(&(vmm.mmu), __addr);
-  if (NULL == ate)
+  if ((struct ate*)-1 == ate)
+    goto CLEANUP;
+  else if (NULL == ate)
     return 0;
 
   ret = __lock_let(&(ate->lock));
   if (-1 == ret)
-    return -1;
+    goto CLEANUP;
 
   return 1;
+
+  CLEANUP:
+  ret = __lock_let(&(ate->lock));
+  ASSERT(-1 != ret);
+  return -1;
 }
 SBMA_EXPORT(internal, int
 __sbma_mexist(void const * const __addr));

@@ -141,10 +141,8 @@ __sbma_parse_optstr(char const * const __opt_str)
     else if (SBMA_OPTCMP((VMM_CHECK|VMM_EXTRA), seen, tok, "check", 5)) {
       opts |= VMM_CHECK;
     }
-    else if (SBMA_OPTCMP((VMM_CHECK|VMM_EXTRA), seen, tok, "nocheck", 7)) {
-    }
     else if (SBMA_OPTCMP((VMM_CHECK|VMM_EXTRA), seen, tok, "extra", 5)) {
-      opts |= VMM_EXTRA;
+      opts |= (VMM_CHECK|VMM_EXTRA);
     }
     else if (SBMA_OPTCMP(VMM_OSVMM, seen, tok, "noosvmm", 7)) {
     }
