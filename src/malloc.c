@@ -477,8 +477,7 @@ __sbma_realloc(void * const __ptr, size_t const __size)
           (nn_pages-on_pages)*page_size, PROT_NONE);
       }
     }
-    if (-1 == ret)
-      goto FATAL;
+    ERRCHK(FATAL, -1 == ret);
 
     if (VMM_MERGE == (vmm.opts&VMM_MERGE)) {
 #if 1
@@ -496,8 +495,7 @@ __sbma_realloc(void * const __ptr, size_t const __size)
             ret = mprotect((void*)(naddr+(s_pages+i)*page_size),\
               (i-ifirst)*page_size, PROT_READ);
           }
-          if (-1 == ret)
-            goto FATAL;
+          ERRCHK(FATAL, -1 == ret);
 
           if (i != on_pages) {
             ifirst = i;
@@ -516,48 +514,54 @@ __sbma_realloc(void * const __ptr, size_t const __size)
           ret = mprotect((void*)(naddr+(s_pages+i)*page_size), page_size,\
             PROT_READ);
         }
-        if (-1 == ret)
-          goto FATAL;
+        ERRCHK(FATAL, -1 == ret);
       }
 #endif
     }
 
     if (VMM_MLOCK == (vmm.opts&VMM_MLOCK)) {
-      /* lock new area of allocation into RAM */
-      ret = libc_mlock((void*)(naddr+(s_pages+on_pages)*page_size),\
-        ((nn_pages-on_pages)+nf_pages)*page_size);
-      if (-1 == ret)
-        goto FATAL;
+      if (VMM_RSDNT == (vmm.opts&VMM_RSDNT)) {
+        if (VMM_MERGE == (vmm.opts&VMM_MERGE)) {
+          /* lock application memory into RAM */
+          ret = libc_mlock((void*)(naddr+s_pages*page_size),\
+            nn_pages*page_size);
+        }
+        else {
+          /* lock application memory into RAM */
+          ret = libc_mlock((void*)(naddr+(s_pages+on_pages)*page_size),\
+            (nn_pages-on_pages)*page_size);
+        }
+        ERRCHK(FATAL, -1 == ret);
+      }
+      /* lock book-keeping memory into RAM */
+      ret = libc_mlock((void*)(naddr+(s_pages+nn_pages)*page_size),\
+        nf_pages*page_size);
+      ERRCHK(FATAL, -1 == ret);
     }
 
     ret = snprintf(nfname, FILENAME_MAX, "%s%d-%zx", vmm.fstem,\
       (int)getpid(), naddr);
-    if (0 > ret)
-      goto FATAL;
+    ERRCHK(FATAL, 0 > ret);
     /* if the allocation has moved */
     if (oaddr != naddr) {
       /* move old file to new file and trucate to size */
       ret = snprintf(ofname, FILENAME_MAX, "%s%d-%zx", vmm.fstem,\
         (int)getpid(), oaddr);
-      if (0 > ret)
-        goto FATAL;
+      ERRCHK(FATAL, 0 > ret);
       ret = rename(ofname, nfname);
-      if (-1 == ret)
-        goto FATAL;
+      ERRCHK(FATAL, -1 == ret);
 
       /* set pointer for the allocation table entry */
       ate = (struct ate*)naddr;
     }
 #if SBMA_FILE_RESERVE == 1
     ret = truncate(nfname, nn_pages*page_size);
-    if (-1 == ret)
-      goto FATAL;
+    ERRCHK(FATAL, -1 == ret);
 #endif
 
     /* insert new ate into mmu */
     ret = __mmu_insert_ate(&(vmm.mmu), ate);
-    if (-1 == ret)
-      goto FATAL;
+    ERRCHK(FATAL, -1 == ret);
 
     /* populate ate structure */
     ate->n_pages = nn_pages;
@@ -651,7 +655,7 @@ __sbma_realloc(void * const __ptr, size_t const __size)
    * allocated. */
   /**************************************************************************/
   FATAL:
-  ASSERT(0);
+  FATAL_ABORT(errno);
 }
 SBMA_EXPORT(default, void *
 __sbma_realloc(void * const __ptr, size_t const __size));

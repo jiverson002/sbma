@@ -648,32 +648,50 @@ __vmm_init(struct vmm * const __vmm, char const * const __fstem,
 SBMA_EXTERN int
 __vmm_destroy(struct vmm * const __vmm)
 {
+  int retval;
+
   if (0 == vmm.init)
     return 0;
 
   vmm.init = 0;
 
   /* reset signal handler for SIGSEGV */
-  if (-1 == sigaction(SIGSEGV, &(__vmm->oldact_segv), NULL))
-    return -1;
+  retval = sigaction(SIGSEGV, &(__vmm->oldact_segv), NULL);
+  ERRCHK(FATAL, -1 == retval);
 
   /* reset signal handler for SIGIPC */
-  if (-1 == sigaction(SIGIPC, &(__vmm->oldact_ipc), NULL))
-    return -1;
+  retval = sigaction(SIGIPC, &(__vmm->oldact_ipc), NULL);
+  ERRCHK(FATAL, -1 == retval);
 
   /* destroy mmu */
-  if (-1 == __mmu_destroy(&(__vmm->mmu)))
-    return -1;
+  retval = __mmu_destroy(&(__vmm->mmu));
+  ERRCHK(RETURN, 0 != retval);
 
   /* destroy ipc */
   if (-1 == __ipc_destroy(&(__vmm->ipc)))
     return -1;
 
-  /* destroy mmu lock */
-  if (-1 == __lock_free(&(__vmm->lock)))
-    return -1;
+  /* destroy vmm lock */
+  retval = __lock_free(&(__vmm->lock));
+  ERRCHK(RETURN, 0 != retval);
 
-  return 0;
+  /**************************************************************************/
+  /* Successful exit -- return 0. */
+  /**************************************************************************/
+  goto RETURN;
+
+  /**************************************************************************/
+  /* Return point -- return. */
+  /**************************************************************************/
+  RETURN:
+  return retval;
+
+  /**************************************************************************/
+  /* Fatal error -- an unrecoverable error has occured, the runtime state
+   * cannot be reverted to its state before this function was called. */
+  /**************************************************************************/
+  FATAL:
+  FATAL_ABORT(errno);
 }
 SBMA_EXPORT(internal, int
 __vmm_destroy(struct vmm * const __vmm));

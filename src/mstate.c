@@ -263,15 +263,13 @@ __sbma_mtouch(void * const __ate, void * const __addr, size_t const __len)
   TIMER_START(&(tmr));
   /*========================================================================*/
 
-  if (NULL != __ate) {
-    ate = (struct ate *)__ate;
+  if (NULL == __ate) {
+    ate = __mmu_lookup_ate(&(vmm.mmu), __addr);
+    if ((struct ate*)-1 == ate || NULL == ate)
+      goto ERREXIT;
   }
   else {
-    ate = __mmu_lookup_ate(&(vmm.mmu), __addr);
-    if ((struct ate*)-1 == ate)
-      goto CLEANUP;
-    else if (NULL == ate)
-      goto ERREXIT;
+    ate = (struct ate *)__ate;
   }
 
   /* check memory file to see if there is enough free memory to complete this
@@ -604,9 +602,7 @@ __sbma_mclear(void * const __addr, size_t const __len)
   struct ate * ate;
 
   ate = __mmu_lookup_ate(&(vmm.mmu), __addr);
-  if ((struct ate*)-1 == ate)
-    goto CLEANUP;
-  else if (NULL == ate)
+  if ((struct ate*)-1 == ate || NULL == ate)
     goto ERREXIT;
 
   page_size = vmm.page_size;
@@ -694,9 +690,7 @@ __sbma_mevict(void * const __addr, size_t const __len)
   /*========================================================================*/
 
   ate = __mmu_lookup_ate(&(vmm.mmu), __addr);
-  if ((struct ate*)-1 == ate)
-    goto CLEANUP;
-  else if (NULL == ate)
+  if ((struct ate*)-1 == ate || NULL == ate)
     goto ERREXIT;
 
   c_pages = __sbma_mevict_probe(ate, __addr, __len);
@@ -715,6 +709,10 @@ __sbma_mevict(void * const __addr, size_t const __len)
     else if (-2 != ret)
       break;
   }
+
+  ret = __lock_let(&(ate->lock));
+  if (-1 == ret)
+    goto CLEANUP;
 
   /*========================================================================*/
   TIMER_STOP(&(tmr));
@@ -847,9 +845,12 @@ __sbma_mexist(void const * const __addr)
   int ret;
   struct ate * ate;
 
+  if (0 == vmm.init)
+    return 0;
+
   ate = __mmu_lookup_ate(&(vmm.mmu), __addr);
   if ((struct ate*)-1 == ate)
-    goto CLEANUP;
+    return -1;
   else if (NULL == ate)
     return 0;
 

@@ -120,7 +120,7 @@ do {\
 /****************************************************************************/
 /*! Check for error and go to predefined label if encountered. */
 /****************************************************************************/
-#define ERRCHK_DEBUG 0
+#define ERRCHK_DEBUG 1
 #define ERRCHK(__LABEL, __COND)\
 do {\
   if (__COND) {\

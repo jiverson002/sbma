@@ -80,6 +80,8 @@ __lock_free(pthread_mutex_t * const __lock)
   ERRCHK(RETURN, 0 != retval);
 
   RETURN:
+  if (0 != retval)
+    printf("[%5d] %s\n", (int)getpid(), strerror(retval));
   return retval;
 }
 SBMA_EXPORT(internal, int
@@ -106,11 +108,14 @@ __lock_get_int(char const * const __func, int const __line,
     DL_PRINTF("[%5d] Mutex lock timed-out %s:%d %s (%p)\n",\
               (int)syscall(SYS_gettid), __func, __line, __lock_str,\
               (void*)(__lock));
-  }
 #endif
 
   retval = pthread_mutex_lock(__lock);
   ERRCHK(RETURN, 0 != retval);
+
+#if defined(DEADLOCK) && DEADLOCK > 0
+  }
+#endif
 
   DL_PRINTF("[%5d] mtx get %s:%d %s (%p)\n", (int)syscall(SYS_gettid),\
     __func, __line, __lock_str, (void*)(__lock));

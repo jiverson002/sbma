@@ -24,8 +24,8 @@ OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
-#ifndef __THREAD_H__
-#define __THREAD_H__ 1
+#ifndef __LOCK_H__
+#define __LOCK_H__ 1
 
 
 /****************************************************************************/
