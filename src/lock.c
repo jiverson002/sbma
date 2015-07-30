@@ -52,20 +52,20 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 SBMA_EXTERN int
 __lock_init(pthread_mutex_t * const __lock)
 {
-  int ret;
+  int retval;
   pthread_mutexattr_t attr;
 
-  ret = pthread_mutexattr_init(&attr);
-  if (0 != ret)
-    return ret;
-  ret = pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE);
-  if (0 != ret)
-    return ret;
-  ret = pthread_mutex_init(__lock, &attr);
-  if (0 != ret)
-    return ret;
+  retval = pthread_mutexattr_init(&attr);
+  ERRCHK(RETURN, 0 != retval);
 
-  return 0;
+  retval = pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE);
+  ERRCHK(RETURN, 0 != retval);
+
+  retval = pthread_mutex_init(__lock, &attr);
+  ERRCHK(RETURN, 0 != retval);
+
+  RETURN:
+  return retval;
 }
 SBMA_EXPORT(internal, int
 __lock_init(pthread_mutex_t * const __lock));
@@ -74,13 +74,13 @@ __lock_init(pthread_mutex_t * const __lock));
 SBMA_EXTERN int
 __lock_free(pthread_mutex_t * const __lock)
 {
-  int ret;
+  int retval;
 
-  ret = pthread_mutex_destroy(__lock);
-  if (0 != ret)
-    return ret;
+  retval = pthread_mutex_destroy(__lock);
+  ERRCHK(RETURN, 0 != retval);
 
-  return 0;
+  RETURN:
+  return retval;
 }
 SBMA_EXPORT(internal, int
 __lock_free(pthread_mutex_t * const __lock));
@@ -90,35 +90,33 @@ SBMA_EXTERN int
 __lock_get_int(char const * const __func, int const __line,
                char const * const __lock_str, pthread_mutex_t * const __lock)
 {
-  int ret;
+  int retval;
 #if defined(DEADLOCK) && DEADLOCK > 0
   struct timespec ts;
 
-  ret = clock_gettime(CLOCK_REALTIME, &ts);
-  if (-1 == ret)
-    return -1;
+  retval = clock_gettime(CLOCK_REALTIME, &ts);
+  ERRCHK(RETURN, -1 == retval);
+
   ts.tv_sec += 10;
 
-  ret = pthread_mutex_timedlock(__lock, &ts);
-  if (ETIMEDOUT == ret) {
+  retval = pthread_mutex_timedlock(__lock, &ts);
+  ERRCHK(RETURN, 0 != retval && ETIMEDOUT != retval);
+
+  if (ETIMEDOUT == retval) {
     DL_PRINTF("[%5d] Mutex lock timed-out %s:%d %s (%p)\n",\
               (int)syscall(SYS_gettid), __func, __line, __lock_str,\
               (void*)(__lock));
-#endif
-    ret = pthread_mutex_lock(__lock);
-    if (0 != ret)
-      return ret;
-#if defined(DEADLOCK) && DEADLOCK > 0
-  }
-  else if (0 != ret) {
-    return ret;
   }
 #endif
+
+  retval = pthread_mutex_lock(__lock);
+  ERRCHK(RETURN, 0 != retval);
 
   DL_PRINTF("[%5d] mtx get %s:%d %s (%p)\n", (int)syscall(SYS_gettid),\
     __func, __line, __lock_str, (void*)(__lock));
 
-  return 0;
+  RETURN:
+  return retval;
 }
 SBMA_EXPORT(internal, int
 __lock_get_int(char const * const __func, int const __line,
@@ -130,16 +128,16 @@ SBMA_EXTERN int
 __lock_let_int(char const * const __func, int const __line,
                char const * const __lock_str, pthread_mutex_t * const __lock)
 {
-  int ret;
+  int retval;
 
-  ret = pthread_mutex_unlock(__lock);
-  if (0 != ret)
-    return ret;
+  retval = pthread_mutex_unlock(__lock);
+  ERRCHK(RETURN, 0 != retval);
 
   DL_PRINTF("[%5d] mtx let %s:%d %s (%p)\n", (int)syscall(SYS_gettid),\
     __func, __line, __lock_str, (void*)(__lock));
 
-  return 0;
+  RETURN:
+  return retval;
 }
 SBMA_EXPORT(internal, int
 __lock_let_int(char const * const __func, int const __line,

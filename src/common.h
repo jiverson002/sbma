@@ -118,6 +118,33 @@ do {\
 
 
 /****************************************************************************/
+/*! Check for error and go to predefined label if encountered. */
+/****************************************************************************/
+#define ERRCHK_DEBUG 0
+#define ERRCHK(__LABEL, __COND)\
+do {\
+  if (__COND) {\
+    if (1 == ERRCHK_DEBUG)\
+      printf("[%5d] %s:%d\n", (int)getpid(), __func__, __LINE__);\
+    goto __LABEL;\
+  }\
+} while (0)
+
+
+/****************************************************************************/
+/*! Print a fatal error message and abort. */
+/****************************************************************************/
+#define FATAL_ABORT(__CODE)\
+do {\
+  fprintf(stderr, "[%5d] An unrecoverable error has occured in %s(), "\
+    "possibly caused by `%s'. The runtime state cannont be reverted to its "\
+    "previous state. Now aborting...\n", (int)getpid(), __func__,\
+    strerror(__CODE));\
+  abort();\
+} while (0)
+
+
+/****************************************************************************/
 /*! Function prototypes for libc hooks. */
 /****************************************************************************/
 #ifdef __cplusplus

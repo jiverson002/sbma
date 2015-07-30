@@ -97,6 +97,9 @@ __sbma_parse_optstr(char const * const __opt_str)
   char * tok;
   char str[512];
 
+  if (strlen(__opt_str) > sizeof(str)-1)
+    goto CLEANUP;
+
   strncpy(str, __opt_str, sizeof(str));
 
   tok = strtok(str, ",");

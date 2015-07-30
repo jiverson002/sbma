@@ -39,6 +39,8 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 SBMA_EXTERN int
 __mmu_init(struct mmu * const __mmu, size_t const __page_size)
 {
+  int retval;
+
   /* clear pointer */
   __mmu->a_tbl = NULL;
 
@@ -46,10 +48,11 @@ __mmu_init(struct mmu * const __mmu, size_t const __page_size)
   __mmu->page_size = __page_size;
 
   /* initialize mmu lock */
-  if (-1 == __lock_init(&(__mmu->lock)))
-    return -1;
+  retval = __lock_init(&(__mmu->lock));
+  ERRCHK(RETURN, 0 != retval);
 
-  return 0;
+  RETURN:
+  return retval;
 }
 SBMA_EXPORT(internal, int
 __mmu_init(struct mmu * const __mmu, size_t const __page_size));
@@ -58,11 +61,14 @@ __mmu_init(struct mmu * const __mmu, size_t const __page_size));
 SBMA_EXTERN int
 __mmu_destroy(struct mmu * const __mmu)
 {
-  /* destroy mmu lock */
-  if (-1 == __lock_free(&(__mmu->lock)))
-    return -1;
+  int retval;
 
-  return 0;
+  /* destroy mmu lock */
+  retval = __lock_free(&(__mmu->lock));
+  ERRCHK(RETURN, 0 != retval);
+
+  RETURN:
+  return retval;
 
   if (NULL == __mmu) {}
 }
@@ -73,11 +79,13 @@ __mmu_destroy(struct mmu * const __mmu));
 SBMA_EXTERN int
 __mmu_insert_ate(struct mmu * const __mmu, struct ate * const __ate)
 {
-  /* acquire lock */
-  if (-1 == __lock_get(&(__mmu->lock)))
-    return -1;
+  int retval;
 
-  /* insert at beginning of doubly linked list */
+  /* Acquire lock */
+  retval = __lock_get(&(__mmu->lock));
+  ERRCHK(RETURN, 0 != retval);
+
+  /* Insert at beginning of doubly linked list */
   if (NULL == __mmu->a_tbl) {
     __mmu->a_tbl = __ate;
     __ate->prev  = NULL;
@@ -90,11 +98,27 @@ __mmu_insert_ate(struct mmu * const __mmu, struct ate * const __ate)
     __mmu->a_tbl       = __ate;
   }
 
-  /* release lock */
-  if (-1 == __lock_let(&(__mmu->lock)))
-    return -1;
+  /* Release lock */
+  retval = __lock_let(&(__mmu->lock));
+  ERRCHK(FATAL, 0 != retval);
 
-  return 0;
+  /**************************************************************************/
+  /* Successful exit -- return 0. */
+  /**************************************************************************/
+  goto RETURN;
+
+  /**************************************************************************/
+  /* Return point -- return. */
+  /**************************************************************************/
+  RETURN:
+  return retval;
+
+  /**************************************************************************/
+  /* Fatal error -- an unrecoverable error has occured, the runtime state
+   * cannot be reverted to its state before this function was called. */
+  /**************************************************************************/
+  FATAL:
+  FATAL_ABORT(retval);
 }
 SBMA_EXPORT(internal, int
 __mmu_insert_ate(struct mmu * const __mmu, struct ate * const __ate));
@@ -103,10 +127,13 @@ __mmu_insert_ate(struct mmu * const __mmu, struct ate * const __ate));
 SBMA_EXTERN int
 __mmu_invalidate_ate(struct mmu * const __mmu, struct ate * const __ate)
 {
-  if (-1 == __lock_get(&(__mmu->lock)))
-    return -1;
+  int retval;
 
-  /* remove from doubly linked list */
+  /* Acquire lock */
+  retval = __lock_get(&(__mmu->lock));
+  ERRCHK(RETURN, 0 != retval);
+
+  /* Remove from doubly linked list. */
   if (NULL == __ate->prev)
     __mmu->a_tbl = __ate->next;
   else
@@ -114,10 +141,27 @@ __mmu_invalidate_ate(struct mmu * const __mmu, struct ate * const __ate)
   if (NULL != __ate->next)
     __ate->next->prev = __ate->prev;
 
-  if (-1 == __lock_let(&(__mmu->lock)))
-    return -1;
+  /* Release lock */
+  retval = __lock_let(&(__mmu->lock));
+  ERRCHK(FATAL, 0 != retval);
 
-  return 0;
+  /**************************************************************************/
+  /* Successful exit -- return 0. */
+  /**************************************************************************/
+  goto RETURN;
+
+  /**************************************************************************/
+  /* Return point -- return. */
+  /**************************************************************************/
+  RETURN:
+  return retval;
+
+  /**************************************************************************/
+  /* Fatal error -- an unrecoverable error has occured, the runtime state
+   * cannot be reverted to its state before this function was called. */
+  /**************************************************************************/
+  FATAL:
+  FATAL_ABORT(retval);
 }
 SBMA_EXPORT(internal, int
 __mmu_invalidate_ate(struct mmu * const __mmu, struct ate * const __ate));
@@ -126,15 +170,19 @@ __mmu_invalidate_ate(struct mmu * const __mmu, struct ate * const __ate));
 SBMA_EXTERN struct ate *
 __mmu_lookup_ate(struct mmu * const __mmu, void const * const __addr)
 {
+  int ret;
   size_t len;
   void * addr;
-  struct ate * ate;
+  struct ate * ate, * retval;
 
-  /* acquire lock */
-  if (-1 == __lock_get(&(__mmu->lock)))
-    return (struct ate*)-1;
+  /* Default return value. */
+  retval = (struct ate*)-1;
 
-  /* search doubly linked list for a ate which contains __addr */
+  /* Acquire lock. */
+  ret = __lock_get(&(__mmu->lock));
+  ERRCHK(RETURN, 0 != ret);
+
+  /* Search doubly linked list for a ate which contains __addr. */
   for (ate=__mmu->a_tbl; NULL!=ate; ate=ate->next) {
     len  = ate->n_pages*__mmu->page_size;
     addr = (void*)ate->base;
@@ -142,17 +190,41 @@ __mmu_lookup_ate(struct mmu * const __mmu, void const * const __addr)
       break;
   }
 
-  /* lock ate */
-  if (NULL != ate && -1 == __lock_get(&(ate->lock))) {
-    (void)__lock_let(&(__mmu->lock));
-    return (struct ate*)-1;
+  /* Lock ate. */
+  if (NULL != ate) {
+    ret = __lock_get(&(ate->lock));
+    ERRCHK(REVERT, 0 != ret);
   }
 
-  /* release lock */
-  if (-1 == __lock_let(&(__mmu->lock)))
-    return (struct ate*)-1;
+  /* Release lock. */
+  ret = __lock_let(&(__mmu->lock));
+  ERRCHK(FATAL, 0 != ret);
 
-  return ate;
+  /**************************************************************************/
+  /* Successful exit -- return pointer to ate containing __addr. */
+  /**************************************************************************/
+  retval = ate;
+  goto RETURN;
+
+  /**************************************************************************/
+  /* Error exit -- revert changes to runtime state and return. */
+  /**************************************************************************/
+  REVERT:
+  ret = __lock_let(&(__mmu->lock));
+  ERRCHK(FATAL, 0 != ret);
+
+  /**************************************************************************/
+  /* Return point -- return. */
+  /**************************************************************************/
+  RETURN:
+  return retval;
+
+  /**************************************************************************/
+  /* Fatal error -- an unrecoverable error has occured, the runtime state
+   * cannot be reverted to its state before this function was called. */
+  /**************************************************************************/
+  FATAL:
+  FATAL_ABORT(ret);
 }
 SBMA_EXPORT(internal, struct ate *
 __mmu_lookup_ate(struct mmu * const __mmu, void const * const __addr));
