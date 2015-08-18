@@ -59,16 +59,17 @@ enum __sbma_mallopt_params
  * Virtual memory manager option bits:
  *
  *   bit  0 ==    0: page default evict   1: page default resident
- *   bit  1 ==    0: lazy read            1: aggresive read
- *   bit  2 ==    0:                      1: aggressive charge (meaningful w/ lazy read)
- *   bit  3 ==    0:                      1: ghost pages
- *   bit  4 ==    0:                      1: merge vmas for mremap
- *   bit  5 ==    0:                      1: meta-info charge
- *   bit  6 ==    0:                      1: memory lock
- *   bit  7 ==    0:                      1: runtime state consistency check
- *   bit  8 ==    0:                      1: enhanced runtime state consistency check
- *   bit  9 ==    0:                      1: use standard c library malloc, etc.
- *   bit 10 ==    0:                      1: invalid options
+ *   bit  1 ==    0: aggressive read      1: lazy read
+ *   bit  2 ==    0: admit resident test  1: admit dirty test
+ *   bit  3 ==    0:                      1: aggressive charge (meaningful w/ lazy read)
+ *   bit  4 ==    0:                      1: ghost pages
+ *   bit  5 ==    0:                      1: merge vmas for mremap
+ *   bit  6 ==    0:                      1: meta-info charge
+ *   bit  7 ==    0:                      1: memory lock
+ *   bit  8 ==    0:                      1: runtime state consistency check
+ *   bit  9 ==    0:                      1: enhanced runtime state consistency check
+ *   bit 10 ==    0:                      1: use standard c library malloc, etc.
+ *   bit 11 ==    0:                      1: invalid options
  *
  * evict|rsdnt
  *   Determines the state of memory pages when the are allocated. If evict is
@@ -95,6 +96,15 @@ enum __sbma_mallopt_params
  *   In the lzyrd strategy, unnecessary reading is avoided when only subsets
  *   of allocations are accessed between successive evictions. Default is
  *   aggrd.
+ *
+ * admitr|admitd
+ *   Determines the heuristic used in SBMA_madmit() to choose which process to
+ *   send SIGIPC to. In both cases, if no eligible processes have enough
+ *   memory to satisfy the request, then the process with the most resident
+ *   memory is chosen. If admitr is selected, then among the processes with
+ *   more memory than the request, the process with the least resident memory
+ *   is chosen. If admitd is selected, then among the same processes, the
+ *   process with the least dirty memory is chosen.
  *
  * noaggch|aggch
  *   Enables aggressive charging of allocations. This is only valid with lraw
@@ -147,22 +157,23 @@ enum __sbma_mallopt_params
  *   is noosvmm.
  *
  * default
- *   evict,lzyrd,noaggch,noghost,merge,nometach,nomlock,nocheck,noosvmm
+ *   evict,lzyrd,admitr,noaggch,noghost,merge,nometach,nomlock,nocheck,noosvmm
  */
 /****************************************************************************/
 enum __sbma_vmm_opt_code
 {
   VMM_RSDNT  = 1 << 0,
   VMM_LZYRD  = 1 << 1,
-  VMM_AGGCH  = 1 << 2,
-  VMM_GHOST  = 1 << 3,
-  VMM_MERGE  = 1 << 4,
-  VMM_METACH = 1 << 5,
-  VMM_MLOCK  = 1 << 6,
-  VMM_CHECK  = 1 << 7,
-  VMM_EXTRA  = 1 << 8,
-  VMM_OSVMM  = 1 << 9,
-  VMM_INVLD  = 1 << 10
+  VMM_ADMITD = 1 << 2,
+  VMM_AGGCH  = 1 << 3,
+  VMM_GHOST  = 1 << 4,
+  VMM_MERGE  = 1 << 5,
+  VMM_METACH = 1 << 6,
+  VMM_MLOCK  = 1 << 7,
+  VMM_CHECK  = 1 << 8,
+  VMM_EXTRA  = 1 << 9,
+  VMM_OSVMM  = 1 << 10,
+  VMM_INVLD  = 1 << 11
 };
 
 

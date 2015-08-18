@@ -41,8 +41,8 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 /*! Compute the length of the IPC shared memory segment. */
 /****************************************************************************/
 #define IPC_LEN(__N_PROCS)\
-  (sizeof(size_t)+(__N_PROCS)*(2*sizeof(size_t)+sizeof(int)+sizeof(uint8_t))+\
-    sizeof(int))
+  (sizeof(size_t)+(__N_PROCS)*(sizeof(int)+sizeof(size_t)+sizeof(size_t)+\
+    sizeof(uint8_t))+sizeof(int))
 
 
 /****************************************************************************/
@@ -87,7 +87,8 @@ struct ipc
   void * shm;               /*!< shared memory region */
   int * pid;                /*!< pointer into shm for pid array */
   volatile size_t  * smem;  /*!< pointer into shm for smem scalar */
-  volatile size_t  * c_mem; /*!< pointer into shm for ch_mem array */
+  volatile size_t  * c_mem; /*!< pointer into shm for c_mem array */
+  volatile size_t  * d_mem; /*!< pointer into shm for d_mem array */
   volatile uint8_t * flags; /*!< pointer into shm for flags array */
 };
 
@@ -170,7 +171,8 @@ __ipc_atomic_inc(struct ipc * const __ipc, size_t const __value);
 /*! Decrement process resident memory. */
 /****************************************************************************/
 void
-__ipc_atomic_dec(struct ipc * const __ipc, size_t const __value);
+__ipc_atomic_dec(struct ipc * const __ipc, size_t const __c_pages,
+                 size_t const __d_pages);
 
 
 /****************************************************************************/
@@ -178,14 +180,23 @@ __ipc_atomic_dec(struct ipc * const __ipc, size_t const __value);
  *  can support the addition of __value bytes of memory. */
 /****************************************************************************/
 int
-__ipc_madmit(struct ipc * const __ipc, size_t const __value);
+__ipc_madmit(struct ipc * const __ipc, size_t const __value,
+             int const __admitd);
 
 
 /****************************************************************************/
 /*! Account for loaded memory after eviction. */
 /****************************************************************************/
 int
-__ipc_mevict(struct ipc * const __ipc, size_t const __value);
+__ipc_mevict(struct ipc * const __ipc, size_t const __c_pages,
+             size_t const __d_pages);
+
+
+/****************************************************************************/
+/*! Account for dirty memory. */
+/****************************************************************************/
+int
+__ipc_mdirty(struct ipc * const __ipc, size_t const __value);
 
 #ifdef __cplusplus
 }

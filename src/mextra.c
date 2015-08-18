@@ -114,6 +114,11 @@ __sbma_parse_optstr(char const * const __opt_str)
     else if (SBMA_OPTCMP(VMM_LZYRD, seen, tok, "lzyrd", 5)) {
       opts |= VMM_LZYRD;
     }
+    else if (SBMA_OPTCMP(VMM_ADMITD, seen, tok, "admitr", 6)) {
+    }
+    else if (SBMA_OPTCMP(VMM_ADMITD, seen, tok, "admitd", 6)) {
+      opts |= VMM_ADMITD;
+    }
     else if (SBMA_OPTCMP(VMM_AGGCH, seen, tok, "noaggch", 7)) {
     }
     else if (SBMA_OPTCMP(VMM_AGGCH, seen, tok, "aggch", 5)) {

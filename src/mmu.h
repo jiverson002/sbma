@@ -58,6 +58,7 @@ struct ate
   size_t n_pages;           /*!< number of pages allocated */
   volatile size_t l_pages;  /*!< number of pages loaded */
   volatile size_t c_pages;  /*!< number of pages charged */
+  volatile size_t d_pages;  /*!< number of pages dirty */
   uintptr_t base;           /*!< starting address fro the allocation */
   volatile uint8_t * flags; /*!< status flags for pages */
   struct ate * prev;        /*!< doubly linked list pointer */

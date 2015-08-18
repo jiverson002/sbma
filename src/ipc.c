@@ -34,7 +34,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <semaphore.h> /* semaphore library */
 #include <signal.h>    /* struct sigaction, siginfo_t, sigemptyset, sigaction */
 #include <stdint.h>    /* uint8_t, uintptr_t */
-#include <stddef.h>    /* NULL, size_t */
+#include <stddef.h>    /* NULL, size_t, SIZE_MAX */
 #include <stdio.h>     /* FILENAME_MAX */
 #include <sys/mman.h>  /* mmap, mremap, munmap, madvise, mprotect */
 #include <sys/stat.h>  /* S_IRUSR, S_IWUSR */
@@ -331,7 +331,8 @@ __ipc_init(struct ipc * const __ipc, int const __uniq, int const __n_procs,
     return -1;
 
   /* id pointer is last sizeof(int) bytes of shm */
-  idp = (int*)((uintptr_t)shm+sizeof(size_t)+(__n_procs*(sizeof(size_t)+sizeof(int))));
+  idp = (int*)((uintptr_t)shm+sizeof(size_t)+\
+    (__n_procs*(sizeof(int)+sizeof(size_t)+sizeof(size_t))));
   id  = (*idp)++;
 
   /* end critical section */
@@ -365,7 +366,8 @@ __ipc_init(struct ipc * const __ipc, int const __uniq, int const __n_procs,
   __ipc->cnt      = cnt;
   __ipc->smem     = (size_t*)shm;
   __ipc->c_mem    = (size_t*)((uintptr_t)__ipc->smem+sizeof(size_t));
-  __ipc->pid      = (int*)((uintptr_t)__ipc->c_mem+(__n_procs*sizeof(size_t)));
+  __ipc->d_mem    = (size_t*)((uintptr_t)__ipc->c_mem+(__n_procs*sizeof(size_t)));
+  __ipc->pid      = (int*)((uintptr_t)__ipc->d_mem+(__n_procs*sizeof(size_t)));
   __ipc->flags    = (uint8_t*)((uintptr_t)idp+sizeof(int));
 
   /* set my process id */
@@ -568,31 +570,37 @@ __ipc_atomic_inc(struct ipc * const __ipc, size_t const __value));
 
 
 SBMA_EXTERN void
-__ipc_atomic_dec(struct ipc * const __ipc, size_t const __value)
+__ipc_atomic_dec(struct ipc * const __ipc, size_t const __c_pages,
+                 size_t const __d_pages)
 {
-  ASSERT(__ipc->c_mem[__ipc->id] >= __value);
+  ASSERT(__ipc->c_mem[__ipc->id] >= __c_pages);
+  ASSERT(__ipc->d_mem[__ipc->id] >= __d_pages);
 
-  *__ipc->smem += __value;
-  __ipc->c_mem[__ipc->id] -= __value;
+  *__ipc->smem += __c_pages;
+  __ipc->c_mem[__ipc->id] -= __c_pages;
+  __ipc->d_mem[__ipc->id] -= __d_pages;
 }
 SBMA_EXPORT(internal, void
-__ipc_atomic_dec(struct ipc * const __ipc, size_t const __value));
+__ipc_atomic_dec(struct ipc * const __ipc, size_t const __c_pages,
+                 size_t const __d_pages));
 
 
 SBMA_EXTERN int
-__ipc_madmit(struct ipc * const __ipc, size_t const __value)
+__ipc_madmit(struct ipc * const __ipc, size_t const __value,
+             int const __admitd)
 {
   int ret, i, ii, id;
-  size_t mxmem, smem;
+  size_t mx_c_mem, mx_d_mem, smem;
   int * pid;
   volatile uint8_t * flags;
-  volatile size_t * c_mem;
+  volatile size_t * c_mem, * d_mem;
 
   if (0 == __value)
     return 0;
 
   id    = __ipc->id;
   c_mem = __ipc->c_mem;
+  d_mem = __ipc->d_mem;
   pid   = __ipc->pid;
   flags = __ipc->flags;
 
@@ -603,7 +611,8 @@ __ipc_madmit(struct ipc * const __ipc, size_t const __value)
   smem = *__ipc->smem;
   while (smem < __value) {
     ii = -1;
-    mxmem = 0;
+    mx_c_mem = 0;
+    mx_d_mem = SIZE_MAX;
     /* find a candidate process to release memory */
     for (i=0; i<__ipc->n_procs; ++i) {
       /* skip oneself */
@@ -623,14 +632,20 @@ __ipc_madmit(struct ipc * const __ipc, size_t const __value)
        *       requested memory, then choose the candidate which has the most
        *       resident memory.
        *    2) If some candidate process(es) have resident memory greater than
-       *       the requested memory, then choose from these, the candidate
-       *       which has the least.
+       *       the requested memory, then:
+       *       2.1) If VMM_ADMITD != __admitd, then choose from these, the
+       *            candidate which has the least resident memory.
+       *       2.2) If VMM_ADMITD == __admitd, then choose from these, the
+       *            candidate which has the least dirty memory.
        */
-      if (((mxmem < __value-smem && c_mem[i] > mxmem) ||\
-          (c_mem[i] >= __value-smem && c_mem[i] < mxmem)))
+      if ((mx_c_mem < __value-smem && c_mem[i] > mx_c_mem) ||\
+          (c_mem[i] >= __value-smem &&\
+            ((VMM_ADMITD != __admitd && c_mem[i] < mx_c_mem) ||\
+             (VMM_ADMITD == __admitd && d_mem[i] < mx_d_mem))))
       {
         ii = i;
-        mxmem = c_mem[i];
+        mx_c_mem = c_mem[i];
+        mx_d_mem = d_mem[i];
       }
     }
 
@@ -682,20 +697,22 @@ __ipc_madmit(struct ipc * const __ipc, size_t const __value)
   return -2;
 }
 SBMA_EXPORT(internal, int
-__ipc_madmit(struct ipc * const __ipc, size_t const __value));
+__ipc_madmit(struct ipc * const __ipc, size_t const __value,
+             int const __admitd));
 
 
 SBMA_EXTERN int
-__ipc_mevict(struct ipc * const __ipc, size_t const __value)
+__ipc_mevict(struct ipc * const __ipc, size_t const __c_pages,
+             size_t const __d_pages)
 {
-  if (0 == __value)
+  if (0 == __c_pages && 0 == __d_pages)
     return 0;
 
   /*========================================================================*/
   CRITICAL_SECTION_BEG(__ipc);
   /*========================================================================*/
 
-  __ipc_atomic_dec(__ipc, __value);
+  __ipc_atomic_dec(__ipc, __c_pages, __d_pages);
 
   /*========================================================================*/
   CRITICAL_SECTION_END(__ipc);
@@ -704,4 +721,19 @@ __ipc_mevict(struct ipc * const __ipc, size_t const __value)
   return 0;
 }
 SBMA_EXPORT(internal, int
-__ipc_mevict(struct ipc * const __ipc, size_t const __value));
+__ipc_mevict(struct ipc * const __ipc, size_t const __c_pages,
+             size_t const __d_pages));
+
+
+SBMA_EXTERN int
+__ipc_mdirty(struct ipc * const __ipc, size_t const __value)
+{
+  if (0 == __value)
+    return 0;
+
+  __ipc->d_mem[__ipc->id] += __value;
+
+  return 0;
+}
+SBMA_EXPORT(internal, int
+__ipc_mdirty(struct ipc * const __ipc, size_t const __value));

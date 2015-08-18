@@ -78,14 +78,19 @@ __sbma_malloc(size_t const __size)
    * allocation. */
   for (;;) {
     if (VMM_METACH == (vmm.opts&VMM_METACH)) {
-      if (VMM_RSDNT == (vmm.opts&VMM_RSDNT))
-        ret = __ipc_madmit(&(vmm.ipc), VMM_TO_SYS(s_pages+n_pages+f_pages));
-      else
-        ret = __ipc_madmit(&(vmm.ipc), VMM_TO_SYS(s_pages+f_pages));
+      if (VMM_RSDNT == (vmm.opts&VMM_RSDNT)) {
+        ret = __ipc_madmit(&(vmm.ipc), VMM_TO_SYS(s_pages+n_pages+f_pages),\
+          vmm.opts&VMM_ADMITD);
       }
+      else {
+        ret = __ipc_madmit(&(vmm.ipc), VMM_TO_SYS(s_pages+f_pages),\
+          vmm.opts&VMM_ADMITD);
+      }
+    }
     else {
       if (VMM_RSDNT == (vmm.opts&VMM_RSDNT))
-        ret = __ipc_madmit(&(vmm.ipc), VMM_TO_SYS(n_pages));
+        ret = __ipc_madmit(&(vmm.ipc), VMM_TO_SYS(n_pages),\
+          vmm.opts&VMM_ADMITD);
       else
         ret = 0;
     }
@@ -149,6 +154,7 @@ __sbma_malloc(size_t const __size)
     ate->l_pages = 0;
     ate->c_pages = 0;
   }
+  ate->d_pages = 0;
   ate->base    = addr+(s_pages*page_size);
   ate->flags   = (uint8_t*)(addr+((s_pages+n_pages)*page_size));
 
@@ -192,13 +198,13 @@ __sbma_malloc(size_t const __size)
   for (;;) {
     if (VMM_METACH == (vmm.opts&VMM_METACH)) {
       if (VMM_RSDNT == (vmm.opts&VMM_RSDNT))
-        ret = __ipc_mevict(&(vmm.ipc), VMM_TO_SYS(s_pages+n_pages+f_pages));
+        ret = __ipc_mevict(&(vmm.ipc), VMM_TO_SYS(s_pages+n_pages+f_pages), 0);
       else
-        ret = __ipc_mevict(&(vmm.ipc), VMM_TO_SYS(s_pages+f_pages));
+        ret = __ipc_mevict(&(vmm.ipc), VMM_TO_SYS(s_pages+f_pages), 0);
     }
     else {
       if (VMM_RSDNT == (vmm.opts&VMM_RSDNT))
-        ret = __ipc_mevict(&(vmm.ipc), VMM_TO_SYS(n_pages));
+        ret = __ipc_mevict(&(vmm.ipc), VMM_TO_SYS(n_pages), 0);
       else
         ret = 0;
     }
@@ -238,7 +244,7 @@ SBMA_EXTERN int
 __sbma_free(void * const __ptr)
 {
   int ret, retval;
-  size_t page_size, s_pages, n_pages, f_pages, c_pages;
+  size_t page_size, s_pages, n_pages, f_pages, c_pages, d_pages;
   struct ate * ate;
   char fname[FILENAME_MAX];
 
@@ -252,6 +258,7 @@ __sbma_free(void * const __ptr)
   ate       = (struct ate*)((uintptr_t)__ptr-(s_pages*page_size));
   n_pages   = ate->n_pages;
   c_pages   = ate->c_pages;
+  d_pages   = ate->d_pages;
   f_pages   = 1+((n_pages*sizeof(uint8_t)-1)/page_size);
 
   /* Remove the file. */
@@ -281,9 +288,11 @@ __sbma_free(void * const __ptr)
   /* Update memory file. */
   for (;;) {
     if (VMM_METACH == (vmm.opts&VMM_METACH))
-      retval = __ipc_mevict(&(vmm.ipc), VMM_TO_SYS(s_pages+c_pages+f_pages));
+      retval = __ipc_mevict(&(vmm.ipc), VMM_TO_SYS(s_pages+c_pages+f_pages),\
+        VMM_TO_SYS(d_pages));
     else
-      retval = __ipc_mevict(&(vmm.ipc), VMM_TO_SYS(c_pages));
+      retval = __ipc_mevict(&(vmm.ipc), VMM_TO_SYS(c_pages),\
+        VMM_TO_SYS(d_pages));
     if (-2 != retval)
       break;
   }
@@ -306,7 +315,7 @@ __sbma_realloc(void * const __ptr, size_t const __size)
 {
   int ret;
   size_t i, ifirst, page_size, s_pages, on_pages, of_pages, ol_pages, oc_pages;
-  size_t nn_pages, nf_pages;
+  size_t od_pages, nn_pages, nf_pages;
   uint8_t oflag;
   uintptr_t oaddr, naddr;
   void * retval;
@@ -354,6 +363,10 @@ __sbma_realloc(void * const __ptr, size_t const __size)
         ASSERT(ate->c_pages > 0);
         ate->c_pages--;
       }
+      if (MMU_DIRTY == (oflags[i]&MMU_DIRTY)) {
+        ASSERT(ate->d_pages > 0);
+        ate->d_pages--;
+      }
     }
 
     /* update protection for new page flags area of allocation */
@@ -384,9 +397,11 @@ __sbma_realloc(void * const __ptr, size_t const __size)
     for (;;) {
       ol_pages = ate->l_pages;
       oc_pages = ate->c_pages;
+      od_pages = ate->d_pages;
 
       ret = __ipc_mevict(&(vmm.ipc),\
-        VMM_TO_SYS((oc_pages-ate->c_pages)+(of_pages-nf_pages)));
+        VMM_TO_SYS((oc_pages-ate->c_pages)+(of_pages-nf_pages)),\
+        VMM_TO_SYS(od_pages));
       if (-1 == ret)
         return NULL;
       else if (-2 != ret)
@@ -405,15 +420,18 @@ __sbma_realloc(void * const __ptr, size_t const __size)
       if (VMM_METACH == (vmm.opts&VMM_METACH)) {
         if (VMM_RSDNT == (vmm.opts&VMM_RSDNT)) {
           ret = __ipc_madmit(&(vmm.ipc),\
-            VMM_TO_SYS((nn_pages-on_pages)+(nf_pages-of_pages)));
+            VMM_TO_SYS((nn_pages-on_pages)+(nf_pages-of_pages)),\
+            vmm.opts&VMM_ADMITD);
         }
         else {
-          ret = __ipc_madmit(&(vmm.ipc), VMM_TO_SYS(nf_pages-of_pages));
+          ret = __ipc_madmit(&(vmm.ipc), VMM_TO_SYS(nf_pages-of_pages),\
+            vmm.opts&VMM_ADMITD);
         }
       }
       else {
         if (VMM_RSDNT == (vmm.opts&VMM_RSDNT)) {
-          ret = __ipc_madmit(&(vmm.ipc), VMM_TO_SYS(nn_pages-on_pages));
+          ret = __ipc_madmit(&(vmm.ipc), VMM_TO_SYS(nn_pages-on_pages),\
+            vmm.opts&VMM_ADMITD);
         }
         else
           ret = 0;
@@ -621,15 +639,15 @@ __sbma_realloc(void * const __ptr, size_t const __size)
       if (VMM_METACH == (vmm.opts&VMM_METACH)) {
         if (VMM_RSDNT == (vmm.opts&VMM_RSDNT)) {
           ret = __ipc_mevict(&(vmm.ipc),\
-            VMM_TO_SYS((nn_pages-on_pages)+(nf_pages-of_pages)));
+            VMM_TO_SYS((nn_pages-on_pages)+(nf_pages-of_pages)), 0);
         }
         else {
-          ret = __ipc_mevict(&(vmm.ipc), VMM_TO_SYS(nf_pages-of_pages));
+          ret = __ipc_mevict(&(vmm.ipc), VMM_TO_SYS(nf_pages-of_pages), 0);
         }
       }
       else {
         if (VMM_RSDNT == (vmm.opts&VMM_RSDNT))
-          ret = __ipc_mevict(&(vmm.ipc), VMM_TO_SYS((nn_pages-on_pages)));
+          ret = __ipc_mevict(&(vmm.ipc), VMM_TO_SYS((nn_pages-on_pages)), 0);
         else
           ret = 0;
       }

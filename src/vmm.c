@@ -54,7 +54,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 extern "C" {
 #endif
 
-int __sbma_mevictall_int(size_t * const, size_t * const);
+int __sbma_mevictall_int(size_t * const, size_t * const, size_t * const);
 
 #ifdef __cplusplus
 }
@@ -192,6 +192,11 @@ __vmm_sigsegv(int const sig, siginfo_t * const si, void * const ctx)
     ret = __lock_let(&(ate->lock));
     ASSERT(-1 != ret);
 
+    /* increase count of dirty pages */
+    ate->d_pages++;
+    ret = __ipc_mdirty(&(vmm.ipc), VMM_TO_SYS(1));
+    ASSERT(-1 != ret);
+
     VMM_TRACK(numwf, 1);
   }
 
@@ -206,7 +211,7 @@ SBMA_STATIC void
 __vmm_sigipc(int const sig, siginfo_t * const si, void * const ctx)
 {
   int ret;
-  size_t c_pages, numwr;
+  size_t c_pages, d_pages, numwr;
   struct timespec tmr;
 
   /* make sure we received a SIGIPC */
@@ -227,11 +232,11 @@ __vmm_sigipc(int const sig, siginfo_t * const si, void * const ctx)
     /*======================================================================*/
 
     /* evict all memory */
-    ret = __sbma_mevictall_int(&c_pages, &numwr);
+    ret = __sbma_mevictall_int(&c_pages, &d_pages, &numwr);
     ASSERT(-1 != ret);
 
     /* update ipc memory statistics and unpopulate */
-    __ipc_atomic_dec(&(vmm.ipc), c_pages);
+    __ipc_atomic_dec(&(vmm.ipc), c_pages, d_pages);
     __ipc_unpopulate(&(vmm.ipc));
 
     /*======================================================================*/
@@ -491,6 +496,9 @@ __vmm_swap_o(struct ate * const __ate, size_t const __beg, size_t const __num)
 
       numwr += (ip-ipfirst);
 
+      ASSERT(__ate->d_pages >= ip-ipfirst);
+      __ate->d_pages -= (ip-ipfirst);
+
       ipfirst = -1;
     }
   }
@@ -564,6 +572,9 @@ __vmm_swap_x(struct ate * const __ate, size_t const __beg,
         PROT_READ);
       if (-1 == ret)
         return -1;
+
+      ASSERT(__ate->d_pages > 0);
+      __ate->d_pages--;
     }
     /* flag: *0*0 */
     flags[ip] &= ~(MMU_DIRTY|MMU_ZFILL);
