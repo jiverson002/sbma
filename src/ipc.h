@@ -196,7 +196,7 @@ __ipc_mevict(struct ipc * const __ipc, size_t const __c_pages,
 /*! Account for dirty memory. */
 /****************************************************************************/
 int
-__ipc_mdirty(struct ipc * const __ipc, size_t const __value);
+__ipc_mdirty(struct ipc * const __ipc, ssize_t const __value);
 
 #ifdef __cplusplus
 }

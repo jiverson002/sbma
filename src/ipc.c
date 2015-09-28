@@ -726,14 +726,18 @@ __ipc_mevict(struct ipc * const __ipc, size_t const __c_pages,
 
 
 SBMA_EXTERN int
-__ipc_mdirty(struct ipc * const __ipc, size_t const __value)
+__ipc_mdirty(struct ipc * const __ipc, ssize_t const __value)
 {
   if (0 == __value)
     return 0;
+
+  if (__value < 0) {
+    ASSERT(__ipc->d_mem[__ipc->id] >= __value);
+  }
 
   __ipc->d_mem[__ipc->id] += __value;
 
   return 0;
 }
 SBMA_EXPORT(internal, int
-__ipc_mdirty(struct ipc * const __ipc, size_t const __value));
+__ipc_mdirty(struct ipc * const __ipc, ssize_t const __value));
