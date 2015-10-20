@@ -56,6 +56,16 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 
 /****************************************************************************/
+/*! TODO Need to make this thread-safe. Need to protect relevant areas of the
+ *       ipc struct from being updated by multiple threads. For example,
+ *       __ipc_sigon() and __ipc_sigoff(); if two threads call this
+ *       __ipc_sigon(), which could happen if both call nanosleep() for
+ *       instance, then the first thread calls __ipc_sigoff(), the flags set
+ *       for the process will not reflect the IPC_SIGON state. */
+/****************************************************************************/
+
+
+/****************************************************************************/
 /*! Thread-local variable to check for signal received. */
 /* TODO: What happens if two threads are admitting, one thread receives a
  * signal, then shouldn't the other thread also be aware that the process has
