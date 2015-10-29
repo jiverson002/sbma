@@ -28,6 +28,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #define __IPC_H__ 1
 
 
+#include <pthread.h>   /* pthread library */
 #include <semaphore.h> /* semaphore library */
 #include <signal.h>    /* sig_atomic_t */
 #include <stdint.h>    /* uint8_t */
@@ -83,6 +84,8 @@ struct ipc
   sem_t * trn2;     /*!< ... */
   sem_t * trn3;     /*!< ... */
   sem_t * cnt;      /*!< ... */
+
+  pthread_mutex_t thread_mutex; /*!< thread mutex */
 
   void * shm;               /*!< shared memory region */
   int * pid;                /*!< pointer into shm for pid array */

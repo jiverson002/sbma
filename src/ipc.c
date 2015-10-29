@@ -130,6 +130,33 @@ do {\
 
 
 /****************************************************************************/
+/*! Constructs which implement a thread critical section. */
+/****************************************************************************/
+#define THREAD_CRITICAL_SECTION_BEG(__IPC)\
+do {\
+  int ret;\
+  ret = pthread_mutex_lock(&((__IPC)->thread_mutex));\
+  if (-1 == ret) {\
+    goto THREAD_CRITICAL_SECTION_ERREXIT;\
+  }\
+} while (0)
+
+#define THREAD_CRITICAL_SECTION_END(__IPC)\
+do {\
+  int ret;\
+  ret = pthread_mutex_unlock(&((__IPC)->thread_mutex));\
+  if (-1 == ret) {\
+    goto THREAD_CRITICAL_SECTION_ERREXIT;\
+  }\
+  goto THREAD_CRITICAL_SECTION_DONE;\
+  THREAD_CRITICAL_SECTION_ERREXIT:\
+  ASSERT(0);\
+  THREAD_CRITICAL_SECTION_DONE:\
+  (void)0;\
+} while (0)
+
+
+/****************************************************************************/
 /*! Cause process to wait for some event to occur. */
 /****************************************************************************/
 SBMA_STATIC int
@@ -383,6 +410,11 @@ __ipc_init(struct ipc * const __ipc, int const __uniq, int const __n_procs,
   /* set my process id */
   __ipc->pid[id] = (int)getpid();
 
+  /* set up thread mutex */
+  ret = pthread_mutex_init(&(__ipc->thread_mutex));
+  if (-1 == ret)
+    return -1;
+
   return 0;
 }
 SBMA_EXPORT(internal, int
@@ -399,6 +431,10 @@ __ipc_destroy(struct ipc * const __ipc)
   __ipc->init = 0;
 
   __ipc->curpages = __ipc->c_mem[__ipc->id];
+
+  ret = pthread_mutex_destroy(&(__ipc->thread_mutex));
+  if (-1 == ret)
+    return -1;
 
   ret = munmap((void*)__ipc->shm, IPC_LEN(__ipc->n_procs));
   if (-1 == ret)
@@ -460,8 +496,12 @@ __ipc_destroy(struct ipc * const __ipc));
 SBMA_EXTERN void
 __ipc_populate(struct ipc * const __ipc)
 {
+  /*THREAD_CRITICAL_SECTION_BEG(__ipc);*/
+
   if (1 == __ipc->init)
     __ipc->flags[__ipc->id] |= IPC_POPULATED;
+
+  /*THREAD_CRITICAL_SECTION_END(__ipc);*/
 }
 SBMA_EXPORT(internal, void
 __ipc_populate(struct ipc * const __ipc));
@@ -470,8 +510,12 @@ __ipc_populate(struct ipc * const __ipc));
 SBMA_EXTERN void
 __ipc_unpopulate(struct ipc * const __ipc)
 {
+  /*THREAD_CRITICAL_SECTION_BEG(__ipc);*/
+
   if (1 == __ipc->init)
     __ipc->flags[__ipc->id] &= ~IPC_POPULATED;
+
+  /*THREAD_CRITICAL_SECTION_END(__ipc);*/
 }
 SBMA_EXPORT(internal, void
 __ipc_unpopulate(struct ipc * const __ipc));
@@ -480,6 +524,8 @@ __ipc_unpopulate(struct ipc * const __ipc));
 SBMA_EXTERN void
 __ipc_sigon(struct ipc * const __ipc)
 {
+  /*THREAD_CRITICAL_SECTION_BEG(__ipc);*/
+
   ipc_sigrecvd = 0;
   if (1 == __ipc->init)
     __ipc->flags[__ipc->id] |= IPC_SIGON;
@@ -489,6 +535,8 @@ __ipc_sigon(struct ipc * const __ipc)
     ASSERT(-1 != ret);
   }
 #endif
+
+  /*THREAD_CRITICAL_SECTION_END(__ipc);*/
 }
 SBMA_EXPORT(internal, void
 __ipc_sigon(struct ipc * const __ipc));
@@ -497,6 +545,8 @@ __ipc_sigon(struct ipc * const __ipc));
 SBMA_EXTERN void
 __ipc_sigoff(struct ipc * const __ipc)
 {
+  /*THREAD_CRITICAL_SECTION_BEG(__ipc);*/
+
   if (1 == __ipc->init)
     __ipc->flags[__ipc->id] &= ~IPC_SIGON;
 #if SBMA_WAIT_ALGO == 1
@@ -505,6 +555,8 @@ __ipc_sigoff(struct ipc * const __ipc)
     ASSERT(-1 != ret);
   }
 #endif
+
+  /*THREAD_CRITICAL_SECTION_END(__ipc);*/
 }
 SBMA_EXPORT(internal, void
 __ipc_sigoff(struct ipc * const __ipc));
@@ -513,9 +565,13 @@ __ipc_sigoff(struct ipc * const __ipc));
 SBMA_EXTERN int
 __ipc_eligible(struct ipc * const __ipc)
 {
+  /*THREAD_CRITICAL_SECTION_BEG(__ipc);*/
+
   if (1 == __ipc->init)
     return (IPC_ELIGIBLE == (__ipc->flags[__ipc->id]&IPC_ELIGIBLE));
   return 0;
+
+  /*THREAD_CRITICAL_SECTION_END(__ipc);*/
 }
 SBMA_EXPORT(internal, int
 __ipc_eligible(struct ipc * const __ipc));
@@ -567,6 +623,8 @@ __ipc_release(struct ipc * const __ipc));
 SBMA_EXTERN void
 __ipc_atomic_inc(struct ipc * const __ipc, size_t const __value)
 {
+  /*THREAD_CRITICAL_SECTION_BEG(__ipc);*/
+
   ASSERT(*__ipc->smem >= __value);
 
   *__ipc->smem -= __value;
@@ -574,6 +632,8 @@ __ipc_atomic_inc(struct ipc * const __ipc, size_t const __value)
 
   if (__ipc->c_mem[__ipc->id] > __ipc->maxpages)
     __ipc->maxpages = __ipc->c_mem[__ipc->id];
+
+  /*THREAD_CRITICAL_SECTION_END(__ipc);*/
 }
 SBMA_EXPORT(internal, void
 __ipc_atomic_inc(struct ipc * const __ipc, size_t const __value));
@@ -583,12 +643,16 @@ SBMA_EXTERN void
 __ipc_atomic_dec(struct ipc * const __ipc, size_t const __c_pages,
                  size_t const __d_pages)
 {
+  /*THREAD_CRITICAL_SECTION_BEG(__ipc);*/
+
   ASSERT(__ipc->c_mem[__ipc->id] >= __c_pages);
   ASSERT(__ipc->d_mem[__ipc->id] >= __d_pages);
 
   *__ipc->smem += __c_pages;
   __ipc->c_mem[__ipc->id] -= __c_pages;
   __ipc->d_mem[__ipc->id] -= __d_pages;
+
+  /*THREAD_CRITICAL_SECTION_END(__ipc);*/
 }
 SBMA_EXPORT(internal, void
 __ipc_atomic_dec(struct ipc * const __ipc, size_t const __c_pages,
@@ -738,6 +802,8 @@ __ipc_mevict(struct ipc * const __ipc, size_t const __c_pages,
 SBMA_EXTERN int
 __ipc_mdirty(struct ipc * const __ipc, ssize_t const __value)
 {
+  /*THREAD_CRITICAL_SECTION_BEG(__ipc);*/
+
   if (0 == __value)
     return 0;
 
@@ -746,6 +812,8 @@ __ipc_mdirty(struct ipc * const __ipc, ssize_t const __value)
   }
 
   __ipc->d_mem[__ipc->id] += __value;
+
+  /*THREAD_CRITICAL_SECTION_END(__ipc);*/
 
   return 0;
 }
