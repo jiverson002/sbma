@@ -85,6 +85,8 @@ struct ipc
   sem_t * trn3;     /*!< ... */
   sem_t * cnt;      /*!< ... */
 
+  sem_t * sig;      /*!< counter of threads with signaling enabled */
+
   pthread_mutex_t thread_mutex; /*!< thread mutex */
 
   void * shm;               /*!< shared memory region */
@@ -153,7 +155,7 @@ __ipc_sigoff(struct ipc * const __ipc);
 /*! Check if process is eligible for eviction. */
 /****************************************************************************/
 int
-__ipc_eligible(struct ipc * const __ipc);
+__ipc_eligible(struct ipc * const __ipc, int const __id);
 
 
 /****************************************************************************/
@@ -166,14 +168,14 @@ __ipc_release(struct ipc * const __ipc);
 /****************************************************************************/
 /*! Increment process resident memory. */
 /****************************************************************************/
-void
+int
 __ipc_atomic_inc(struct ipc * const __ipc, size_t const __value);
 
 
 /****************************************************************************/
 /*! Decrement process resident memory. */
 /****************************************************************************/
-void
+int
 __ipc_atomic_dec(struct ipc * const __ipc, size_t const __c_pages,
                  size_t const __d_pages);
 

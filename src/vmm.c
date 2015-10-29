@@ -219,7 +219,7 @@ __vmm_sigipc(int const sig, siginfo_t * const si, void * const ctx)
   ASSERT(SIGIPC == sig);
 
   /* Only honor the SIGIPC if my status is still eligible */
-  if (1 == __ipc_eligible(&(vmm.ipc))) {
+  if (1 == __ipc_eligible(&(vmm.ipc), vmm.ipc.id)) {
     /* TODO: is it possible / what happens / does it matter if the process
      * receives a SIGIPC at this point in the execution of the signal handler?
      * */
