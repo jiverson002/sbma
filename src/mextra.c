@@ -244,12 +244,26 @@ __sbma_timeinfo(void));
 
 
 /****************************************************************************/
-/*! Inform runtime to release a memory blocked process. */
+/*! Inform runtime to allow signals to be received. */
 /****************************************************************************/
 SBMA_EXTERN int
-__sbma_release(void)
+__sbma_sigon(void)
 {
-  return __ipc_release(&(vmm.ipc));
+  ipc_sigon(&(vmm.ipc));
+  return 0;
+}
+SBMA_EXPORT(default, int
+__sbma_release(void));
+
+
+/****************************************************************************/
+/*! Inform runtime to disallow signals from being received. */
+/****************************************************************************/
+SBMA_EXTERN int
+__sbma_sigoff(void)
+{
+  ipc_sigoff(&(vmm.ipc));
+  return 0;
 }
 SBMA_EXPORT(default, int
 __sbma_release(void));

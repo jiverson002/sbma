@@ -79,17 +79,17 @@ __sbma_malloc(size_t const __size)
   for (;;) {
     if (VMM_METACH == (vmm.opts&VMM_METACH)) {
       if (VMM_RSDNT == (vmm.opts&VMM_RSDNT)) {
-        ret = __ipc_madmit(&(vmm.ipc), VMM_TO_SYS(s_pages+n_pages+f_pages),\
+        ret = ipc_madmit(&(vmm.ipc), VMM_TO_SYS(s_pages+n_pages+f_pages),\
           vmm.opts&VMM_ADMITD);
       }
       else {
-        ret = __ipc_madmit(&(vmm.ipc), VMM_TO_SYS(s_pages+f_pages),\
+        ret = ipc_madmit(&(vmm.ipc), VMM_TO_SYS(s_pages+f_pages),\
           vmm.opts&VMM_ADMITD);
       }
     }
     else {
       if (VMM_RSDNT == (vmm.opts&VMM_RSDNT))
-        ret = __ipc_madmit(&(vmm.ipc), VMM_TO_SYS(n_pages),\
+        ret = ipc_madmit(&(vmm.ipc), VMM_TO_SYS(n_pages),\
           vmm.opts&VMM_ADMITD);
       else
         ret = 0;
@@ -198,13 +198,13 @@ __sbma_malloc(size_t const __size)
   for (;;) {
     if (VMM_METACH == (vmm.opts&VMM_METACH)) {
       if (VMM_RSDNT == (vmm.opts&VMM_RSDNT))
-        ret = __ipc_mevict(&(vmm.ipc), VMM_TO_SYS(s_pages+n_pages+f_pages), 0);
+        ret = ipc_mevict(&(vmm.ipc), VMM_TO_SYS(s_pages+n_pages+f_pages), 0);
       else
-        ret = __ipc_mevict(&(vmm.ipc), VMM_TO_SYS(s_pages+f_pages), 0);
+        ret = ipc_mevict(&(vmm.ipc), VMM_TO_SYS(s_pages+f_pages), 0);
     }
     else {
       if (VMM_RSDNT == (vmm.opts&VMM_RSDNT))
-        ret = __ipc_mevict(&(vmm.ipc), VMM_TO_SYS(n_pages), 0);
+        ret = ipc_mevict(&(vmm.ipc), VMM_TO_SYS(n_pages), 0);
       else
         ret = 0;
     }
@@ -288,10 +288,10 @@ __sbma_free(void * const __ptr)
   /* Update memory file. */
   for (;;) {
     if (VMM_METACH == (vmm.opts&VMM_METACH))
-      retval = __ipc_mevict(&(vmm.ipc), VMM_TO_SYS(s_pages+c_pages+f_pages),\
+      retval = ipc_mevict(&(vmm.ipc), VMM_TO_SYS(s_pages+c_pages+f_pages),\
         VMM_TO_SYS(d_pages));
     else
-      retval = __ipc_mevict(&(vmm.ipc), VMM_TO_SYS(c_pages),\
+      retval = ipc_mevict(&(vmm.ipc), VMM_TO_SYS(c_pages),\
         VMM_TO_SYS(d_pages));
     if (-2 != retval)
       break;
@@ -399,7 +399,7 @@ __sbma_realloc(void * const __ptr, size_t const __size)
       oc_pages = ate->c_pages;
       od_pages = ate->d_pages;
 
-      ret = __ipc_mevict(&(vmm.ipc),\
+      ret = ipc_mevict(&(vmm.ipc),\
         VMM_TO_SYS((oc_pages-ate->c_pages)+(of_pages-nf_pages)),\
         VMM_TO_SYS(od_pages));
       if (-1 == ret)
@@ -419,18 +419,18 @@ __sbma_realloc(void * const __ptr, size_t const __size)
 
       if (VMM_METACH == (vmm.opts&VMM_METACH)) {
         if (VMM_RSDNT == (vmm.opts&VMM_RSDNT)) {
-          ret = __ipc_madmit(&(vmm.ipc),\
+          ret = ipc_madmit(&(vmm.ipc),\
             VMM_TO_SYS((nn_pages-on_pages)+(nf_pages-of_pages)),\
             vmm.opts&VMM_ADMITD);
         }
         else {
-          ret = __ipc_madmit(&(vmm.ipc), VMM_TO_SYS(nf_pages-of_pages),\
+          ret = ipc_madmit(&(vmm.ipc), VMM_TO_SYS(nf_pages-of_pages),\
             vmm.opts&VMM_ADMITD);
         }
       }
       else {
         if (VMM_RSDNT == (vmm.opts&VMM_RSDNT)) {
-          ret = __ipc_madmit(&(vmm.ipc), VMM_TO_SYS(nn_pages-on_pages),\
+          ret = ipc_madmit(&(vmm.ipc), VMM_TO_SYS(nn_pages-on_pages),\
             vmm.opts&VMM_ADMITD);
         }
         else
@@ -638,16 +638,16 @@ __sbma_realloc(void * const __ptr, size_t const __size)
     for (;;) {
       if (VMM_METACH == (vmm.opts&VMM_METACH)) {
         if (VMM_RSDNT == (vmm.opts&VMM_RSDNT)) {
-          ret = __ipc_mevict(&(vmm.ipc),\
+          ret = ipc_mevict(&(vmm.ipc),\
             VMM_TO_SYS((nn_pages-on_pages)+(nf_pages-of_pages)), 0);
         }
         else {
-          ret = __ipc_mevict(&(vmm.ipc), VMM_TO_SYS(nf_pages-of_pages), 0);
+          ret = ipc_mevict(&(vmm.ipc), VMM_TO_SYS(nf_pages-of_pages), 0);
         }
       }
       else {
         if (VMM_RSDNT == (vmm.opts&VMM_RSDNT))
-          ret = __ipc_mevict(&(vmm.ipc), VMM_TO_SYS((nn_pages-on_pages)), 0);
+          ret = ipc_mevict(&(vmm.ipc), VMM_TO_SYS((nn_pages-on_pages)), 0);
         else
           ret = 0;
       }

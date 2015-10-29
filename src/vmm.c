@@ -194,7 +194,7 @@ __vmm_sigsegv(int const sig, siginfo_t * const si, void * const ctx)
 
     /* increase count of dirty pages */
     ate->d_pages++;
-    ret = __ipc_mdirty(&(vmm.ipc), VMM_TO_SYS(1));
+    ret = ipc_mdirty(&(vmm.ipc), VMM_TO_SYS(1));
     ASSERT(-1 != ret);
 
     VMM_TRACK(numwf, 1);
@@ -219,13 +219,14 @@ __vmm_sigipc(int const sig, siginfo_t * const si, void * const ctx)
   ASSERT(SIGIPC == sig);
 
   /* Only honor the SIGIPC if my status is still eligible */
-  if (1 == __ipc_eligible(&(vmm.ipc), vmm.ipc.id)) {
-    /* TODO: is it possible / what happens / does it matter if the process
+  if (ipc_is_eligible(&(vmm.ipc), vmm.ipc.id)) {
+    /* XXX Is it possible / what happens / does it matter if the process
      * receives a SIGIPC at this point in the execution of the signal handler?
      * */
-    /* It shouldn't be possible because if this process received SIGIPC, then
-     * the process which signaled it should be waiting on vmm.ipc.trn1, and
-     * thus no other processes can signal. */
+    /* XXX This is not possible according to signal.h man pages. There it
+     * states that ``In addition, the signal which triggered the handler will
+     * be blocked, unless the SA_NODEFER flag is used.''. In the current code,
+     * SA_NODEFER is not used. */
 
     /*======================================================================*/
     TIMER_START(&(tmr));
@@ -235,9 +236,8 @@ __vmm_sigipc(int const sig, siginfo_t * const si, void * const ctx)
     ret = __sbma_mevictall_int(&c_pages, &d_pages, &numwr);
     ASSERT(-1 != ret);
 
-    /* update ipc memory statistics and unpopulate */
-    __ipc_atomic_dec(&(vmm.ipc), c_pages, d_pages);
-    __ipc_unpopulate(&(vmm.ipc));
+    /* update ipc memory statistics */
+    ipc_atomic_dec(&(vmm.ipc), c_pages, d_pages);
 
     /*======================================================================*/
     TIMER_STOP(&(tmr));
@@ -248,12 +248,10 @@ __vmm_sigipc(int const sig, siginfo_t * const si, void * const ctx)
     VMM_TRACK(numwr, numwr);
     VMM_TRACK(tmrwr, (double)tmr.tv_sec+(double)tmr.tv_nsec/1000000000.0);
     VMM_TRACK(numhipc, 1);
-
-    ipc_sigrecvd = 1;
   }
 
   /* signal to the waiting process that the memory has been released */
-  ret = sem_post(vmm.ipc.trn1);
+  ret = sem_post(vmm.ipc.done);
   ASSERT(-1 != ret);
 
   VMM_TRACK(numipc, 1);
@@ -639,7 +637,7 @@ __vmm_init(struct vmm * const __vmm, char const * const __fstem,
     return -1;
 
   /* initialize ipc */
-  if (-1 == __ipc_init(&(__vmm->ipc), __uniq, __n_procs, __max_mem))
+  if (-1 == ipc_init(&(__vmm->ipc), __uniq, __n_procs, __max_mem))
     return -1;
 
   /* initialize vmm lock */
@@ -679,7 +677,7 @@ __vmm_destroy(struct vmm * const __vmm)
   ERRCHK(RETURN, 0 != retval);
 
   /* destroy ipc */
-  if (-1 == __ipc_destroy(&(__vmm->ipc)))
+  if (-1 == ipc_destroy(&(__vmm->ipc)))
     return -1;
 
   /* destroy vmm lock */

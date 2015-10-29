@@ -30,7 +30,6 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include <pthread.h>   /* pthread library */
 #include <semaphore.h> /* semaphore library */
-#include <signal.h>    /* sig_atomic_t */
 #include <stdint.h>    /* uint8_t */
 #include <stddef.h>    /* size_t */
 
@@ -41,8 +40,8 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 /****************************************************************************/
 /*! Compute the length of the IPC shared memory segment. */
 /****************************************************************************/
-#define IPC_LEN(__N_PROCS)\
-  (sizeof(size_t)+(__N_PROCS)*(sizeof(int)+sizeof(size_t)+sizeof(size_t)+\
+#define IPC_LEN(N_PROCS)\
+  (sizeof(size_t)+(N_PROCS)*(sizeof(int)+sizeof(size_t)+sizeof(size_t)+\
     sizeof(uint8_t))+sizeof(int))
 
 
@@ -57,10 +56,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 /****************************************************************************/
 enum ipc_code
 {
-  IPC_POPULATED    = 1 << 0,
-  IPC_SIGON        = 1 << 1,
-  IPC_MEM_BLOCKED  = 1 << 2,
-  IPC_ELIGIBLE     = IPC_POPULATED|IPC_SIGON
+  IPC_SIGON = 1 << 0
 };
 
 
@@ -79,15 +75,10 @@ struct ipc
   size_t curpages;  /*!< current pages loaded */
   size_t maxpages;  /*!< maximum number of pages loaded */
 
-  sem_t * mtx;      /*!< critical section semaphores */
-  sem_t * trn1;     /*!< ... */
-  sem_t * trn2;     /*!< ... */
-  sem_t * trn3;     /*!< ... */
-  sem_t * cnt;      /*!< ... */
-
-  sem_t * sig;      /*!< counter of threads with signaling enabled */
-
-  pthread_mutex_t thread_mutex; /*!< thread mutex */
+  sem_t * inter_mtx;         /*!< inter-process critical section mutex */
+  sem_t * done;              /*!< indicator that signal handler is completed */
+  sem_t * sig;               /*!< counter of threads with signaling enabled */
+  pthread_mutex_t intra_mtx; /*!< intra-process critical section mutex */
 
   void * shm;               /*!< shared memory region */
   int * pid;                /*!< pointer into shm for pid array */
@@ -98,12 +89,6 @@ struct ipc
 };
 
 
-/****************************************************************************/
-/*! Thread-local variable to check for signal received. */
-/****************************************************************************/
-extern __thread volatile sig_atomic_t ipc_sigrecvd;
-
-
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -112,96 +97,73 @@ extern "C" {
 /*! Initialize the interprocess environment. */
 /****************************************************************************/
 int
-__ipc_init(struct ipc * const __ipc, int const __uniq, int const __n_procs,
-           size_t const __max_mem);
+ipc_init(struct ipc * const ipc, int const uniq, int const n_procs,
+         size_t const max_mem);
 
 
 /****************************************************************************/
 /*! Destroy the interprocess environment. */
 /****************************************************************************/
 int
-__ipc_destroy(struct ipc * const __ipc);
-
-
-/****************************************************************************/
-/*! Transition process to populated status. */
-/****************************************************************************/
-void
-__ipc_populate(struct ipc * const __ipc);
-
-
-/****************************************************************************/
-/*! Transition process to unpopulated status. */
-/****************************************************************************/
-void
-__ipc_unpopulate(struct ipc * const __ipc);
+ipc_destroy(struct ipc * const ipc);
 
 
 /****************************************************************************/
 /*! Allow signals to be sent to process. */
 /****************************************************************************/
 void
-__ipc_sigon(struct ipc * const __ipc);
+ipc_sigon(struct ipc * const ipc);
 
 
 /****************************************************************************/
 /*! Disallow signals to be sent to process. */
 /****************************************************************************/
 void
-__ipc_sigoff(struct ipc * const __ipc);
+ipc_sigoff(struct ipc * const ipc);
 
 
 /****************************************************************************/
 /*! Check if process is eligible for eviction. */
 /****************************************************************************/
 int
-__ipc_eligible(struct ipc * const __ipc, int const __id);
-
-
-/****************************************************************************/
-/*! Release a memory blocked process, if any. */
-/****************************************************************************/
-int
-__ipc_release(struct ipc * const __ipc);
+ipc_is_eligible(struct ipc * const ipc, int const id);
 
 
 /****************************************************************************/
 /*! Increment process resident memory. */
 /****************************************************************************/
 int
-__ipc_atomic_inc(struct ipc * const __ipc, size_t const __value);
+ipc_atomic_inc(struct ipc * const ipc, size_t const value);
 
 
 /****************************************************************************/
 /*! Decrement process resident memory. */
 /****************************************************************************/
 int
-__ipc_atomic_dec(struct ipc * const __ipc, size_t const __c_pages,
-                 size_t const __d_pages);
+ipc_atomic_dec(struct ipc * const ipc, size_t const c_pages,
+                 size_t const d_pages);
 
 
 /****************************************************************************/
 /*! Account for resident memory before admission. Check to see if the system
- *  can support the addition of __value bytes of memory. */
+ *  can support the addition of value bytes of memory. */
 /****************************************************************************/
 int
-__ipc_madmit(struct ipc * const __ipc, size_t const __value,
-             int const __admitd);
+ipc_madmit(struct ipc * const ipc, size_t const value, int const admitd);
 
 
 /****************************************************************************/
 /*! Account for loaded memory after eviction. */
 /****************************************************************************/
 int
-__ipc_mevict(struct ipc * const __ipc, size_t const __c_pages,
-             size_t const __d_pages);
+ipc_mevict(struct ipc * const ipc, size_t const c_pages, size_t const d_pages);
 
 
 /****************************************************************************/
 /*! Account for dirty memory. */
 /****************************************************************************/
 int
-__ipc_mdirty(struct ipc * const __ipc, ssize_t const __value);
+ipc_mdirty(struct ipc * const ipc, ssize_t const value);
 
 #ifdef __cplusplus
 }

@@ -365,7 +365,7 @@ __sbma_mtouch(void * const __ate, void * const __addr, size_t const __len)
     if (0 == c_pages)
       break;
 
-    ret = __ipc_madmit(&(vmm.ipc), c_pages, vmm.opts&VMM_ADMITD);
+    ret = ipc_madmit(&(vmm.ipc), c_pages, vmm.opts&VMM_ADMITD);
     if (-1 == ret)
       goto CLEANUP;
     else if (-2 != ret)
@@ -531,7 +531,7 @@ __sbma_mtouch_atomic(void * const __addr, size_t const __len, ...)
     if (0 == c_pages)
       break;
 
-    ret = __ipc_madmit(&(vmm.ipc), c_pages, vmm.opts&VMM_ADMITD);
+    ret = ipc_madmit(&(vmm.ipc), c_pages, vmm.opts&VMM_ADMITD);
     if (-1 == ret)
       goto CLEANUP;
     else if (-2 != ret)
@@ -622,7 +622,7 @@ __sbma_mtouchall(void)
     if (0 == c_pages)
       break;
 
-    ret = __ipc_madmit(&(vmm.ipc), c_pages, vmm.opts&VMM_ADMITD);
+    ret = ipc_madmit(&(vmm.ipc), c_pages, vmm.opts&VMM_ADMITD);
     if (-1 == ret)
       goto CLEANUP;
     else if (-2 != ret)
@@ -701,7 +701,7 @@ __sbma_mclear(void * const __addr, size_t const __len)
   /* update memory file */
   /* TODO can this be outside of __lock_let? */
   for (;;) {
-    ret = __ipc_mevict(&(vmm.ipc), 0, d_pages);
+    ret = ipc_mevict(&(vmm.ipc), 0, d_pages);
     if (-1 == ret)
       goto CLEANUP;
     else if (-2 != ret)
@@ -755,7 +755,7 @@ __sbma_mclearall(void)
   if (-1 == ret)
     goto CLEANUP;
 
-  ret = __ipc_mdirty(&(vmm.ipc), -VMM_TO_SYS(d_pages));
+  ret = ipc_mdirty(&(vmm.ipc), -VMM_TO_SYS(d_pages));
   if (-1 == ret)
     goto CLEANUP;
 
@@ -804,7 +804,7 @@ __sbma_mevict(void * const __addr, size_t const __len)
   /* update memory file */
   /* TODO can this be outside of __lock_let? */
   for (;;) {
-    ret = __ipc_mevict(&(vmm.ipc), c_pages, d_pages);
+    ret = ipc_mevict(&(vmm.ipc), c_pages, d_pages);
     if (-1 == ret)
       goto CLEANUP;
     else if (-2 != ret)
@@ -914,16 +914,12 @@ __sbma_mevictall(void)
 
   /* update memory file */
   for (;;) {
-    ret = __ipc_mevict(&(vmm.ipc), c_pages, d_pages);
+    ret = ipc_mevict(&(vmm.ipc), c_pages, d_pages);
     if (-1 == ret)
       goto ERREXIT;
     else if (-2 != ret)
       break;
   }
-
-  /* change my status to unpopulated - must be before any potential waiting,
-   * since SIGIPC could be raised again then. */
-  __ipc_unpopulate(&(vmm.ipc));
 
   /*========================================================================*/
   TIMER_STOP(&(tmr));

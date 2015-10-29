@@ -211,7 +211,8 @@ int                  __sbma_mallopt(int const, int const);
 int                  __sbma_parse_optstr(char const * const);
 struct mallinfo      __sbma_mallinfo(void);
 struct sbma_timeinfo __sbma_timeinfo(void);
-int                  __sbma_release(void);
+int                  __sbma_sigon(void);
+int                  __sbma_sigoff(void);
 
 /* mstate.c */
 int     __sbma_check(char const * const, int const);
@@ -241,7 +242,8 @@ int     __sbma_mexist(void const * const);
 #define SBMA_mallopt            __sbma_mallopt
 #define SBMA_parse_optstr       __sbma_parse_optstr
 #define SBMA_mallinfo           __sbma_mallinfo
-#define SBMA_release            __sbma_release
+#define SBMA_sigon              __sbma_sigon
+#define SBMA_sigoff             __sbma_sigoff
 #define SBMA_timeinfo           __sbma_timeinfo
 
 /* mstate.c */
