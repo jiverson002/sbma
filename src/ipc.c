@@ -504,8 +504,7 @@ ipc_madmit(struct ipc * const ipc, size_t const value, int const admitd)
   return retval;
 }
 SBMA_EXPORT(internal, int
-ipc_madmit(struct ipc * const ipc, size_t const value,
-           int const admitd));
+ipc_madmit(struct ipc * const ipc, size_t const value, int const admitd));
 
 
 /*****************************************************************************/
