@@ -350,7 +350,8 @@ ipc_atomic_inc(struct ipc * const ipc, size_t const value));
 
 
 /*****************************************************************************/
-/*  MP-Unsafe race:rw(ipc->s_mem,ipc->c_mem[ipc->id],ipc->d_mem[ipc->id])    */
+/*  MP-Unsafe race:rw(ipc->s_mem,ipc->c_mem[ipc->id])                        */
+/*            race:wr(ipc->d_mem[ipc->id])                                   */
 /*  MT-Unsafe race:rw(ipc->s_mem,ipc->c_mem[ipc->id])                        */
 /*                                                                           */
 /*  Note:                                                                    */ 
@@ -361,6 +362,8 @@ ipc_atomic_inc(struct ipc * const ipc, size_t const value));
 /*  Mitigation:                                                              */
 /*    1)  Call from within an IPC_INTER_CRITICAL_SECTION or call after       */
 /*        receiving SIGIPC from a process in an IPC_INTER_CRITICAL_SECTION.  */
+/*    2)  Functions that READ ipc->d_mem[ipc->id] from a different process   */
+/*        SHOULD be aware of the possibility of reading a stale value.       */
 /*****************************************************************************/
 SBMA_EXTERN void
 ipc_atomic_dec(struct ipc * const ipc, size_t const c_pages,
@@ -544,9 +547,8 @@ ipc_mevict(struct ipc * const ipc, size_t const c_pages,
 /*        sufficient to make that variable MT-Safe.                          */
 /*                                                                           */
 /*  Mitigation:                                                              */
-/*    1)  None. Functions that READ ipc->d_mem[ipc->id] from a different     */
-/*        process SHOULD be aware of the possibility of reading a stale      */
-/*        value.                                                             */
+/*    1)  Functions that READ ipc->d_mem[ipc->id] from a different process   */
+/*        SHOULD be aware of the possibility of reading a stale value.       */
 /*****************************************************************************/
 SBMA_EXTERN int
 ipc_mdirty(struct ipc * const ipc, ssize_t const value)
