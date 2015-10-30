@@ -62,7 +62,7 @@ do {\
 
 
 /*****************************************************************************/
-/* Constructs which implement a inter-process critical section. */
+/* Constructs which implement an inter-process critical section. */
 /*****************************************************************************/
 #define IPC_INTER_CRITICAL_SECTION_BEG(IPC)\
 do {\
@@ -80,7 +80,7 @@ do {\
 
 
 /*****************************************************************************/
-/* Constructs which implement a intra-process critical section. */
+/* Constructs which implement an intra-process critical section. */
 /*****************************************************************************/
 #define IPC_INTRA_CRITICAL_SECTION_BEG(IPC)\
 do {\
