@@ -387,8 +387,10 @@ __sbma_mtouch(void * const __ate, void * const __addr, size_t const __len)
   SBMA_STATE_CHECK();
   /*========================================================================*/
 
-  VMM_TRACK(numrd, numrd);
-  VMM_TRACK(tmrrd, (double)tmr.tv_sec+(double)tmr.tv_nsec/1000000000.0);
+  VMM_INTRA_CRITICAL_SECTION_BEG(&vmm);
+  VMM_TRACK(&vmm, numrd, numrd);
+  VMM_TRACK(&vmm, tmrrd, (double)tmr.tv_sec+(double)tmr.tv_nsec/1000000000.0);
+  VMM_INTRA_CRITICAL_SECTION_END(&vmm);
 
   return c_pages;
 
@@ -557,8 +559,10 @@ __sbma_mtouch_atomic(void * const __addr, size_t const __len, ...)
   SBMA_STATE_CHECK();
   /*========================================================================*/
 
-  VMM_TRACK(numrd, numrd);
-  VMM_TRACK(tmrrd, (double)tmr.tv_sec+(double)tmr.tv_nsec/1000000000.0);
+  VMM_INTRA_CRITICAL_SECTION_BEG(&vmm);
+  VMM_TRACK(&vmm, numrd, numrd);
+  VMM_TRACK(&vmm, tmrrd, (double)tmr.tv_sec+(double)tmr.tv_nsec/1000000000.0);
+  VMM_INTRA_CRITICAL_SECTION_END(&vmm);
 
   return c_pages;
 
@@ -655,8 +659,10 @@ __sbma_mtouchall(void)
   SBMA_STATE_CHECK();
   /*========================================================================*/
 
-  VMM_TRACK(numrd, numrd);
-  VMM_TRACK(tmrrd, (double)tmr.tv_sec+(double)tmr.tv_nsec/1000000000.0);
+  VMM_INTRA_CRITICAL_SECTION_BEG(&vmm);
+  VMM_TRACK(&vmm, numrd, numrd);
+  VMM_TRACK(&vmm, tmrrd, (double)tmr.tv_sec+(double)tmr.tv_nsec/1000000000.0);
+  VMM_INTRA_CRITICAL_SECTION_END(&vmm);
 
   return c_pages;
 
@@ -820,8 +826,10 @@ __sbma_mevict(void * const __addr, size_t const __len)
   SBMA_STATE_CHECK();
   /*========================================================================*/
 
-  VMM_TRACK(numwr, numwr);
-  VMM_TRACK(tmrwr, (double)tmr.tv_sec+(double)tmr.tv_nsec/1000000000.0);
+  VMM_INTRA_CRITICAL_SECTION_BEG(&vmm);
+  VMM_TRACK(&vmm, numwr, numwr);
+  VMM_TRACK(&vmm, tmrwr, (double)tmr.tv_sec+(double)tmr.tv_nsec/1000000000.0);
+  VMM_INTRA_CRITICAL_SECTION_END(&vmm);
 
   return c_pages;
 
@@ -926,8 +934,10 @@ __sbma_mevictall(void)
   SBMA_STATE_CHECK();
   /*========================================================================*/
 
-  VMM_TRACK(numwr, numwr);
-  VMM_TRACK(tmrwr, (double)tmr.tv_sec+(double)tmr.tv_nsec/1000000000.0);
+  VMM_INTRA_CRITICAL_SECTION_BEG(&vmm);
+  VMM_TRACK(&vmm, numwr, numwr);
+  VMM_TRACK(&vmm, tmrwr, (double)tmr.tv_sec+(double)tmr.tv_nsec/1000000000.0);
+  VMM_INTRA_CRITICAL_SECTION_END(&vmm);
 
   return c_pages;
 

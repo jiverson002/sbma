@@ -158,8 +158,6 @@ ssize_t libc_read(int const, void * const, size_t const);
 ssize_t libc_write(int const, void const * const, size_t const);
 int     libc_mlock(void const * const, size_t const);
 int     libc_msync(void * const, size_t const, int const);
-int     libc_nanosleep(struct timespec const * const, struct timespec * const);
-int     libc_sem_wait(sem_t * const);
 
 #ifdef __cplusplus
 }

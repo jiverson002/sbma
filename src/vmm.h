@@ -88,14 +88,29 @@ extern struct vmm vmm;
 
 
 /****************************************************************************/
+/*! Constructs which implement a intra-process critical section. */
+/****************************************************************************/
+#define VMM_INTRA_CRITICAL_SECTION_BEG(VMM)\
+do {\
+  int ret;\
+  ret = __lock_get(&((VMM)->lock));\
+  ASSERT(0 == ret);\
+} while (0)
+
+#define VMM_INTRA_CRITICAL_SECTION_END(VMM)\
+do {\
+  int ret;\
+  ret =__lock_let(&((VMM)->lock));\
+  ASSERT(0 == ret);\
+} while (0)
+
+
+/****************************************************************************/
 /*! Increments a particular field in the info struct. */
 /****************************************************************************/
-#define VMM_TRACK(__FIELD, __VAL)\
+#define VMM_TRACK(VMM, FIELD, VAL)\
 do {\
-  if (0 != (__VAL) && 0 == __lock_get(&(vmm.lock))) {\
-    vmm.__FIELD += (__VAL);\
-    (void)__lock_let(&(vmm.lock));\
-  }\
+  (VMM)->FIELD += (VAL);\
 } while (0)
 
 

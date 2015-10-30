@@ -174,7 +174,9 @@ __vmm_sigsegv(int const sig, siginfo_t * const si, void * const ctx)
     ret = __lock_let(&(ate->lock));
     ASSERT(-1 != ret);
 
-    VMM_TRACK(numrf, 1);
+    VMM_INTRA_CRITICAL_SECTION_BEG(&vmm);
+    VMM_TRACK(&vmm, numrf, 1);
+    VMM_INTRA_CRITICAL_SECTION_END(&vmm);
   }
   else {
     /* sanity check */
@@ -197,7 +199,9 @@ __vmm_sigsegv(int const sig, siginfo_t * const si, void * const ctx)
     ret = ipc_mdirty(&(vmm.ipc), VMM_TO_SYS(1));
     ASSERT(-1 != ret);
 
-    VMM_TRACK(numwf, 1);
+    VMM_INTRA_CRITICAL_SECTION_BEG(&vmm);
+    VMM_TRACK(&vmm, numwf, 1);
+    VMM_INTRA_CRITICAL_SECTION_END(&vmm);
   }
 
   if (NULL == ctx) {} /* suppress unused warning */
@@ -214,11 +218,11 @@ __vmm_sigipc(int const sig, siginfo_t * const si, void * const ctx)
   size_t c_pages, d_pages, numwr;
   struct timespec tmr;
 
-  /* make sure we received a SIGIPC */
+  /* Sanity check: make sure we received a SIGIPC. */
   ASSERT(SIGIPC <= SIGRTMAX);
   ASSERT(SIGIPC == sig);
 
-  /* Only honor the SIGIPC if my status is still eligible */
+  /* Only honor the SIGIPC if my status is still eligible. */
   if (ipc_is_eligible(&(vmm.ipc), vmm.ipc.id)) {
     /* XXX Is it possible / what happens / does it matter if the process
      * receives a SIGIPC at this point in the execution of the signal handler?
@@ -228,33 +232,38 @@ __vmm_sigipc(int const sig, siginfo_t * const si, void * const ctx)
      * be blocked, unless the SA_NODEFER flag is used.''. In the current code,
      * SA_NODEFER is not used. */
 
-    /*======================================================================*/
+    /*=======================================================================*/
     TIMER_START(&(tmr));
-    /*======================================================================*/
+    /*=======================================================================*/
 
-    /* evict all memory */
+    /* Evict all memory. */
     ret = __sbma_mevictall_int(&c_pages, &d_pages, &numwr);
     ASSERT(-1 != ret);
 
-    /* update ipc memory statistics */
+    /* Update ipc memory statistics. */
     ipc_atomic_dec(&(vmm.ipc), c_pages, d_pages);
 
-    /*======================================================================*/
+    /*=======================================================================*/
     TIMER_STOP(&(tmr));
-    /*======================================================================*/
+    /*=======================================================================*/
 
-    /* track number of syspages currently loaded, number of syspages written
-     * to disk, and high water mark for syspages loaded */
-    VMM_TRACK(numwr, numwr);
-    VMM_TRACK(tmrwr, (double)tmr.tv_sec+(double)tmr.tv_nsec/1000000000.0);
-    VMM_TRACK(numhipc, 1);
+    /* Track number of number of syspages written to disk, time taken for
+     * writing, and number of SIGIPC honored. */
+    VMM_INTRA_CRITICAL_SECTION_BEG(&vmm);
+    VMM_TRACK(&vmm, numwr, numwr);
+    VMM_TRACK(&vmm, tmrwr, (double)tmr.tv_sec+(double)tmr.tv_nsec/1000000000.0);
+    VMM_TRACK(&vmm, numhipc, 1);
+    VMM_INTRA_CRITICAL_SECTION_END(&vmm);
   }
 
-  /* signal to the waiting process that the memory has been released */
+  /* Signal to the waiting process that the memory has been released. */
   ret = sem_post(vmm.ipc.done);
   ASSERT(-1 != ret);
 
-  VMM_TRACK(numipc, 1);
+  /* Track the number of SIGIPC received. */
+  VMM_INTRA_CRITICAL_SECTION_BEG(&vmm);
+  VMM_TRACK(&vmm, numipc, 1);
+  VMM_INTRA_CRITICAL_SECTION_END(&vmm);
 
   if (NULL == si || NULL == ctx) {}
 }

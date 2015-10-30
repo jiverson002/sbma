@@ -1,31 +1,28 @@
 /*
-Copyright (c) 2015, Jeremy Iverson
-All rights reserved.
+Copyright (c) 2015 Jeremy Iverson
 
-Redistribution and use in source and binary forms, with or without
-modification, are permitted provided that the following conditions are met:
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
 
-1. Redistributions of source code must retain the above copyright notice, this
-list of conditions and the following disclaimer.
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
 
-2. Redistributions in binary form must reproduce the above copyright notice,
-this list of conditions and the following disclaimer in the documentation
-and/or other materials provided with the distribution.
-
-THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
-AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
-IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
-DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
-FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
-DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
-SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
-CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
-OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
 */
 
+
 #ifndef _GNU_SOURCE
-# define _GNU_SOURCE
+# define _GNU_SOURCE 1
 #endif
 
 
@@ -44,60 +41,70 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "sbma.h"
 
 
-/****************************************************************************/
-/*! Constructs which implement a inter-process critical section. */
-/****************************************************************************/
-#define INTER_CRITICAL_SECTION_BEG(IPC)\
+/*****************************************************************************/
+/* Length of the IPC shared memory region. */
+/*****************************************************************************/
+#define IPC_LEN(N_PROCS)\
+  (sizeof(size_t)+(N_PROCS)*(sizeof(int)+sizeof(size_t)+sizeof(size_t)+\
+    sizeof(uint8_t))+sizeof(int))
+
+
+/*****************************************************************************/
+/* X Macro list. */
+/*****************************************************************************/
+#define LIST_OF_SEMAPHORES \
+do {\
+  X(inter_mtx, 1)\
+  X(done, 0)\
+  X(sid, 1)\
+  X(sig, 0)\
+} while (0);
+
+
+/*****************************************************************************/
+/* Constructs which implement a inter-process critical section. */
+/*****************************************************************************/
+#define IPC_INTER_CRITICAL_SECTION_BEG(IPC)\
 do {\
   int ret;\
   ret = sem_wait((IPC)->inter_mtx);\
-  if (-1 == ret) {\
-    goto INTER_CRITICAL_SECTION_ERREXIT;\
-  }\
+  ASSERT(0 == ret);\
 } while (0)
 
-#define INTER_CRITICAL_SECTION_END(IPC)\
+#define IPC_INTER_CRITICAL_SECTION_END(IPC)\
 do {\
   int ret;\
   ret = sem_post((IPC)->inter_mtx);\
-  if (-1 == ret){\
-    goto INTER_CRITICAL_SECTION_ERREXIT;\
-  }\
-  goto INTER_CRITICAL_SECTION_DONE;\
-  INTER_CRITICAL_SECTION_ERREXIT:\
-  ASSERT(0);\
-  INTER_CRITICAL_SECTION_DONE:\
-  (void)0;\
+  ASSERT(0 == ret);\
 } while (0)
 
 
-/****************************************************************************/
-/*! Constructs which implement a intra-process critical section. */
-/****************************************************************************/
-#define INTRA_CRITICAL_SECTION_BEG(IPC)\
+/*****************************************************************************/
+/* Constructs which implement a intra-process critical section. */
+/*****************************************************************************/
+#define IPC_INTRA_CRITICAL_SECTION_BEG(IPC)\
 do {\
   int ret;\
   ret = pthread_mutex_lock(&((IPC)->intra_mtx));\
-  if (-1 == ret) {\
-    goto INTRA_CRITICAL_SECTION_ERREXIT;\
-  }\
+  ASSERT(0 == ret);\
 } while (0)
 
-#define INTRA_CRITICAL_SECTION_END(IPC)\
+#define IPC_INTRA_CRITICAL_SECTION_END(IPC)\
 do {\
   int ret;\
   ret = pthread_mutex_unlock(&((IPC)->intra_mtx));\
-  if (-1 == ret) {\
-    goto INTRA_CRITICAL_SECTION_ERREXIT;\
-  }\
-  goto INTRA_CRITICAL_SECTION_DONE;\
-  INTRA_CRITICAL_SECTION_ERREXIT:\
-  ASSERT(0);\
-  INTRA_CRITICAL_SECTION_DONE:\
-  (void)0;\
+  ASSERT(0 == ret);\
 } while (0)
 
 
+/*****************************************************************************/
+/*  MP-Safe                                                                  */
+/*  MT-Invalid                                                               */
+/*                                                                           */
+/*  Mitigation:                                                              */
+/*    1)  This function MUST be called EXACTLY ONCE BEFORE any other ipc_*   */
+/*        function is called.                                                */
+/*****************************************************************************/
 SBMA_EXTERN int
 ipc_init(struct ipc * const ipc, int const uniq, int const n_procs,
          size_t const max_mem)
@@ -109,31 +116,25 @@ ipc_init(struct ipc * const ipc, int const uniq, int const n_procs,
   char fname[FILENAME_MAX];
 
   /* initialize semaphores */
-  if (0 > snprintf(fname, FILENAME_MAX, "/ipc-inter-mtx-%d", uniq))
-    return -1;
-  inter_mtx = sem_open(fname, O_RDWR|O_CREAT, S_IRUSR|S_IWUSR, 1);
-  if (SEM_FAILED == inter_mtx)
-    return -1;
-  if (0 > snprintf(fname, FILENAME_MAX, "/ipc-done-%d", uniq))
-    return -1;
-  done = sem_open(fname, O_RDWR|O_CREAT, S_IRUSR|S_IWUSR, 0);
-  if (SEM_FAILED == done)
-    return -1;
-  if (0 > snprintf(fname, FILENAME_MAX, "/ipc-sid-%d", uniq))
-    return -1;
-  sid = sem_open(fname, O_RDWR|O_CREAT, S_IRUSR|S_IWUSR, 1);
-  if (SEM_FAILED == sid)
-    return -1;
-  if (0 > snprintf(fname, FILENAME_MAX, "/ipc-sig-%d", uniq))
-    return -1;
-  sig = sem_open(fname, O_RDWR|O_CREAT, S_IRUSR|S_IWUSR, 0);
-  if (SEM_FAILED == sig)
-    return -1;
+  #define X(SEM, INIT)\
+    if (0 > snprintf(fname, FILENAME_MAX, "/ipc-" #SEM "-%d", uniq))\
+      return -1;\
+    SEM = sem_open(fname, O_RDWR|O_CREAT, S_IRUSR|S_IWUSR, INIT);\
+    if (SEM_FAILED == SEM)\
+      return -1;
+  LIST_OF_SEMAPHORES
+  #undef X
 
+  /* set up thread mutex */
+  ret = pthread_mutex_init(&(ipc->intra_mtx), NULL);
+  if (-1 == ret)
+    return -1;
   /* try to create a new shared memory region -- if i create, then i should
    * also truncate it, if i dont create, then try and just open it. */
   if (0 > snprintf(fname, FILENAME_MAX, "/ipc-shm-%d", uniq))
     return -1;
+
+  /* Set up shared memory region. */
   shm_fd = shm_open(fname, O_RDWR|O_CREAT|O_EXCL, S_IRUSR|S_IWUSR);
   if (-1 == shm_fd) {
     if (EEXIST == errno) {
@@ -156,18 +157,18 @@ ipc_init(struct ipc * const ipc, int const uniq, int const n_procs,
       return -1;
   }
 
-  /* map the shared memory region into my address space */
+  /* Map the shared memory region into my address space. */
   shm = mmap(NULL, IPC_LEN(n_procs), PROT_READ|PROT_WRITE, MAP_SHARED,\
     shm_fd, 0);
   if (MAP_FAILED == shm)
     return -1;
 
-  /* close the file descriptor */
+  /* Close the file descriptor. */
   ret = close(shm_fd);
   if (-1 == ret)
     return -1;
 
-  /* begin critical section */
+  /* Begin critical section. */
   ret = sem_wait(sid);
   if (-1 == ret)
     return -1;
@@ -175,26 +176,17 @@ ipc_init(struct ipc * const ipc, int const uniq, int const n_procs,
   /* id pointer is last sizeof(int) bytes of shm */
   idp = (int*)((uintptr_t)shm+sizeof(size_t)+\
     (n_procs*(sizeof(int)+sizeof(size_t)+sizeof(size_t))));
-  id  = (*idp)++;
+  id = (*idp)++;
 
-  /* end critical section */
+  /* End critical section. */
   ret = sem_post(sid);
   if (-1 == ret)
     return -1;
-  ret = sem_close(sid);
-  if (-1 == ret)
-    return -1;
-  if (0 > snprintf(fname, FILENAME_MAX, "/ipc-sid-%d", uniq))
-    return -1;
-  ret = sem_unlink(fname);
-  if (-1 == ret && ENOENT != errno)
-    return -1;
 
-  if (id >= n_procs)
-    return -1;
+  /* Sanity check. */
+  ASSERT(id < n_procs);
 
-  /* setup ipc struct */
-  ipc->init      = 1;
+  /* Setup ipc struct. */
   ipc->id        = id;
   ipc->n_procs   = n_procs;
   ipc->uniq      = uniq;
@@ -203,20 +195,16 @@ ipc_init(struct ipc * const ipc, int const uniq, int const n_procs,
   ipc->shm       = shm;
   ipc->inter_mtx = inter_mtx;
   ipc->done      = done;
+  ipc->sid       = sid;
   ipc->sig       = sig;
-  ipc->smem      = (size_t*)shm;
-  ipc->c_mem     = (size_t*)((uintptr_t)ipc->smem+sizeof(size_t));
+  ipc->s_mem     = (size_t*)shm;
+  ipc->c_mem     = (size_t*)((uintptr_t)ipc->s_mem+sizeof(size_t));
   ipc->d_mem     = (size_t*)((uintptr_t)ipc->c_mem+(n_procs*sizeof(size_t)));
   ipc->pid       = (int*)((uintptr_t)ipc->d_mem+(n_procs*sizeof(size_t)));
   ipc->flags     = (uint8_t*)((uintptr_t)idp+sizeof(int));
 
-  /* set my process id */
+  /* Set my process id. */
   ipc->pid[id] = (int)getpid();
-
-  /* set up thread mutex */
-  ret = pthread_mutex_init(&(ipc->intra_mtx), NULL);
-  if (-1 == ret)
-    return -1;
 
   return 0;
 }
@@ -225,13 +213,22 @@ ipc_init(struct ipc * const ipc, int const uniq, int const n_procs,
          size_t const max_mem));
 
 
+/*****************************************************************************/
+/*  MP-Safe                                                                  */
+/*  MT-Invalid                                                               */
+/*                                                                           */
+/*  Mitigation:                                                              */
+/*    1)  This function MUST be called EXACTLY ONCE AFTER all other ipc_*    */
+/*        functions are called.                                              */
+/*****************************************************************************/
 SBMA_EXTERN int
 ipc_destroy(struct ipc * const ipc)
 {
+  /* No need for intra critical section here because this should only be called
+   * from the ``main'' process, never from threads. */
+
   int ret;
   char fname[FILENAME_MAX];
-
-  ipc->init = 0;
 
   ipc->curpages = ipc->c_mem[ipc->id];
 
@@ -249,30 +246,17 @@ ipc_destroy(struct ipc * const ipc)
   if (-1 == ret && ENOENT != errno)
     return -1;
 
-  if (0 > snprintf(fname, FILENAME_MAX, "/ipc-inter-mtx-%d", ipc->uniq))
-    return -1;
-  ret = sem_close(ipc->inter_mtx);
-  if (-1 == ret)
-    return -1;
-  ret = sem_unlink(fname);
-  if (-1 == ret && ENOENT != errno)
-    return -1;
-  if (0 > snprintf(fname, FILENAME_MAX, "/ipc-done-%d", ipc->uniq))
-    return -1;
-  ret = sem_close(ipc->done);
-  if (-1 == ret)
-    return -1;
-  ret = sem_unlink(fname);
-  if (-1 == ret && ENOENT != errno)
-    return -1;
-  if (0 > snprintf(fname, FILENAME_MAX, "/ipc-sig-%d", ipc->uniq))
-    return -1;
-  ret = sem_close(ipc->sig);
-  if (-1 == ret)
-    return -1;
-  ret = sem_unlink(fname);
-  if (-1 == ret && ENOENT != errno)
-    return -1;
+  #define X(NAME, ...)\
+    if (0 > snprintf(fname, FILENAME_MAX, "/ipc-" #NAME "-%d", ipc->uniq))\
+      return -1;\
+    ret = sem_close(ipc->NAME);\
+    if (-1 == ret)\
+      return -1;\
+    ret = sem_unlink(fname);\
+    if (-1 == ret && ENOENT != errno)\
+      return -1;
+  LIST_OF_SEMAPHORES
+  #undef X
 
   return 0;
 }
@@ -280,39 +264,51 @@ SBMA_EXPORT(internal, int
 ipc_destroy(struct ipc * const ipc));
 
 
+/*****************************************************************************/
+/*  MP-Unsafe race:rw(ipc->flags[ipc->id])                                   */
+/*  MT-Unsafe race:rw(ipc->flags[ipc->id])                                   */
+/*                                                                           */
+/*  Mitigation:                                                              */
+/*    1)  None. ipc->flags[ipc->id] is shared by all threads in a process,   */
+/*        so its value should be updated by a SINGLE thread whenever its     */
+/*        status changes.                                                    */
+/*****************************************************************************/
 SBMA_EXTERN void
 ipc_sigon(struct ipc * const ipc)
 {
-  /* No need for intra critical section here because this should only be called
-   * from the ``main'' process, never from threads. */
-
-  if (1 == ipc->init) {
-    ipc->flags[ipc->id] |= IPC_SIGON;
-  }
+  ipc->flags[ipc->id] |= IPC_SIGON;
 }
 SBMA_EXPORT(internal, void
 ipc_sigon(struct ipc * const ipc));
 
 
+/*****************************************************************************/
+/*  MP-Unsafe race:rw(ipc->flags[ipc->id])                                   */
+/*  MT-Unsafe race:rw(ipc->flags[ipc->id])                                   */
+/*                                                                           */
+/*  Mitigation:                                                              */
+/*    1)  See note in ipc_sigon().                                           */
+/*****************************************************************************/
 SBMA_EXTERN void
 ipc_sigoff(struct ipc * const ipc)
 {
-  /* See note in ipc_sigon. */
-
-  if (1 == ipc->init) {
-    ipc->flags[ipc->id] &= ~IPC_SIGON;
-  }
+  ipc->flags[ipc->id] &= ~IPC_SIGON;
 }
 SBMA_EXPORT(internal, void
 ipc_sigoff(struct ipc * const ipc));
 
 
+/*****************************************************************************/
+/*  MP-Unsafe race:rd(ipc->c_mem[id],ipc->flags[id])                         */
+/*  MT-Unsafe race:rd(ipc->c_mem[id],ipc->flags[id])                         */
+/*                                                                           */
+/*  Mitigation:                                                              */
+/*    1)  Call from within an IPC_INTER_CRITICAL_SECTION or call after       */
+/*        receiving SIGIPC from a process in an IPC_INTER_CRITICAL_SECTION.  */
+/*****************************************************************************/
 SBMA_EXTERN int
 ipc_is_eligible(struct ipc * const ipc, int const id)
 {
-  /* No need for inter or intra critical section because this is only called
-   * when a process is holding the inter_mutex. */
-
   int eligible;
 
   /* Default to ineligible. */
@@ -330,46 +326,80 @@ SBMA_EXPORT(internal, int
 ipc_is_eligible(struct ipc * const ipc, int const id));
 
 
-SBMA_EXTERN int
+/*****************************************************************************/
+/*  MP-Unsafe race:rw(ipc->s_mem,ipc->c_mem[ipc->id])                        */
+/*  MT-Unsafe race:rw(ipc->c_mem[ipc->id],ipc->maxpages)                     */
+/*                                                                           */
+/*  Mitigation:                                                              */
+/*    1)  Call from within an IPC_INTER_CRITICAL_SECTION or call after       */
+/*        receiving SIGIPC from a process in an IPC_INTER_CRITICAL_SECTION.  */
+/*****************************************************************************/
+SBMA_EXTERN void
 ipc_atomic_inc(struct ipc * const ipc, size_t const value)
 {
-  ASSERT(*ipc->smem >= value);
+  ASSERT(*ipc->s_mem >= value);
 
-  *ipc->smem -= value;
+  *ipc->s_mem -= value;
   ipc->c_mem[ipc->id] += value;
 
   if (ipc->c_mem[ipc->id] > ipc->maxpages)
     ipc->maxpages = ipc->c_mem[ipc->id];
-
-  return 0;
 }
-SBMA_EXPORT(internal, int
+SBMA_EXPORT(internal, void
 ipc_atomic_inc(struct ipc * const ipc, size_t const value));
 
 
-SBMA_EXTERN int
+/*****************************************************************************/
+/*  MP-Unsafe race:rw(ipc->s_mem,ipc->c_mem[ipc->id],ipc->d_mem[ipc->id])    */
+/*  MT-Unsafe race:rw(ipc->s_mem,ipc->c_mem[ipc->id])                        */
+/*                                                                           */
+/*  Note:                                                                    */ 
+/*    1)  Only other threads from this process will ever modify              */
+/*        ipc->d_mem[ipc->id], so the IPC_INTRA_CRICITAL_SECTION is          */
+/*        sufficient to make that variable MT-Safe.                          */
+/*                                                                           */
+/*  Mitigation:                                                              */
+/*    1)  Call from within an IPC_INTER_CRITICAL_SECTION or call after       */
+/*        receiving SIGIPC from a process in an IPC_INTER_CRITICAL_SECTION.  */
+/*****************************************************************************/
+SBMA_EXTERN void
 ipc_atomic_dec(struct ipc * const ipc, size_t const c_pages,
                size_t const d_pages)
 {
+  /*=========================================================================*/
+  IPC_INTRA_CRITICAL_SECTION_BEG(ipc);
+  /*=========================================================================*/
+
   ASSERT(ipc->c_mem[ipc->id] >= c_pages);
   ASSERT(ipc->d_mem[ipc->id] >= d_pages);
 
-  *ipc->smem += c_pages;
+  *ipc->s_mem += c_pages;
   ipc->c_mem[ipc->id] -= c_pages;
   ipc->d_mem[ipc->id] -= d_pages;
 
-  return 0;
+  /*=========================================================================*/
+  IPC_INTRA_CRITICAL_SECTION_END(ipc);
+  /*=========================================================================*/
 }
-SBMA_EXPORT(internal, int
+SBMA_EXPORT(internal, void
 ipc_atomic_dec(struct ipc * const ipc, size_t const c_pages,
                size_t const d_pages));
 
 
+/*****************************************************************************/
+/*  MP-Unsafe race:rd(ipc->d_mem[ipc->id])                                   */
+/*  MT-Unsafe race:rd(ipc->d_mem[ipc->id])                                   */
+/*                                                                           */
+/*  Mitigation:                                                              */
+/*    1)  Function is designed such that if a stale ipc->d_mem[ipc->id]      */
+/*        value is read, then resulting execution will still be correct.     */
+/*        Only performance will be impacted, likely negatively.              */
+/*****************************************************************************/
 SBMA_EXTERN int
 ipc_madmit(struct ipc * const ipc, size_t const value, int const admitd)
 {
   int retval, ret, i, ii, id, n_procs;
-  size_t mx_c_mem, mx_d_mem, smem;
+  size_t mx_c_mem, mx_d_mem, s_mem;
   int * pid;
   volatile uint8_t * flags;
   volatile size_t * c_mem, * d_mem;
@@ -388,12 +418,12 @@ ipc_madmit(struct ipc * const ipc, size_t const value, int const admitd)
   pid     = ipc->pid;
   flags   = ipc->flags;
 
-  /*========================================================================*/
-  INTER_CRITICAL_SECTION_BEG(ipc);
-  /*========================================================================*/
+  /*=========================================================================*/
+  IPC_INTER_CRITICAL_SECTION_BEG(ipc);
+  /*=========================================================================*/
 
-  smem = *ipc->smem;
-  while (smem < value) {
+  s_mem = *ipc->s_mem;
+  while (s_mem < value) {
     ii       = -1;
     mx_c_mem = 0;
     mx_d_mem = SIZE_MAX;
@@ -421,8 +451,8 @@ ipc_madmit(struct ipc * const ipc, size_t const value, int const admitd)
        *       2.2) If VMM_ADMITD == admitd, then choose from these, the
        *            candidate which has the least dirty memory.
        */
-      if ((mx_c_mem < value-smem && c_mem[i] > mx_c_mem) ||\
-          (c_mem[i] >= value-smem &&\
+      if ((mx_c_mem < value-s_mem && c_mem[i] > mx_c_mem) ||\
+          (c_mem[i] >= value-s_mem &&\
             ((VMM_ADMITD != admitd && c_mem[i] < mx_c_mem) ||\
              (VMM_ADMITD == admitd && d_mem[i] < mx_d_mem))))
       {
@@ -451,17 +481,16 @@ ipc_madmit(struct ipc * const ipc, size_t const value, int const admitd)
     }
 
     /* Re-cache system memory value. */
-    smem = *ipc->smem;
+    s_mem = *ipc->s_mem;
   }
 
-  ASSERT(smem >= value);
+  ASSERT(s_mem >= value);
 
-  ret = ipc_atomic_inc(ipc, value);
-  ASSERT(0 == ret);
+  ipc_atomic_inc(ipc, value);
 
-  /*========================================================================*/
-  INTER_CRITICAL_SECTION_END(ipc);
-  /*========================================================================*/
+  /*=========================================================================*/
+  IPC_INTER_CRITICAL_SECTION_END(ipc);
+  /*=========================================================================*/
 
   goto RETURN;
 
@@ -476,6 +505,10 @@ ipc_madmit(struct ipc * const ipc, size_t const value,
            int const admitd));
 
 
+/*****************************************************************************/
+/*  MP-Safe                                                                  */
+/*  MT-Safe                                                                  */
+/*****************************************************************************/
 SBMA_EXTERN int
 ipc_mevict(struct ipc * const ipc, size_t const c_pages, size_t const d_pages)
 {
@@ -484,16 +517,15 @@ ipc_mevict(struct ipc * const ipc, size_t const c_pages, size_t const d_pages)
   if (0 == c_pages && 0 == d_pages)
     return 0;
 
-  /*========================================================================*/
-  INTER_CRITICAL_SECTION_BEG(ipc);
-  /*========================================================================*/
+  /*=========================================================================*/
+  IPC_INTER_CRITICAL_SECTION_BEG(ipc);
+  /*=========================================================================*/
 
-  ret = ipc_atomic_dec(ipc, c_pages, d_pages);
-  ASSERT(0 == ret);
+  ipc_atomic_dec(ipc, c_pages, d_pages);
 
-  /*========================================================================*/
-  INTER_CRITICAL_SECTION_END(ipc);
-  /*========================================================================*/
+  /*=========================================================================*/
+  IPC_INTER_CRITICAL_SECTION_END(ipc);
+  /*=========================================================================*/
 
   return 0;
 }
@@ -502,18 +534,29 @@ ipc_mevict(struct ipc * const ipc, size_t const c_pages,
            size_t const d_pages));
 
 
+/*****************************************************************************/
+/*  MP-Unsafe race:wr(ipc->d_mem[ipc->id])                                   */
+/*  MT-Safe                                                                  */
+/*                                                                           */
+/*  Note:                                                                    */ 
+/*    1)  Only other threads from this process will ever modify              */
+/*        ipc->d_mem[ipc->id], so the IPC_INTRA_CRICITAL_SECTION is          */
+/*        sufficient to make that variable MT-Safe.                          */
+/*                                                                           */
+/*  Mitigation:                                                              */
+/*    1)  None. Functions that READ ipc->d_mem[ipc->id] from a different     */
+/*        process SHOULD be aware of the possibility of reading a stale      */
+/*        value.                                                             */
+/*****************************************************************************/
 SBMA_EXTERN int
 ipc_mdirty(struct ipc * const ipc, ssize_t const value)
 {
   if (0 == value)
     return 0;
 
-  /*------------------------------------------------------------------------*/
-  /* Thread critical only because we are modifying only process owned data. */
-  /*------------------------------------------------------------------------*/
-  /*========================================================================*/
-  INTRA_CRITICAL_SECTION_BEG(ipc);
-  /*========================================================================*/
+  /*=========================================================================*/
+  IPC_INTRA_CRITICAL_SECTION_BEG(ipc);
+  /*=========================================================================*/
 
   if (value < 0) {
     ASSERT(ipc->d_mem[ipc->id] >= value);
@@ -521,9 +564,9 @@ ipc_mdirty(struct ipc * const ipc, ssize_t const value)
 
   ipc->d_mem[ipc->id] += value;
 
-  /*========================================================================*/
-  INTRA_CRITICAL_SECTION_END(ipc);
-  /*========================================================================*/
+  /*=========================================================================*/
+  IPC_INTRA_CRITICAL_SECTION_END(ipc);
+  /*=========================================================================*/
 
   return 0;
 }
