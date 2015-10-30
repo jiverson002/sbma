@@ -50,15 +50,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 /****************************************************************************/
 /*! Required function prototypes. */
 /****************************************************************************/
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 int __sbma_mevictall_int(size_t * const, size_t * const, size_t * const);
-
-#ifdef __cplusplus
-}
-#endif
 
 
 /****************************************************************************/
