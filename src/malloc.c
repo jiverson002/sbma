@@ -164,12 +164,12 @@ __sbma_malloc(size_t const __size)
   }
 
   /* Initialize ate lock. */
-  ret = __lock_init(&(ate->lock));
+  ret = lock_init(&(ate->lock));
   if (-1 == ret)
     goto CLEANUP3;
 
   /* Insert ate into mmu. */
-  ret = __mmu_insert_ate(&(vmm.mmu), ate);
+  ret = mmu_insert_ate(&(vmm.mmu), ate);
   if (-1 == ret)
     goto CLEANUP4;
 
@@ -184,7 +184,7 @@ __sbma_malloc(size_t const __size)
    * remove any files created, then return NULL. */
   /**************************************************************************/
   CLEANUP4:
-  ret = __mmu_invalidate_ate(&(vmm.mmu), ate);
+  ret = mmu_invalidate_ate(&(vmm.mmu), ate);
   ASSERT(-1 != ret);
   CLEANUP3:
   ret = close(fd);
@@ -271,12 +271,12 @@ __sbma_free(void * const __ptr)
     retval = -1;
 
   /* Invalidate ate. */
-  ret = __mmu_invalidate_ate(&(vmm.mmu), ate);
+  ret = mmu_invalidate_ate(&(vmm.mmu), ate);
   if (-1 == ret)
     retval = -1;
 
   /* Destory ate lock. */
-  ret = __lock_free(&(ate->lock));
+  ret = lock_free(&(ate->lock));
   if (-1 == ret)
     retval = -1;
 
@@ -443,7 +443,7 @@ __sbma_realloc(void * const __ptr, size_t const __size)
     }
 
     /* remove old ate from mmu */
-    ret = __mmu_invalidate_ate(&(vmm.mmu), ate);
+    ret = mmu_invalidate_ate(&(vmm.mmu), ate);
     if (-1 == ret)
       goto CLEANUP;
 
@@ -578,7 +578,7 @@ __sbma_realloc(void * const __ptr, size_t const __size)
 #endif
 
     /* insert new ate into mmu */
-    ret = __mmu_insert_ate(&(vmm.mmu), ate);
+    ret = mmu_insert_ate(&(vmm.mmu), ate);
     ERRCHK(FATAL, -1 == ret);
 
     /* populate ate structure */
@@ -632,7 +632,7 @@ __sbma_realloc(void * const __ptr, size_t const __size)
     }
     CLEANUP1:
     /* insert old ate back into mmu */
-    ret = __mmu_insert_ate(&(vmm.mmu), ate);
+    ret = mmu_insert_ate(&(vmm.mmu), ate);
     ASSERT(-1 != ret);
     CLEANUP:
     for (;;) {

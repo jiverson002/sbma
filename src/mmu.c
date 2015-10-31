@@ -53,7 +53,7 @@ mmu_init(struct mmu * const mmu, size_t const page_size)
   mmu->page_size = page_size;
 
   /* Initialize mmu lock. */
-  retval = __lock_init(&(mmu->lock));
+  retval = lock_init(&(mmu->lock));
   ERRCHK(RETURN, 0 != retval);
 
   RETURN:
@@ -67,7 +67,7 @@ mmu_init(struct mmu * const mmu, size_t const page_size));
 /*  MT-Invalid                                                               */
 /*                                                                           */
 /*  Mitigation:                                                              */
-/*    1)  This function MUST be called EXACTLY ONCE AFTER all other ipc_*    */
+/*    1)  This function MUST be called EXACTLY ONCE AFTER all other mmu_*    */
 /*        functions are called.                                              */
 /*****************************************************************************/
 SBMA_EXTERN int
@@ -76,7 +76,7 @@ mmu_destroy(struct mmu * const mmu)
   int retval;
 
   /* Destroy mmu lock. */
-  retval = __lock_free(&(mmu->lock));
+  retval = lock_free(&(mmu->lock));
   ERRCHK(RETURN, 0 != retval);
 
   RETURN:
@@ -87,7 +87,11 @@ mmu_destroy(struct mmu * const mmu));
 
 
 /*****************************************************************************/
-/*  MT-Safe                                                                  */
+/*  MT-Unsafe race:ate->*                                                    */
+/*                                                                           */
+/*  Mitigation:                                                              */
+/*    1)  This function is only called from malloc() and realloc(), which    */
+/*        are known to be MT-Unsafe.                                         */
 /*****************************************************************************/
 SBMA_EXTERN int
 mmu_insert_ate(struct mmu * const mmu, struct ate * const ate)
@@ -95,7 +99,7 @@ mmu_insert_ate(struct mmu * const mmu, struct ate * const ate)
   int retval;
 
   /* Acquire mmu lock. */
-  retval = __lock_get(&(mmu->lock));
+  retval = lock_get(&(mmu->lock));
   ERRCHK(RETURN, 0 != retval);
 
   /* Insert at beginning of doubly linked list. */
@@ -112,7 +116,7 @@ mmu_insert_ate(struct mmu * const mmu, struct ate * const ate)
   }
 
   /* Release mmu lock. */
-  retval = __lock_let(&(mmu->lock));
+  retval = lock_let(&(mmu->lock));
   ERRCHK(FATAL, 0 != retval);
 
   /***************************************************************************/
@@ -138,7 +142,11 @@ mmu_insert_ate(struct mmu * const mmu, struct ate * const ate));
 
 
 /*****************************************************************************/
-/*  MT-Safe                                                                  */
+/*  MT-Unsafe race:ate->*                                                    */
+/*                                                                           */
+/*  Mitigation:                                                              */
+/*    1)  This function is only called from malloc(), realloc() and free(),  */
+/*        which are known to be MT-Unsafe.                                   */
 /*****************************************************************************/
 SBMA_EXTERN int
 mmu_invalidate_ate(struct mmu * const mmu, struct ate * const ate)
@@ -146,7 +154,7 @@ mmu_invalidate_ate(struct mmu * const mmu, struct ate * const ate)
   int retval;
 
   /* Acquire mmu lock. */
-  retval = __lock_get(&(mmu->lock));
+  retval = lock_get(&(mmu->lock));
   ERRCHK(RETURN, 0 != retval);
 
   /* Remove from doubly linked list. */
@@ -158,7 +166,7 @@ mmu_invalidate_ate(struct mmu * const mmu, struct ate * const ate)
     ate->next->prev = ate->prev;
 
   /* Release mmu lock. */
-  retval = __lock_let(&(mmu->lock));
+  retval = lock_let(&(mmu->lock));
   ERRCHK(FATAL, 0 != retval);
 
   /***************************************************************************/
@@ -185,38 +193,42 @@ mmu_invalidate_ate(struct mmu * const mmu, struct ate * const ate));
 
 /*****************************************************************************/
 /*  MT-Safe                                                                  */
+/*                                                                           */
+/*  Note:                                                                    */ 
+/*    1)  On success, this function will acquire, but not release the lock   */
+/*        for an ate.                                                        */
 /*****************************************************************************/
 SBMA_EXTERN struct ate *
 mmu_lookup_ate(struct mmu * const mmu, void const * const addr)
 {
   int ret;
   size_t len;
-  void * addr;
+  void * addr_;
   struct ate * ate, * retval;
 
   /* Default return value. */
   retval = (struct ate*)-1;
 
   /* Acquire mmu lock. */
-  ret = __lock_get(&(mmu->lock));
+  ret = lock_get(&(mmu->lock));
   ERRCHK(RETURN, 0 != ret);
 
   /* Search doubly linked list for a ate which contains addr. */
   for (ate=mmu->a_tbl; NULL!=ate; ate=ate->next) {
     len  = ate->n_pages*mmu->page_size;
-    addr = (void*)ate->base;
-    if (addr <= addr && addr < (void*)((uintptr_t)addr+len))
+    addr_ = (void*)ate->base;
+    if (addr_ <= addr && addr < (void*)((uintptr_t)addr_+len))
       break;
   }
 
   /* Acquire ate lock. */
   if (NULL != ate) {
-    ret = __lock_get(&(ate->lock));
+    ret = lock_get(&(ate->lock));
     ERRCHK(REVERT, 0 != ret);
   }
 
   /* Release mmu lock. */
-  ret = __lock_let(&(mmu->lock));
+  ret = lock_let(&(mmu->lock));
   ERRCHK(FATAL, 0 != ret);
 
   /***************************************************************************/
@@ -230,7 +242,7 @@ mmu_lookup_ate(struct mmu * const mmu, void const * const addr)
   /***************************************************************************/
   REVERT:
   /* Release mmu lock. */
-  ret = __lock_let(&(mmu->lock));
+  ret = lock_let(&(mmu->lock));
   ERRCHK(FATAL, 0 != ret);
 
   /***************************************************************************/

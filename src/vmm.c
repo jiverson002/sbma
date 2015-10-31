@@ -52,7 +52,11 @@ int __sbma_mevictall_int(size_t * const, size_t * const, size_t * const);
 /*****************************************************************************/
 /*  Read data from file.                                                     */
 /*                                                                           */
-/*  MT-Safe                                                                  */
+/*  MT-Unsafe race:buf                                                       */
+/*                                                                           */
+/*  Mitigation:                                                              */
+/*    1)  Call only when thread is in possession of ate->lock which          */
+/*        corresponds to the buffer in question.                             */
 /*****************************************************************************/
 SBMA_STATIC int
 vmm_read(int const fd, void * const buf, size_t len, size_t off)
@@ -88,7 +92,11 @@ vmm_read(int const fd, void * const buf, size_t len, size_t off)
 /*****************************************************************************/
 /*  Write data to file.                                                      */
 /*                                                                           */
-/*  MT-Safe                                                                  */
+/*  MT-Unsafe race:buf                                                       */
+/*                                                                           */
+/*  Mitigation:                                                              */
+/*    1)  Call only when thread is in possession of ate->lock which          */
+/*        corresponds to the buffer in question.                             */
 /*****************************************************************************/
 SBMA_STATIC int
 vmm_write(int const fd, void const * const buf, size_t len, size_t off)
@@ -144,7 +152,7 @@ vmm_sigsegv(int const sig, siginfo_t * const si, void * const ctx)
   addr      = (uintptr_t)si->si_addr;
 
   /* lookup allocation table entry */
-  ate = __mmu_lookup_ate(&(vmm.mmu), (void*)addr);
+  ate = mmu_lookup_ate(&(vmm.mmu), (void*)addr);
   ASSERT((struct ate*)-1 != ate);
   ASSERT(NULL != ate);
 
@@ -164,7 +172,7 @@ vmm_sigsegv(int const sig, siginfo_t * const si, void * const ctx)
     ret = __sbma_mtouch(ate, _addr, _len);
     ASSERT(-1 != ret);
 
-    ret = __lock_let(&(ate->lock));
+    ret = lock_let(&(ate->lock));
     ASSERT(-1 != ret);
 
     VMM_INTRA_CRITICAL_SECTION_BEG(&vmm);
@@ -184,7 +192,7 @@ vmm_sigsegv(int const sig, siginfo_t * const si, void * const ctx)
     ASSERT(-1 != ret);
 
     /* release lock on alloction table entry */
-    ret = __lock_let(&(ate->lock));
+    ret = lock_let(&(ate->lock));
     ASSERT(-1 != ret);
 
     /* increase count of dirty pages */
@@ -695,7 +703,7 @@ vmm_init(struct vmm * const vmm, char const * const fstem, int const uniq,
   ERRCHK(FATAL, -1 == retval);
 
   /* Initialize mmu. */
-  retval = __mmu_init(&(vmm->mmu), page_size);
+  retval = mmu_init(&(vmm->mmu), page_size);
   ERRCHK(FATAL, -1 == retval);
 
   /* Initialize ipc. */
@@ -703,7 +711,7 @@ vmm_init(struct vmm * const vmm, char const * const fstem, int const uniq,
   ERRCHK(FATAL, -1 == retval);
 
   /* Initialize vmm lock. */
-  retval = __lock_init(&(vmm->lock));
+  retval = lock_init(&(vmm->lock));
   ERRCHK(FATAL, -1 == retval);
 
   vmm->init = 1;
@@ -761,7 +769,7 @@ vmm_destroy(struct vmm * const vmm)
   ERRCHK(FATAL, -1 == retval);
 
   /* destroy mmu */
-  retval = __mmu_destroy(&(vmm->mmu));
+  retval = mmu_destroy(&(vmm->mmu));
   ERRCHK(RETURN, 0 != retval);
 
   /* destroy ipc */
@@ -769,7 +777,7 @@ vmm_destroy(struct vmm * const vmm)
   ERRCHK(RETURN, 0 != retval);
 
   /* destroy vmm lock */
-  retval = __lock_free(&(vmm->lock));
+  retval = lock_free(&(vmm->lock));
   ERRCHK(RETURN, 0 != retval);
 
   /***************************************************************************/

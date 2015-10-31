@@ -59,18 +59,18 @@ __sbma_init(char const * const __fstem, int const __uniq,
             size_t const __max_mem, int const __opts)
 {
   /* acquire init lock */
-  if (-1 == __lock_get(&init_lock))
+  if (-1 == lock_get(&init_lock))
     return -1;
 
   if (-1 == vmm_init(&vmm, __fstem, __uniq, __page_size, __n_procs,\
       __max_mem, __opts))
   {
-    (void)__lock_let(&init_lock);
+    (void)lock_let(&init_lock);
     return -1;
   }
 
   /* release init lock */
-  if (-1 == __lock_let(&init_lock))
+  if (-1 == lock_let(&init_lock))
     return -1;
 
   return 0;
@@ -106,16 +106,16 @@ SBMA_EXTERN int
 __sbma_destroy(void)
 {
   /* acquire init lock */
-  if (-1 == __lock_get(&init_lock))
+  if (-1 == lock_get(&init_lock))
     return -1;
 
   if (-1 == vmm_destroy(&vmm)) {
-    (void)__lock_let(&init_lock);
+    (void)lock_let(&init_lock);
     return -1;
   }
 
   /* release init lock */
-  if (-1 == __lock_let(&init_lock))
+  if (-1 == lock_let(&init_lock))
     return -1;
 
   return 0;

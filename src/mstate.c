@@ -246,12 +246,12 @@ __sbma_check(char const * const __func, int const __line)
   struct ate * ate;
 
   if (VMM_CHECK == (vmm.opts&VMM_CHECK)) {
-    ret = __lock_get(&(vmm.lock));
+    ret = lock_get(&(vmm.lock));
     if (-1 == ret)
       goto CLEANUP1;
 
     for (ate=vmm.mmu.a_tbl; NULL!=ate; ate=ate->next) {
-      ret = __lock_get(&(ate->lock));
+      ret = lock_get(&(ate->lock));
       if (-1 == ret)
         goto CLEANUP2;
 
@@ -292,7 +292,7 @@ __sbma_check(char const * const __func, int const __line)
         }
       }
 
-      ret = __lock_let(&(ate->lock));
+      ret = lock_let(&(ate->lock));
       if (-1 == ret)
         goto CLEANUP2;
     }
@@ -308,7 +308,7 @@ __sbma_check(char const * const __func, int const __line)
       retval = -1;
     }
 
-    ret = __lock_let(&(vmm.lock));
+    ret = lock_let(&(vmm.lock));
     if (-1 == ret)
       goto CLEANUP1;
   }
@@ -319,10 +319,10 @@ __sbma_check(char const * const __func, int const __line)
   return retval;
 
   CLEANUP2:
-  ret = __lock_let(&(ate->lock));
+  ret = lock_let(&(ate->lock));
   ASSERT(-1 != ret);
   CLEANUP1:
-  ret = __lock_let(&(vmm.lock));
+  ret = lock_let(&(vmm.lock));
   ASSERT(-1 != ret);
   return -1;
 }
@@ -347,7 +347,7 @@ __sbma_mtouch(void * const __ate, void * const __addr, size_t const __len)
   /*========================================================================*/
 
   if (NULL == __ate) {
-    ate = __mmu_lookup_ate(&(vmm.mmu), __addr);
+    ate = mmu_lookup_ate(&(vmm.mmu), __addr);
     if ((struct ate*)-1 == ate || NULL == ate)
       goto ERREXIT;
   }
@@ -377,7 +377,7 @@ __sbma_mtouch(void * const __ate, void * const __addr, size_t const __len)
     goto CLEANUP;
 
   if (NULL == __ate) {
-    ret = __lock_let(&(ate->lock));
+    ret = lock_let(&(ate->lock));
     if (-1 == ret)
       goto CLEANUP;
   }
@@ -396,7 +396,7 @@ __sbma_mtouch(void * const __ate, void * const __addr, size_t const __len)
 
   CLEANUP:
   if (NULL == __ate) {
-    ret = __lock_let(&(ate->lock));
+    ret = lock_let(&(ate->lock));
     ASSERT(-1 != ret);
   }
   ERREXIT:
@@ -439,7 +439,7 @@ __sbma_mtouch_atomic(void * const __addr, size_t const __len, ...)
   _len  = __len;
   va_start(args, __len);
   while (SBMA_ATOMIC_END != _addr) {
-    _ate = __mmu_lookup_ate(&(vmm.mmu), _addr);
+    _ate = mmu_lookup_ate(&(vmm.mmu), _addr);
     if (NULL == _ate)
       goto NEXT;
     else if ((struct ate*)-1 == _ate)
@@ -471,7 +471,7 @@ __sbma_mtouch_atomic(void * const __addr, size_t const __len, ...)
             len[i]  = max_+mxlen_-min_;
           }
           /* release the most recent recursive lock on _ate */
-          ret = __lock_let(&(_ate->lock));
+          ret = lock_let(&(_ate->lock));
           if (-1 == ret)
             goto CLEANUP;
         }
@@ -547,7 +547,7 @@ __sbma_mtouch_atomic(void * const __addr, size_t const __len, ...)
       goto CLEANUP;
     numrd += _numrd;
 
-    ret = __lock_let(&(ate[i]->lock));
+    ret = lock_let(&(ate[i]->lock));
     if (-1 == ret)
       goto CLEANUP;
 
@@ -569,7 +569,7 @@ __sbma_mtouch_atomic(void * const __addr, size_t const __len, ...)
   CLEANUP:
   for (i=0; i<num; ++i) {
     if (NULL != ate[i]) {
-      ret = __lock_let(&(ate[i]->lock));
+      ret = lock_let(&(ate[i]->lock));
       ASSERT(-1 != ret);
     }
   }
@@ -596,13 +596,13 @@ __sbma_mtouchall(void)
   TIMER_START(&(tmr));
   /*========================================================================*/
 
-  ret = __lock_get(&(vmm.lock));
+  ret = lock_get(&(vmm.lock));
   if (-1 == ret)
     goto ERREXIT;
 
   /* Lock all allocations */
   for (ate=vmm.mmu.a_tbl; NULL!=ate; ate=ate->next) {
-    ret = __lock_get(&(ate->lock));
+    ret = lock_get(&(ate->lock));
     if (-1 == ret) {
       stop = ate;
       goto CLEANUP;
@@ -642,7 +642,7 @@ __sbma_mtouchall(void)
     ASSERT(ate->l_pages == ate->n_pages);
     ASSERT(ate->c_pages == ate->n_pages);
 
-    ret = __lock_let(&(ate->lock));
+    ret = lock_let(&(ate->lock));
     if (-1 == ret)
       goto CLEANUP;
     numrd += retval;
@@ -650,7 +650,7 @@ __sbma_mtouchall(void)
     start = ate->next;
   }
 
-  ret = __lock_let(&(vmm.lock));
+  ret = lock_let(&(vmm.lock));
   if (-1 == ret)
     goto CLEANUP;
 
@@ -668,10 +668,10 @@ __sbma_mtouchall(void)
 
   CLEANUP:
   for (ate=start; stop!=ate; ate=ate->next) {
-    ret = __lock_let(&(ate->lock));
+    ret = lock_let(&(ate->lock));
     ASSERT(-1 != ret);
   }
-  ret = __lock_let(&(vmm.lock));
+  ret = lock_let(&(vmm.lock));
   ASSERT(-1 != ret);
   ERREXIT:
   return -1;
@@ -692,7 +692,7 @@ __sbma_mclear(void * const __addr, size_t const __len)
 
   SBMA_STATE_CHECK();
 
-  ate = __mmu_lookup_ate(&(vmm.mmu), __addr);
+  ate = mmu_lookup_ate(&(vmm.mmu), __addr);
   if ((struct ate*)-1 == ate || NULL == ate)
     goto ERREXIT;
 
@@ -705,7 +705,7 @@ __sbma_mclear(void * const __addr, size_t const __len)
     goto CLEANUP;
 
   /* update memory file */
-  /* TODO can this be outside of __lock_let? */
+  /* TODO can this be outside of lock_let? */
   for (;;) {
     ret = ipc_mevict(&(vmm.ipc), 0, d_pages);
     if (-1 == ret)
@@ -714,7 +714,7 @@ __sbma_mclear(void * const __addr, size_t const __len)
       break;
   }
 
-  ret = __lock_let(&(ate->lock));
+  ret = lock_let(&(ate->lock));
   if (-1 == ret)
     goto CLEANUP;
 
@@ -722,7 +722,7 @@ __sbma_mclear(void * const __addr, size_t const __len)
   return 0;
 
   CLEANUP:
-  ret = __lock_let(&(ate->lock));
+  ret = lock_let(&(ate->lock));
   ASSERT(-1 != ret);
   ERREXIT:
   return -1;
@@ -743,7 +743,7 @@ __sbma_mclearall(void)
 
   SBMA_STATE_CHECK();
 
-  ret = __lock_get(&(vmm.lock));
+  ret = lock_get(&(vmm.lock));
   if (-1 == ret)
     goto ERREXIT;
 
@@ -757,7 +757,7 @@ __sbma_mclearall(void)
     ASSERT(0 == ate->d_pages);
   }
 
-  ret = __lock_let(&(vmm.lock));
+  ret = lock_let(&(vmm.lock));
   if (-1 == ret)
     goto CLEANUP;
 
@@ -769,7 +769,7 @@ __sbma_mclearall(void)
   return 0;
 
   CLEANUP:
-  ret = __lock_let(&(vmm.lock));
+  ret = lock_let(&(vmm.lock));
   ASSERT(-1 != ret);
   ERREXIT:
   return -1;
@@ -795,7 +795,7 @@ __sbma_mevict(void * const __addr, size_t const __len)
   TIMER_START(&(tmr));
   /*========================================================================*/
 
-  ate = __mmu_lookup_ate(&(vmm.mmu), __addr);
+  ate = mmu_lookup_ate(&(vmm.mmu), __addr);
   if ((struct ate*)-1 == ate || NULL == ate)
     goto ERREXIT;
 
@@ -808,7 +808,7 @@ __sbma_mevict(void * const __addr, size_t const __len)
     goto CLEANUP;
 
   /* update memory file */
-  /* TODO can this be outside of __lock_let? */
+  /* TODO can this be outside of lock_let? */
   for (;;) {
     ret = ipc_mevict(&(vmm.ipc), c_pages, d_pages);
     if (-1 == ret)
@@ -817,7 +817,7 @@ __sbma_mevict(void * const __addr, size_t const __len)
       break;
   }
 
-  ret = __lock_let(&(ate->lock));
+  ret = lock_let(&(ate->lock));
   if (-1 == ret)
     goto CLEANUP;
 
@@ -834,7 +834,7 @@ __sbma_mevict(void * const __addr, size_t const __len)
   return c_pages;
 
   CLEANUP:
-  ret = __lock_let(&(ate->lock));
+  ret = lock_let(&(ate->lock));
   ASSERT(-1 != ret);
   ERREXIT:
   return -1;
@@ -854,12 +854,12 @@ __sbma_mevictall_int(size_t * const __c_pages, size_t * const __d_pages,
   ssize_t ret;
   struct ate * ate;
 
-  ret = __lock_get(&(vmm.lock));
+  ret = lock_get(&(vmm.lock));
   if (-1 == ret)
     goto ERREXIT;
 
   for (ate=vmm.mmu.a_tbl; NULL!=ate; ate=ate->next) {
-    ret = __lock_get(&(ate->lock));
+    ret = lock_get(&(ate->lock));
     if (-1 == ret)
       goto CLEANUP1;
     c_pages += ate->c_pages;
@@ -872,12 +872,12 @@ __sbma_mevictall_int(size_t * const __c_pages, size_t * const __d_pages,
     ASSERT(0 == ate->l_pages);
     ASSERT(0 == ate->c_pages);
     ASSERT(0 == ate->d_pages);
-    ret = __lock_let(&(ate->lock));
+    ret = lock_let(&(ate->lock));
     if (-1 == ret)
       goto CLEANUP2;
   }
 
-  ret = __lock_let(&(vmm.lock));
+  ret = lock_let(&(vmm.lock));
   if (-1 == ret)
     goto CLEANUP1;
 
@@ -888,10 +888,10 @@ __sbma_mevictall_int(size_t * const __c_pages, size_t * const __d_pages,
   return 0;
 
   CLEANUP2:
-  ret = __lock_let(&(ate->lock));
+  ret = lock_let(&(ate->lock));
   ASSERT(-1 != ret);
   CLEANUP1:
-  ret = __lock_let(&(vmm.lock));
+  ret = lock_let(&(vmm.lock));
   ASSERT(-1 != ret);
   ERREXIT:
   return -1;
@@ -960,20 +960,20 @@ __sbma_mexist(void const * const __addr)
   if (0 == vmm.init)
     return 0;
 
-  ate = __mmu_lookup_ate(&(vmm.mmu), __addr);
+  ate = mmu_lookup_ate(&(vmm.mmu), __addr);
   if ((struct ate*)-1 == ate)
     return -1;
   else if (NULL == ate)
     return 0;
 
-  ret = __lock_let(&(ate->lock));
+  ret = lock_let(&(ate->lock));
   if (-1 == ret)
     goto CLEANUP;
 
   return 1;
 
   CLEANUP:
-  ret = __lock_let(&(ate->lock));
+  ret = lock_let(&(ate->lock));
   ASSERT(-1 != ret);
   return -1;
 }

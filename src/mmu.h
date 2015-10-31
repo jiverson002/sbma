@@ -28,16 +28,16 @@ THE SOFTWARE.
 #include <stdint.h> /* uint8_t, uintptr_t */
 
 
-/****************************************************************************/
-/*!
- * Memory management unit page status code bits:
+/*****************************************************************************/
+/*
+ *  Memory management unit page status code bits:
  *
- *   bit 0 ==    0: zero fill allowed       1: page must be filled from disk
- *   bit 1 ==    0: page is resident        1: page is not resident
- *   bit 2 ==    0: page is unmodified      1: page is dirty
- *   bit 3 ==    0: page has been charged   1: page is uncharged
+ *    bit 0 ==    0: zero fill allowed       1: page must be filled from disk
+ *    bit 1 ==    0: page is resident        1: page is not resident
+ *    bit 2 ==    0: page is unmodified      1: page is dirty
+ *    bit 3 ==    0: page has been charged   1: page is uncharged
  */
-/****************************************************************************/
+/*****************************************************************************/
 enum mmu_status_code
 {
   MMU_ZFILL = 1 << 0,
@@ -47,9 +47,9 @@ enum mmu_status_code
 };
 
 
-/****************************************************************************/
-/*! Allocation table entry. */
-/****************************************************************************/
+/*****************************************************************************/
+/*  Allocation table entry. */
+/*****************************************************************************/
 struct ate
 {
   size_t n_pages;           /*!< number of pages allocated */
@@ -66,9 +66,9 @@ struct ate
 };
 
 
-/****************************************************************************/
-/*! Memory management unit. */
-/****************************************************************************/
+/*****************************************************************************/
+/*  Memory management unit. */
+/*****************************************************************************/
 struct mmu
 {
   size_t page_size;     /*!< page size */
@@ -83,39 +83,39 @@ struct mmu
 extern "C" {
 #endif
 
-/****************************************************************************/
-/*! Initialize the memory management unit. */
-/****************************************************************************/
+/*****************************************************************************/
+/*  Initialize the memory management unit. */
+/*****************************************************************************/
 int
-__mmu_init(struct mmu * const __mmu, size_t const __page_size);
+mmu_init(struct mmu * const mmu, size_t const page_size);
 
 
-/****************************************************************************/
-/*! Destroy the memory management unit. */
-/****************************************************************************/
+/*****************************************************************************/
+/*  Destroy the memory management unit. */
+/*****************************************************************************/
 int
-__mmu_destroy(struct mmu * const __mmu);
+mmu_destroy(struct mmu * const mmu);
 
 
-/****************************************************************************/
-/*! Insert __ate into __mmu. */
-/****************************************************************************/
+/*****************************************************************************/
+/*  Insert ate into mmu. */
+/*****************************************************************************/
 int
-__mmu_insert_ate(struct mmu * const __mmu, struct ate * const __ate);
+mmu_insert_ate(struct mmu * const mmu, struct ate * const ate);
 
 
-/****************************************************************************/
-/*! Invalidate __ate. */
-/****************************************************************************/
+/*****************************************************************************/
+/*  Invalidate ate. */
+/*****************************************************************************/
 int
-__mmu_invalidate_ate(struct mmu * const __mmu, struct ate * const __ate);
+mmu_invalidate_ate(struct mmu * const mmu, struct ate * const ate);
 
 
-/****************************************************************************/
-/*! Find the ate, if one exists, that contains __addr. */
-/****************************************************************************/
+/*****************************************************************************/
+/*  Find the ate, if one exists, that contains addr. */
+/*****************************************************************************/
 struct ate *
-__mmu_lookup_ate(struct mmu * const __mmu, void const * const __addr);
+mmu_lookup_ate(struct mmu * const mmu, void const * const addr);
 
 #ifdef __cplusplus
 }

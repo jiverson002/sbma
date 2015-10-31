@@ -55,7 +55,7 @@ __sbma_mallopt(int const __param, int const __value)
 {
   int ret;
 
-  ret = __lock_get(&(vmm.lock));
+  ret = lock_get(&(vmm.lock));
   if (-1 == ret)
     return -1;
 
@@ -70,14 +70,14 @@ __sbma_mallopt(int const __param, int const __value)
     goto CLEANUP;
   }
 
-  ret = __lock_let(&(vmm.lock));
+  ret = lock_let(&(vmm.lock));
   if (-1 == ret)
     goto CLEANUP;
 
   return 0;
 
   CLEANUP:
-  ret = __lock_let(&(vmm.lock));
+  ret = lock_let(&(vmm.lock));
   ASSERT(-1 != ret);
   return -1;
 }

@@ -1,31 +1,28 @@
 /*
-Copyright (c) 2015, Jeremy Iverson
-All rights reserved.
+Copyright (c) 2015 Jeremy Iverson
 
-Redistribution and use in source and binary forms, with or without
-modification, are permitted provided that the following conditions are met:
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
 
-1. Redistributions of source code must retain the above copyright notice, this
-list of conditions and the following disclaimer.
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
 
-2. Redistributions in binary form must reproduce the above copyright notice,
-this list of conditions and the following disclaimer in the documentation
-and/or other materials provided with the distribution.
-
-THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
-AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
-IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
-DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
-FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
-DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
-SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
-CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
-OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
 */
 
+
 #ifndef _GNU_SOURCE
-# define _GNU_SOURCE
+# define _GNU_SOURCE 1
 #endif
 
 
@@ -43,14 +40,19 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 # include "common.h"
 # include "lock.h"
 
+
 # if defined(DEADLOCK) && DEADLOCK > 0
 #   define DL_PRINTF(...) do { printf(__VA_ARGS__); fflush(stdout); } while (0)
 # else
 #   define DL_PRINTF(...) (void)0
 # endif
 
+
+/*****************************************************************************/
+/*  MT-Invalid                                                               */
+/*****************************************************************************/
 SBMA_EXTERN int
-__lock_init(pthread_mutex_t * const __lock)
+lock_init(pthread_mutex_t * const lock)
 {
   int retval;
   pthread_mutexattr_t attr;
@@ -61,22 +63,25 @@ __lock_init(pthread_mutex_t * const __lock)
   retval = pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE);
   ERRCHK(RETURN, 0 != retval);
 
-  retval = pthread_mutex_init(__lock, &attr);
+  retval = pthread_mutex_init(lock, &attr);
   ERRCHK(RETURN, 0 != retval);
 
   RETURN:
   return retval;
 }
 SBMA_EXPORT(internal, int
-__lock_init(pthread_mutex_t * const __lock));
+lock_init(pthread_mutex_t * const lock));
 
 
+/*****************************************************************************/
+/*  MT-Invalid                                                               */
+/*****************************************************************************/
 SBMA_EXTERN int
-__lock_free(pthread_mutex_t * const __lock)
+lock_free(pthread_mutex_t * const lock)
 {
   int retval;
 
-  retval = pthread_mutex_destroy(__lock);
+  retval = pthread_mutex_destroy(lock);
   ERRCHK(RETURN, 0 != retval);
 
   RETURN:
@@ -85,12 +90,15 @@ __lock_free(pthread_mutex_t * const __lock)
   return retval;
 }
 SBMA_EXPORT(internal, int
-__lock_free(pthread_mutex_t * const __lock));
+lock_free(pthread_mutex_t * const lock));
 
 
+/*****************************************************************************/
+/*  MT-Safe                                                                  */
+/*****************************************************************************/
 SBMA_EXTERN int
-__lock_get_int(char const * const __func, int const __line,
-               char const * const __lock_str, pthread_mutex_t * const __lock)
+lock_get_int(char const * const func, int const line,
+               char const * const lock_str, pthread_mutex_t * const lock)
 {
   int retval;
 #if defined(DEADLOCK) && DEADLOCK > 0
@@ -101,53 +109,55 @@ __lock_get_int(char const * const __func, int const __line,
 
   ts.tv_sec += 10;
 
-  retval = pthread_mutex_timedlock(__lock, &ts);
+  retval = pthread_mutex_timedlock(lock, &ts);
   ERRCHK(RETURN, 0 != retval && ETIMEDOUT != retval);
 
   if (ETIMEDOUT == retval) {
     DL_PRINTF("[%5d] Mutex lock timed-out %s:%d %s (%p)\n",\
-              (int)syscall(SYS_gettid), __func, __line, __lock_str,\
-              (void*)(__lock));
+              (int)syscall(SYS_gettid), func, line, lock_str, (void*)(lock));
 #endif
 
-  retval = pthread_mutex_lock(__lock);
+  retval = pthread_mutex_lock(lock);
   ERRCHK(RETURN, 0 != retval);
 
 #if defined(DEADLOCK) && DEADLOCK > 0
   }
 #endif
 
-  DL_PRINTF("[%5d] mtx get %s:%d %s (%p)\n", (int)syscall(SYS_gettid),\
-    __func, __line, __lock_str, (void*)(__lock));
+  DL_PRINTF("[%5d] mtx get %s:%d %s (%p)\n", (int)syscall(SYS_gettid), func,\
+     line, lock_str, (void*)(lock));
 
   RETURN:
   return retval;
 }
 SBMA_EXPORT(internal, int
-__lock_get_int(char const * const __func, int const __line,
-               char const * const __lock_str,
-               pthread_mutex_t * const __lock));
+lock_get_int(char const * const func, int const line,
+               char const * const lock_str,
+               pthread_mutex_t * const lock));
 
 
+/*****************************************************************************/
+/*  MT-Safe                                                                  */
+/*****************************************************************************/
 SBMA_EXTERN int
-__lock_let_int(char const * const __func, int const __line,
-               char const * const __lock_str, pthread_mutex_t * const __lock)
+lock_let_int(char const * const func, int const line,
+               char const * const lock_str, pthread_mutex_t * const lock)
 {
   int retval;
 
-  retval = pthread_mutex_unlock(__lock);
+  retval = pthread_mutex_unlock(lock);
   ERRCHK(RETURN, 0 != retval);
 
-  DL_PRINTF("[%5d] mtx let %s:%d %s (%p)\n", (int)syscall(SYS_gettid),\
-    __func, __line, __lock_str, (void*)(__lock));
+  DL_PRINTF("[%5d] mtx let %s:%d %s (%p)\n", (int)syscall(SYS_gettid), func,\
+    line, lock_str, (void*)(lock));
 
   RETURN:
   return retval;
 }
 SBMA_EXPORT(internal, int
-__lock_let_int(char const * const __func, int const __line,
-               char const * const __lock_str,
-               pthread_mutex_t * const __lock));
+lock_let_int(char const * const func, int const line,
+               char const * const lock_str,
+               pthread_mutex_t * const lock));
 #else
 /* Required incase USE_THREAD is not defined, so that this is not an empty
  * translation unit. */
