@@ -50,6 +50,10 @@ THE SOFTWARE.
 
 /*****************************************************************************/
 /*  MT-Invalid                                                               */
+/*                                                                           */
+/*  Mitigation:                                                              */
+/*    1)  This function MUST be called EXACTLY ONCE BEFORE any other lock_*  */
+/*        function is called.                                                */
 /*****************************************************************************/
 SBMA_EXTERN int
 lock_init(pthread_mutex_t * const lock)
@@ -75,6 +79,10 @@ lock_init(pthread_mutex_t * const lock));
 
 /*****************************************************************************/
 /*  MT-Invalid                                                               */
+/*                                                                           */
+/*  Mitigation:                                                              */
+/*    1)  This function MUST be called EXACTLY ONCE AFTER all other lock_*   */
+/*        functions are called.                                              */
 /*****************************************************************************/
 SBMA_EXTERN int
 lock_free(pthread_mutex_t * const lock)
