@@ -26,7 +26,7 @@ THE SOFTWARE.
 #endif
 
 
-#include <errno.h>     /* errno */
+#include <errno.h>     /* errno library */
 #include <fcntl.h>     /* O_RDWR, O_CREAT, O_EXCL */
 #include <signal.h>    /* struct sigaction, siginfo_t, sigemptyset, sigaction */
 #include <stdint.h>    /* uint8_t, uintptr_t */

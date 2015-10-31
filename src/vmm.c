@@ -1,31 +1,28 @@
 /*
-Copyright (c) 2015, Jeremy Iverson
-All rights reserved.
+Copyright (c) 2015 Jeremy Iverson
 
-Redistribution and use in source and binary forms, with or without
-modification, are permitted provided that the following conditions are met:
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
 
-1. Redistributions of source code must retain the above copyright notice, this
-list of conditions and the following disclaimer.
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
 
-2. Redistributions in binary form must reproduce the above copyright notice,
-this list of conditions and the following disclaimer in the documentation
-and/or other materials provided with the distribution.
-
-THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
-AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
-IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
-DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
-FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
-DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
-SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
-CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
-OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
 */
 
+
 #ifndef _GNU_SOURCE
-# define _GNU_SOURCE
+# define _GNU_SOURCE 1
 #endif
 
 
@@ -38,7 +35,6 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <string.h>   /* strncpy */
 #include <sys/mman.h> /* mmap, mremap, madvise, mprotect */
 #include <time.h>     /* struct timespec */
-#include <unistd.h>   /* sysconf */
 #include "common.h"
 #include "ipc.h"
 #include "lock.h"
@@ -47,86 +43,91 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "vmm.h"
 
 
-/****************************************************************************/
-/*! Required function prototypes. */
-/****************************************************************************/
+/*****************************************************************************/
+/*  Required function prototypes. */
+/*****************************************************************************/
 int __sbma_mevictall_int(size_t * const, size_t * const, size_t * const);
 
 
-/****************************************************************************/
-/*! Read data from file. */
-/****************************************************************************/
+/*****************************************************************************/
+/*  Read data from file.                                                     */
+/*                                                                           */
+/*  MT-Safe                                                                  */
+/*****************************************************************************/
 SBMA_STATIC int
-__vmm_read(int const __fd, void * const __buf, size_t __len, size_t __off)
+vmm_read(int const fd, void * const buf, size_t len, size_t off)
 {
-  ssize_t len;
-  char * buf = (char*)__buf;
+  ssize_t len_;
+  char * buf_ = (char*)buf;
 
 #ifndef HAVE_PREAD
-  if (-1 == lseek(__fd, __off, SEEK_SET))
+  if (-1 == lseek(fd, off, SEEK_SET))
     return -1;
 #endif
 
   do {
 #ifdef HAVE_PREAD
-    if (-1 == (len=libc_pread(__fd, buf, __len, __off)))
+    if (-1 == (len_=libc_pread(fd, buf_, len, off)))
       return -1;
-    __off += len;
+    off += len_;
 #else
-    if (-1 == (len=libc_read(__fd, buf, __len)))
+    if (-1 == (len_=libc_read(fd, buf_, len)))
       return -1;
 #endif
 
-    ASSERT(0 != len);
+    ASSERT(0 != len_);
 
-    buf += len;
-    __len -= len;
-  } while (__len > 0);
+    buf_ += len_;
+    len -= len_;
+  } while (len > 0);
 
   return 0;
 }
 
 
-/****************************************************************************/
-/*! Write data to file. */
-/****************************************************************************/
+/*****************************************************************************/
+/*  Write data to file.                                                      */
+/*                                                                           */
+/*  MT-Safe                                                                  */
+/*****************************************************************************/
 SBMA_STATIC int
-__vmm_write(int const __fd, void const * const __buf, size_t __len,
-            size_t __off)
+vmm_write(int const fd, void const * const buf, size_t len, size_t off)
 {
-  ssize_t len;
-  char * buf = (char*)__buf;
+  ssize_t len_;
+  char * buf_ = (char*)buf;
 
 #ifndef HAVE_PWRITE
-  if (-1 == lseek(__fd, __off, SEEK_SET))
+  if (-1 == lseek(fd, off, SEEK_SET))
     return -1;
 #endif
 
   do {
 #ifdef HAVE_PWRITE
-    if (-1 == (len=libc_pwrite(__fd, buf, __len, __off)))
+    if (-1 == (len_=libc_pwrite(fd, buf_, len, off)))
       return -1;
-    __off += len;
+    off += len_;
 #else
-    if (-1 == (len=libc_write(__fd, buf, __len)))
+    if (-1 == (len_=libc_write(fd, buf_, len)))
       return -1;
 #endif
 
-    ASSERT(0 != len);
+    ASSERT(0 != len_);
 
-    buf += len;
-    __len -= len;
-  } while (__len > 0);
+    buf_ += len_;
+    len -= len;
+  } while (len > 0);
 
   return 0;
 }
 
 
-/****************************************************************************/
-/*! SIGSEGV handler. */
-/****************************************************************************/
+/*****************************************************************************/
+/*  SIGSEGV handler.                                                         */
+/*                                                                           */
+/*  MT-Safe                                                                  */
+/*****************************************************************************/
 SBMA_STATIC void
-__vmm_sigsegv(int const sig, siginfo_t * const si, void * const ctx)
+vmm_sigsegv(int const sig, siginfo_t * const si, void * const ctx)
 {
   int ret;
   size_t ip, page_size, _len;
@@ -200,11 +201,13 @@ __vmm_sigsegv(int const sig, siginfo_t * const si, void * const ctx)
 }
 
 
-/****************************************************************************/
-/*! SIGIPC handler. */
-/****************************************************************************/
+/*****************************************************************************/
+/*  SIGIPC handler.                                                          */
+/*                                                                           */
+/*  MT-Safe                                                                  */
+/*****************************************************************************/
 SBMA_STATIC void
-__vmm_sigipc(int const sig, siginfo_t * const si, void * const ctx)
+vmm_sigipc(int const sig, siginfo_t * const si, void * const ctx)
 {
   int ret;
   size_t c_pages, d_pages, numwr;
@@ -261,64 +264,71 @@ __vmm_sigipc(int const sig, siginfo_t * const si, void * const ctx)
 }
 
 
+/*****************************************************************************/
+/*  Read pages without zfill flag from file and update their memory          */
+/*  protections.                                                             */
+/*                                                                           */
+/*  MT-Unsafe race:ate->*                                                    */
+/*                                                                           */
+/*  Mitigation:                                                              */
+/*    1)  Call only when thread is in possession of ate->lock.               */
+/*****************************************************************************/
 SBMA_EXTERN ssize_t
-__vmm_swap_i(struct ate * const __ate, size_t const __beg, size_t const __num,
-             int const __ghost)
+vmm_swap_i(struct ate * const ate, size_t const beg, size_t const num,
+           int const ghost)
 {
-  int ret, fd;
+  int retval, ret, fd;
   size_t ip, page_size, end, numrd=0;
   ssize_t ipfirst;
   uintptr_t addr, raddr;
   volatile uint8_t * flags;
   char fname[FILENAME_MAX];
 
-  /* error check input values */
-  ASSERT(NULL != __ate);
-  ASSERT(__num <= __ate->n_pages);
-  ASSERT(__beg <= __ate->n_pages-__num);
+  /* Sanity check input values. */
+  ASSERT(NULL != ate);
+  ASSERT(num <= ate->n_pages);
+  ASSERT(beg <= ate->n_pages-num);
 
-  /* shortcut */
-  if (0 == __num)
-    return 0;
+  /* Default return value. */
+  retval = 0;
 
-  /* shortcut by checking to see if all pages are already loaded */
-  if (__ate->l_pages == __ate->n_pages) {
-    ASSERT(__ate->c_pages == __ate->n_pages);
-    return 0;
+  /* Shortcut if no pages in range. */
+  if (0 == num)
+    goto RETURN;
+  /* Shortcut if all pages are already loaded. */
+  if (ate->l_pages == ate->n_pages) {
+    ASSERT(ate->c_pages == ate->n_pages);
+    goto RETURN;
   }
 
-  /* setup local variables */
+  /* Setup local variables. */
   page_size = vmm.page_size;
-  flags     = __ate->flags;
-  end       = __beg+__num;
+  flags     = ate->flags;
+  end       = beg+num;
 
-  if (VMM_GHOST == __ghost) {
-    /* mmap temporary memory with write protection for loading from disk */
-    addr = (uintptr_t)mmap(NULL, __num*page_size, PROT_WRITE, SBMA_MMAP_FLAG,\
+  if (VMM_GHOST == ghost) {
+    /* mmap temporary memory with write protection for loading from disk. */
+    addr = (uintptr_t)mmap(NULL, num*page_size, PROT_WRITE, SBMA_MMAP_FLAG,\
       -1, 0);
-    if ((uintptr_t)MAP_FAILED == addr)
-      goto ERREXIT;
+    ERRCHK(ERREXIT, (uintptr_t)MAP_FAILED == addr);
   }
   else {
-    addr = __ate->base+(__beg*page_size);
-    ret  = mprotect((void*)addr, __num*page_size, PROT_WRITE);
-    if (-1 == ret)
-      goto ERREXIT;
+    addr = ate->base+(beg*page_size);
+    ret  = mprotect((void*)addr, num*page_size, PROT_WRITE);
+    ERRCHK(ERREXIT, -1 == ret);
   }
 
-  /* compute file name */
+  /* Compute file name. */
   ret = snprintf(fname, FILENAME_MAX, "%s%d-%zx", vmm.fstem, (int)getpid(),\
-    (uintptr_t)__ate);
-  if (0 > ret)
-    goto ERREXIT;
-  /* open the file for reading */
+    (uintptr_t)ate);
+  ERRCHK(ERREXIT, 0 > ret);
+  /* Open the file for reading. */
   fd = libc_open(fname, O_RDONLY);
-  if (-1 == fd)
-    goto ERREXIT;
+  ERRCHK(ERREXIT, -1 == fd);
 
-  /* load only those pages which were previously written to disk and have
-   * not since been dumped */
-  for (ipfirst=-1,ip=__beg; ip<=end; ++ip) {
+  /* Load only those pages which were previously written to disk and have
+   * not since been dumped. */
+  for (ipfirst=-1,ip=beg; ip<=end; ++ip) {
     if (ip != end &&\
         (MMU_RSDNT == (flags[ip]&MMU_RSDNT)) &&  /* not resident */\
         (MMU_ZFILL == (flags[ip]&MMU_ZFILL)) &&  /* cannot be zero filled */\
@@ -328,24 +338,22 @@ __vmm_swap_i(struct ate * const __ate, size_t const __beg, size_t const __num,
         ipfirst = ip;
     }
     else if (-1 != ipfirst) {
-      ret = __vmm_read(fd, (void*)(addr+((ipfirst-__beg)*page_size)),
+      ret = vmm_read(fd, (void*)(addr+((ipfirst-beg)*page_size)),
         (ip-ipfirst)*page_size, ipfirst*page_size);
-      if (-1 == ret)
-        goto ERREXIT;
+      ERRCHK(ERREXIT, -1 == ret);
 
-      if (VMM_GHOST == __ghost) {
-        /* give read permission to temporary pages */
-        ret = mprotect((void*)(addr+((ipfirst-__beg)*page_size)),\
+      if (VMM_GHOST == ghost) {
+        /* Give read permission to temporary pages. */
+        ret = mprotect((void*)(addr+((ipfirst-beg)*page_size)),\
           (ip-ipfirst)*page_size, PROT_READ);
-        if (-1 == ret)
-          goto ERREXIT;
-        /* remap temporary pages into persistent memory */
-        raddr = (uintptr_t)mremap((void*)(addr+((ipfirst-__beg)*page_size)),\
+        ERRCHK(ERREXIT, -1 == ret);
+
+        /* mremap temporary pages into persistent memory. */
+        raddr = (uintptr_t)mremap((void*)(addr+((ipfirst-beg)*page_size)),\
           (ip-ipfirst)*page_size, (ip-ipfirst)*page_size,\
           MREMAP_MAYMOVE|MREMAP_FIXED,\
-          (void*)(__ate->base+(ipfirst*page_size)));
-        if (MAP_FAILED == (void*)raddr)
-          goto ERREXIT;
+          (void*)(ate->base+(ipfirst*page_size)));
+        ERRCHK(ERREXIT, MAP_FAILED == (void*)raddr);
       }
 
       numrd += (ip-ipfirst);
@@ -355,12 +363,12 @@ __vmm_swap_i(struct ate * const __ate, size_t const __beg, size_t const __num,
 
     if (ip != end) {
       if (MMU_RSDNT == (flags[ip]&MMU_RSDNT)) { /* not resident */
-        ASSERT(__ate->l_pages < __ate->n_pages);
-        __ate->l_pages++;
+        ASSERT(ate->l_pages < ate->n_pages);
+        ate->l_pages++;
 
         if (MMU_CHRGD == (flags[ip]&MMU_CHRGD)) { /* not charged */
-          ASSERT(__ate->c_pages < __ate->n_pages);
-          __ate->c_pages++;
+          ASSERT(ate->c_pages < ate->n_pages);
+          ate->c_pages++;
         }
 
         /* flag: 0*0* */
@@ -372,99 +380,115 @@ __vmm_swap_i(struct ate * const __ate, size_t const __beg, size_t const __num,
     }
   }
 
-  /* close file */
+  /* Close file. */
   ret = close(fd);
-  if (-1 == ret)
-    goto ERREXIT;
+  ERRCHK(ERREXIT, -1 == ret);
 
-  if (VMM_GHOST == __ghost) {
-    /* unmap any remaining temporary pages */
-    ret = munmap((void*)addr, __num*page_size);
-    if (-1 == ret)
-      goto ERREXIT;
+  if (VMM_GHOST == ghost) {
+    /* munmap any remaining temporary pages. */
+    ret = munmap((void*)addr, num*page_size);
+    ERRCHK(ERREXIT, -1 == ret);
   }
   else {
-    /* update protection of temporary mapping to read-only */
-    ret = mprotect((void*)addr, __num*page_size, PROT_READ);
-    if (-1 == ret)
-      goto ERREXIT;
+    /* Update protection of temporary mapping to read-only. */
+    ret = mprotect((void*)addr, num*page_size, PROT_READ);
+    ERRCHK(ERREXIT, -1 == ret);
 
-    /* update protection of temporary mapping and copy data for any dirty pages
-     * */
-    for (ip=__beg; ip<end; ++ip) {
+    /* Update protection of temporary mapping and copy data for any dirty
+     * pages. */
+    for (ip=beg; ip<end; ++ip) {
       if (MMU_DIRTY == (flags[ip]&MMU_DIRTY)) {
-        ret = mprotect((void*)(addr+((ip-__beg)*page_size)), page_size,\
+        ret = mprotect((void*)(addr+((ip-beg)*page_size)), page_size,\
           PROT_READ|PROT_WRITE);
-        if (-1 == ret)
-          goto ERREXIT;
+        ERRCHK(ERREXIT, -1 == ret);
       }
     }
   }
 
-  /* return the number of pages read from disk */
-  return numrd;
+  /***************************************************************************/
+  /* Successful exit -- return numrd. */
+  /***************************************************************************/
+  retval = numrd;
+  goto RETURN;
 
+  /***************************************************************************/
+  /* Error exit -- return -1. */
+  /***************************************************************************/
   ERREXIT:
-  return -1;
+  retval = -1;
+
+  /***************************************************************************/
+  /* Return point -- return. */
+  /***************************************************************************/
+  RETURN:
+  return retval;
+
 }
 SBMA_EXPORT(internal, ssize_t
-__vmm_swap_i(struct ate * const __ate, size_t const __beg, size_t const __num,
-             int const __ghost));
+vmm_swap_i(struct ate * const ate, size_t const beg, size_t const num,
+           int const ghost));
 
 
+/*****************************************************************************/
+/*  Write dirty pages to file, remove zfill flag from those pages, and       */
+/*  update their memory protections.                                         */
+/*                                                                           */
+/*  MT-Unsafe race:ate->*                                                    */
+/*                                                                           */
+/*  Mitigation:                                                              */
+/*    1)  Call only when thread is in possession of ate->lock.               */
+/*****************************************************************************/
 SBMA_EXTERN ssize_t
-__vmm_swap_o(struct ate * const __ate, size_t const __beg, size_t const __num)
+vmm_swap_o(struct ate * const ate, size_t const beg, size_t const num)
 {
-  int ret, fd;
+  int retval, ret, fd;
   size_t ip, page_size, end, numwr=0;
   ssize_t ipfirst;
   uintptr_t addr;
   volatile uint8_t * flags;
   char fname[FILENAME_MAX];
 
-  /* error check input values */
-  ASSERT(NULL != __ate);
-  ASSERT(__num <= __ate->n_pages);
-  ASSERT(__beg <= __ate->n_pages-__num);
+  /* Sanity check input values. */
+  ASSERT(NULL != ate);
+  ASSERT(num <= ate->n_pages);
+  ASSERT(beg <= ate->n_pages-num);
 
-  /* shortcut */
-  if (0 == __num)
-    return 0;
+  /* Default return value. */
+  retval = 0;
 
-  /* shortcut by checking to see if no pages are currently loaded */
-  /* TODO: if we track the number of dirty pages, then this can do a better
-   * job of short-cutting */
-  if (0 == __ate->c_pages)
-    return 0;
+  /* Shortcut if no pages in range. */
+  if (0 == num)
+    goto RETURN;
+  /* Shortcut if there are no dirty pages. */
+  if (0 == ate->d_pages)
+    goto RETURN;
 
-  /* setup local variables */
+  /* Setup local variables. */
   page_size = vmm.page_size;
-  addr      = __ate->base;
-  flags     = __ate->flags;
-  end       = __beg+__num;
+  addr      = ate->base;
+  flags     = ate->flags;
+  end       = beg+num;
 
-  /* compute file name */
+  /* Generate file name. */
   ret = snprintf(fname, FILENAME_MAX, "%s%d-%zx", vmm.fstem, (int)getpid(),\
-    (uintptr_t)__ate);
-  if (0 > ret)
-    goto ERREXIT;
-  /* open the file for writing */
+    (uintptr_t)ate);
+  ERRCHK(ERREXIT, 0 > ret);
+  /* Open the file for writing. */
   fd = libc_open(fname, O_WRONLY);
-  if (-1 == fd)
-    goto ERREXIT;
+  ERRCHK(ERREXIT, -1 == fd);
 
-  /* go over the pages and write the ones that have changed. perform the
-   * writes in contigous chunks of changed pages. */
-  for (ipfirst=-1,ip=__beg; ip<=end; ++ip) {
+  /* Go over the pages and write the ones that have changed. Perform the writes
+   * in contigous chunks of changed pages. */
+  for (ipfirst=-1,ip=beg; ip<=end; ++ip) {
     if (ip != end && (MMU_DIRTY != (flags[ip]&MMU_DIRTY))) {
       if (MMU_CHRGD != (flags[ip]&MMU_CHRGD)) {   /* is charged */
         if (MMU_RSDNT != (flags[ip]&MMU_RSDNT)) { /* is resident */
-          ASSERT(__ate->l_pages > 0);
-          __ate->l_pages--;
+          ASSERT(ate->l_pages > 0);
+          ate->l_pages--;
         }
 
-        ASSERT(__ate->c_pages > 0);
-        __ate->c_pages--;
+        ASSERT(ate->c_pages > 0);
+        ate->c_pages--;
       }
 
       /* flag: 101* */
@@ -479,24 +503,23 @@ __vmm_swap_o(struct ate * const __ate, size_t const __beg, size_t const __num)
       ASSERT(MMU_RSDNT != (flags[ip]&MMU_RSDNT)); /* is resident */
       ASSERT(MMU_CHRGD != (flags[ip]&MMU_CHRGD)); /* is charged */
 
-      ASSERT(__ate->l_pages > 0);
-      __ate->l_pages--;
-      ASSERT(__ate->c_pages > 0);
-      __ate->c_pages--;
+      ASSERT(ate->l_pages > 0);
+      ate->l_pages--;
+      ASSERT(ate->c_pages > 0);
+      ate->c_pages--;
 
       /* flag: 1011 */
       flags[ip] = (MMU_CHRGD|MMU_RSDNT|MMU_ZFILL);
     }
     else if (-1 != ipfirst) {
-      ret = __vmm_write(fd, (void*)(addr+(ipfirst*page_size)),\
+      ret = vmm_write(fd, (void*)(addr+(ipfirst*page_size)),\
         (ip-ipfirst)*page_size, ipfirst*page_size);
-      if (-1 == ret)
-        goto ERREXIT;
+      ERRCHK(ERREXIT, -1 == ret);
 
       numwr += (ip-ipfirst);
 
-      ASSERT(__ate->d_pages >= ip-ipfirst);
-      __ate->d_pages -= (ip-ipfirst);
+      ASSERT(ate->d_pages >= ip-ipfirst);
+      ate->d_pages -= (ip-ipfirst);
 
       ipfirst = -1;
     }
@@ -504,204 +527,268 @@ __vmm_swap_o(struct ate * const __ate, size_t const __beg, size_t const __num)
 
   /* close file */
   ret = close(fd);
-  if (-1 == ret)
-    goto ERREXIT;
+  ERRCHK(ERREXIT, -1 == ret);
 
   if (VMM_MLOCK == (vmm.opts&VMM_MLOCK)) {
     /* unlock the memory from RAM */
-    ret = munlock((void*)(addr+(__beg*page_size)), __num*page_size);
-    if (-1 == ret)
-      goto ERREXIT;
+    ret = munlock((void*)(addr+(beg*page_size)), num*page_size);
+    ERRCHK(ERREXIT, -1 == ret);
   }
 
   /* update its protection to none */
-  ret = mprotect((void*)(addr+(__beg*page_size)), __num*page_size, PROT_NONE);
-  if (-1 == ret)
-    goto ERREXIT;
+  ret = mprotect((void*)(addr+(beg*page_size)), num*page_size, PROT_NONE);
+  ERRCHK(ERREXIT, -1 == ret);
 
   /* unlock the memory, update its protection to none and advise kernel to
    * release its associated resources */
-  ret = madvise((void*)(addr+(__beg*page_size)), __num*page_size,\
+  ret = madvise((void*)(addr+(beg*page_size)), num*page_size,\
     MADV_DONTNEED);
-  if (-1 == ret)
-    goto ERREXIT;
+  ERRCHK(ERREXIT, -1 == ret);
 
-  /* return the number of pages written to disk */
-  return numwr;
+  /***************************************************************************/
+  /* Successful exit -- return numwr. */
+  /***************************************************************************/
+  retval = numwr;
+  goto RETURN;
 
+  /***************************************************************************/
+  /* Error exit -- return -1. */
+  /***************************************************************************/
   ERREXIT:
-  return -1;
+  retval = -1;
+
+  /***************************************************************************/
+  /* Return point -- return. */
+  /***************************************************************************/
+  RETURN:
+  return retval;
 }
 SBMA_EXPORT(internal, ssize_t
-__vmm_swap_o(struct ate * const __ate, size_t const __beg,
-             size_t const __num));
+vmm_swap_o(struct ate * const ate, size_t const beg, size_t const num));
 
 
+/*****************************************************************************/
+/*  Clear dirty and zfill flags from a range of pages, changing memory       */
+/*  protections when necessary.                                              */
+/*                                                                           */
+/*  MT-Unsafe race:ate->*                                                    */
+/*                                                                           */
+/*  Mitigation:                                                              */
+/*    1)  Call only when thread is in possession of ate->lock.               */
+/*****************************************************************************/
 SBMA_EXTERN ssize_t
-__vmm_swap_x(struct ate * const __ate, size_t const __beg,
-             size_t const __num)
+vmm_swap_x(struct ate * const ate, size_t const beg, size_t const num)
 {
-  int ret;
+  int retval, ret;
   size_t ip, end, page_size;
   volatile uint8_t * flags;
 
-  /* error check input values */
-  ASSERT(NULL != __ate);
-  ASSERT(__num <= __ate->n_pages);
-  ASSERT(__beg <= __ate->n_pages-__num);
+  /* Sanity check input values. */
+  ASSERT(NULL != ate);
+  ASSERT(num <= ate->n_pages);
+  ASSERT(beg <= ate->n_pages-num);
 
-  /* shortcut */
-  if (0 == __num)
-    return 0;
+  /* Default return value. */
+  retval = 0;
 
-  /* shortcut by checking to see if no pages are currently loaded */
-  /* TODO: if we track the number of dirty pages, then this can do a better
-   * job of short-cutting */
-  if (0 == __ate->l_pages)
-    return 0;
+  /* Shortcut if no pages in range. */
+  if (0 == num)
+    goto RETURN;
+  /* Shortcut if there are no dirty pages. */
+  if (0 == ate->d_pages)
+    goto RETURN;
 
-  /* setup local variables */
+  /* Setup local variables. */
   page_size = vmm.page_size;
-  flags     = __ate->flags;
-  end       = __beg+__num;
+  flags     = ate->flags;
+  end       = beg+num;
 
-  for (ip=__beg; ip<end; ++ip) {
+  /* Loop over pages, updating protection for dirty pages and removing
+   * dirty/zfill flags from all pages. */
+  for (ip=beg; ip<end; ++ip) {
     if (MMU_DIRTY == (flags[ip]&MMU_DIRTY)) {
-      ret = mprotect((void*)(__ate->base+(ip*page_size)), page_size,\
+      ret = mprotect((void*)(ate->base+(ip*page_size)), page_size,\
         PROT_READ);
-      if (-1 == ret)
-        return -1;
+      ERRCHK(ERREXIT, -1 == ret);
 
-      ASSERT(__ate->d_pages > 0);
-      __ate->d_pages--;
+      ASSERT(ate->d_pages > 0);
+      ate->d_pages--;
     }
+
     /* flag: *0*0 */
     flags[ip] &= ~(MMU_DIRTY|MMU_ZFILL);
   }
 
-  return 0;
+  /***************************************************************************/
+  /* Successful exit -- return 0. */
+  /***************************************************************************/
+  goto RETURN;
+
+  /***************************************************************************/
+  /* Error exit -- return -1. */
+  /***************************************************************************/
+  ERREXIT:
+  retval = -1;
+
+  /***************************************************************************/
+  /* Return point -- return. */
+  /***************************************************************************/
+  RETURN:
+  return retval;
 }
 SBMA_EXPORT(internal, ssize_t
-__vmm_swap_x(struct ate * const __ate, size_t const __beg,
-             size_t const __num));
+vmm_swap_x(struct ate * const ate, size_t const beg, size_t const num));
 
 
 SBMA_EXTERN int
-__vmm_init(struct vmm * const __vmm, char const * const __fstem,
-           int const __uniq, size_t const __page_size, int const __n_procs,
-           size_t const __max_mem, int const __opts)
-{
-  if (1 == __vmm->init)
-    return 0;
-  if (VMM_INVLD == (__opts&VMM_INVLD))
-    return -1;
-
-  /* set page size */
-  __vmm->page_size = __page_size;
-
-  /* set options */
-  __vmm->opts = __opts;
-
-  /* initialize statistics */
-  __vmm->numipc   = 0;
-  __vmm->numhipc  = 0;
-  __vmm->numrf    = 0;
-  __vmm->numwf    = 0;
-  __vmm->numrd    = 0;
-  __vmm->numwr    = 0;
-  __vmm->tmrrd    = 0.0;
-  __vmm->tmrwr    = 0.0;
-  __vmm->numpages = 0;
-
-  /* copy file stem */
-  strncpy(__vmm->fstem, __fstem, FILENAME_MAX-1);
-  __vmm->fstem[FILENAME_MAX-1] = '\0';
-
-  /* setup the signal handler for SIGSEGV */
-  __vmm->act_segv.sa_flags     = SA_SIGINFO;
-  __vmm->act_segv.sa_sigaction = __vmm_sigsegv;
-  if (-1 == sigemptyset(&(__vmm->act_segv.sa_mask)))
-    return -1;
-  if (-1 == sigaction(SIGSEGV, &(__vmm->act_segv), &(__vmm->oldact_segv)))
-    return -1;
-
-  /* setup the signal handler for SIGIPC */
-  __vmm->act_ipc.sa_flags     = SA_SIGINFO;
-  __vmm->act_ipc.sa_sigaction = __vmm_sigipc;
-  if (-1 == sigemptyset(&(__vmm->act_ipc.sa_mask)))
-    return -1;
-  if (-1 == sigaction(SIGIPC, &(__vmm->act_ipc), &(__vmm->oldact_ipc)))
-    return -1;
-
-  /* initialize mmu */
-  if (-1 == __mmu_init(&(__vmm->mmu), __page_size))
-    return -1;
-
-  /* initialize ipc */
-  if (-1 == ipc_init(&(__vmm->ipc), __uniq, __n_procs, __max_mem))
-    return -1;
-
-  /* initialize vmm lock */
-  if (-1 == __lock_init(&(__vmm->lock)))
-    return -1;
-
-  vmm.init = 1;
-
-  return 0;
-}
-SBMA_EXPORT(internal, int
-__vmm_init(struct vmm * const __vmm, char const * const __fstem,
-           int const __uniq, size_t const __page_size, int const __n_procs,
-           size_t const __max_mem, int const __opts));
-
-
-SBMA_EXTERN int
-__vmm_destroy(struct vmm * const __vmm)
+vmm_init(struct vmm * const vmm, char const * const fstem, int const uniq,
+         size_t const page_size, int const n_procs, size_t const max_mem,
+         int const opts)
 {
   int retval;
 
-  if (0 == vmm.init)
-    return 0;
+  /* Default return value. */
+  retval = 0;
 
-  vmm.init = 0;
+  /* Shortcut if vmm is already initialized. */
+  if (1 == vmm->init)
+    goto RETURN;
+  /* Shortcut if opts are invalid. */
+  if (VMM_INVLD == (opts&VMM_INVLD))
+    goto ERREXIT;
 
-  /* reset signal handler for SIGSEGV */
-  retval = sigaction(SIGSEGV, &(__vmm->oldact_segv), NULL);
+  /* Set page size. */
+  vmm->page_size = page_size;
+
+  /* Set options. */
+  vmm->opts = opts;
+
+  /* Initialize statistics. */
+  vmm->numipc   = 0;
+  vmm->numhipc  = 0;
+  vmm->numrf    = 0;
+  vmm->numwf    = 0;
+  vmm->numrd    = 0;
+  vmm->numwr    = 0;
+  vmm->tmrrd    = 0.0;
+  vmm->tmrwr    = 0.0;
+  vmm->numpages = 0;
+
+  /* Copy file stem. */
+  strncpy(vmm->fstem, fstem, FILENAME_MAX-1);
+  vmm->fstem[FILENAME_MAX-1] = '\0';
+
+  /* Setup the signal handler for SIGSEGV. */
+  vmm->act_segv.sa_flags     = SA_SIGINFO;
+  vmm->act_segv.sa_sigaction = vmm_sigsegv;
+  retval = sigemptyset(&(vmm->act_segv.sa_mask));
+  ERRCHK(FATAL, -1 == retval);
+  retval = sigaction(SIGSEGV, &(vmm->act_segv), &(vmm->oldact_segv));
   ERRCHK(FATAL, -1 == retval);
 
-  /* reset signal handler for SIGIPC */
-  retval = sigaction(SIGIPC, &(__vmm->oldact_ipc), NULL);
+  /* Setup the signal handler for SIGIPC. */
+  vmm->act_ipc.sa_flags     = SA_SIGINFO;
+  vmm->act_ipc.sa_sigaction = vmm_sigipc;
+  retval = sigemptyset(&(vmm->act_ipc.sa_mask));
+  ERRCHK(FATAL, -1 == retval);
+  retval = sigaction(SIGIPC, &(vmm->act_ipc), &(vmm->oldact_ipc));
   ERRCHK(FATAL, -1 == retval);
 
-  /* destroy mmu */
-  retval = __mmu_destroy(&(__vmm->mmu));
-  ERRCHK(RETURN, 0 != retval);
+  /* Initialize mmu. */
+  retval = __mmu_init(&(vmm->mmu), page_size);
+  ERRCHK(FATAL, -1 == retval);
 
-  /* destroy ipc */
-  if (-1 == ipc_destroy(&(__vmm->ipc)))
-    return -1;
+  /* Initialize ipc. */
+  retval = ipc_init(&(vmm->ipc), uniq, n_procs, max_mem);
+  ERRCHK(FATAL, -1 == retval);
 
-  /* destroy vmm lock */
-  retval = __lock_free(&(__vmm->lock));
-  ERRCHK(RETURN, 0 != retval);
+  /* Initialize vmm lock. */
+  retval = __lock_init(&(vmm->lock));
+  ERRCHK(FATAL, -1 == retval);
 
-  /**************************************************************************/
+  vmm->init = 1;
+
+  /***************************************************************************/
   /* Successful exit -- return 0. */
-  /**************************************************************************/
+  /***************************************************************************/
   goto RETURN;
 
-  /**************************************************************************/
+  /***************************************************************************/
+  /* Error exit -- return -1. */
+  /***************************************************************************/
+  ERREXIT:
+  retval = -1;
+
+  /***************************************************************************/
   /* Return point -- return. */
-  /**************************************************************************/
+  /***************************************************************************/
   RETURN:
   return retval;
 
-  /**************************************************************************/
+  /***************************************************************************/
   /* Fatal error -- an unrecoverable error has occured, the runtime state
    * cannot be reverted to its state before this function was called. */
-  /**************************************************************************/
+  /***************************************************************************/
   FATAL:
   FATAL_ABORT(errno);
 }
 SBMA_EXPORT(internal, int
-__vmm_destroy(struct vmm * const __vmm));
+vmm_init(struct vmm * const vmm, char const * const fstem, int const uniq,
+         size_t const page_size, int const n_procs, size_t const max_mem,
+         int const opts));
+
+
+SBMA_EXTERN int
+vmm_destroy(struct vmm * const vmm)
+{
+  int retval;
+
+  /* Default return value. */
+  retval = 0;
+
+  /* Shortcut if vmm is not initialized. */
+  if (0 == vmm->init)
+    goto RETURN;
+
+  vmm->init = 0;
+
+  /* reset signal handler for SIGSEGV */
+  retval = sigaction(SIGSEGV, &(vmm->oldact_segv), NULL);
+  ERRCHK(FATAL, -1 == retval);
+
+  /* reset signal handler for SIGIPC */
+  retval = sigaction(SIGIPC, &(vmm->oldact_ipc), NULL);
+  ERRCHK(FATAL, -1 == retval);
+
+  /* destroy mmu */
+  retval = __mmu_destroy(&(vmm->mmu));
+  ERRCHK(RETURN, 0 != retval);
+
+  /* destroy ipc */
+  retval = ipc_destroy(&(vmm->ipc));
+  ERRCHK(RETURN, 0 != retval);
+
+  /* destroy vmm lock */
+  retval = __lock_free(&(vmm->lock));
+  ERRCHK(RETURN, 0 != retval);
+
+  /***************************************************************************/
+  /* Successful exit -- return 0. */
+  /***************************************************************************/
+  goto RETURN;
+
+  /***************************************************************************/
+  /* Return point -- return. */
+  /***************************************************************************/
+  RETURN:
+  return retval;
+
+  /***************************************************************************/
+  /* Fatal error -- an unrecoverable error has occured, the runtime state
+   * cannot be reverted to its state before this function was called. */
+  /***************************************************************************/
+  FATAL:
+  FATAL_ABORT(errno);
+}
+SBMA_EXPORT(internal, int
+vmm_destroy(struct vmm * const vmm));

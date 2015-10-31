@@ -106,7 +106,7 @@ __sbma_mtouch_int(struct ate * const __ate, void * const __addr,
   beg = ((uintptr_t)__addr-__ate->base)/page_size;
   end = 1+(((uintptr_t)__addr+__len-__ate->base-1)/page_size);
 
-  numrd = __vmm_swap_i(__ate, beg, end-beg, vmm.opts&VMM_GHOST);
+  numrd = vmm_swap_i(__ate, beg, end-beg, vmm.opts&VMM_GHOST);
   if (-1 == numrd)
     return -1;
   return VMM_TO_SYS(numrd);
@@ -163,7 +163,7 @@ __sbma_mevict_int(struct ate * const __ate, void * const __addr,
   beg = ((uintptr_t)__addr-__ate->base)/page_size;
   end = 1+(((uintptr_t)__addr+__len-__ate->base-1)/page_size);
 
-  numwr = __vmm_swap_o(__ate, beg, end-beg);
+  numwr = vmm_swap_o(__ate, beg, end-beg);
   if (-1 == numwr)
     return -1;
   return VMM_TO_SYS(numwr);
@@ -225,7 +225,7 @@ __sbma_mclear_int(struct ate * const __ate, void * const __addr,
   end = ((uintptr_t)__addr+__len-__ate->base)/page_size;
 
   if (beg <= end) {
-    ret = __vmm_swap_x(__ate, beg, end-beg);
+    ret = vmm_swap_x(__ate, beg, end-beg);
     if (-1 == ret)
       return -1;
   }

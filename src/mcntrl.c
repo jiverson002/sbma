@@ -62,7 +62,7 @@ __sbma_init(char const * const __fstem, int const __uniq,
   if (-1 == __lock_get(&init_lock))
     return -1;
 
-  if (-1 == __vmm_init(&vmm, __fstem, __uniq, __page_size, __n_procs,\
+  if (-1 == vmm_init(&vmm, __fstem, __uniq, __page_size, __n_procs,\
       __max_mem, __opts))
   {
     (void)__lock_let(&init_lock);
@@ -109,7 +109,7 @@ __sbma_destroy(void)
   if (-1 == __lock_get(&init_lock))
     return -1;
 
-  if (-1 == __vmm_destroy(&vmm)) {
+  if (-1 == vmm_destroy(&vmm)) {
     (void)__lock_let(&init_lock);
     return -1;
   }
