@@ -1,0 +1,40 @@
+It may be useful to share work on a local branch with other developers. For
+example, a large change that might not yet be ready for primetime, but could
+benefit for some eyeballs, might be useful to share on a branch rather than the
+master repo. To create a branch on the master Horde repository, and have your
+existing topic branch track the remove branch, use the following command:
+
+git push -u origin [localbranch]
+
+Now all users can track this branch by issuing this command:
+
+git checkout -t origin/[remote branch name]
+
+You should keep the topic branch up to date with the main branch during
+development so that your topic branch only contains the changes related to the
+work being done in the branch:
+
+        git checkout [topic]
+        git merge master
+        # resolve conflicts
+        git pull --rebase
+        git push
+
+
+During a long-lived branch, you will find yourself having to resolve the same
+conflicts over and over again. The git tool git-rerere is designed to help
+alleviate this issue. Once it is enabled, it will automatically take note of
+each conflict, and it's eventual resolution. Next time git comes across the
+exact same conflict, it will know on it's own how to resolve it. To use this
+feature you must explicitly enable it:
+
+            git config --global rerere.enabled 1
+
+
+To delete the remote branch, issue this command:
+
+git push origin :[branchname]
+
+To remove stale remote branches from your branch list, issue this command:
+
+git remote prune origin
