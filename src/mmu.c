@@ -1,31 +1,28 @@
 /*
-Copyright (c) 2015, Jeremy Iverson
-All rights reserved.
+Copyright (c) 2015 Jeremy Iverson
 
-Redistribution and use in source and binary forms, with or without
-modification, are permitted provided that the following conditions are met:
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
 
-1. Redistributions of source code must retain the above copyright notice, this
-list of conditions and the following disclaimer.
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
 
-2. Redistributions in binary form must reproduce the above copyright notice,
-this list of conditions and the following disclaimer in the documentation
-and/or other materials provided with the distribution.
-
-THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
-AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
-IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
-DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
-FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
-DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
-SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
-CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
-OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
 */
 
+
 #ifndef _GNU_SOURCE
-# define _GNU_SOURCE
+# define _GNU_SOURCE 1
 #endif
 
 
@@ -36,139 +33,161 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "mmu.h"
 
 
+
+/*****************************************************************************/
+/*  MT-Invalid                                                               */
+/*                                                                           */
+/*  Mitigation:                                                              */
+/*    1)  This function MUST be called EXACTLY ONCE BEFORE any other mmu_*   */
+/*        function is called.                                                */
+/*****************************************************************************/
 SBMA_EXTERN int
-__mmu_init(struct mmu * const __mmu, size_t const __page_size)
+mmu_init(struct mmu * const mmu, size_t const page_size)
 {
   int retval;
 
-  /* clear pointer */
-  __mmu->a_tbl = NULL;
+  /* Clear pointer. */
+  mmu->a_tbl = NULL;
 
-  /* set mmu page size */
-  __mmu->page_size = __page_size;
+  /* Set mmu page size. */
+  mmu->page_size = page_size;
 
-  /* initialize mmu lock */
-  retval = __lock_init(&(__mmu->lock));
+  /* Initialize mmu lock. */
+  retval = __lock_init(&(mmu->lock));
   ERRCHK(RETURN, 0 != retval);
 
   RETURN:
   return retval;
 }
 SBMA_EXPORT(internal, int
-__mmu_init(struct mmu * const __mmu, size_t const __page_size));
+mmu_init(struct mmu * const mmu, size_t const page_size));
 
 
+/*****************************************************************************/
+/*  MT-Invalid                                                               */
+/*                                                                           */
+/*  Mitigation:                                                              */
+/*    1)  This function MUST be called EXACTLY ONCE AFTER all other ipc_*    */
+/*        functions are called.                                              */
+/*****************************************************************************/
 SBMA_EXTERN int
-__mmu_destroy(struct mmu * const __mmu)
+mmu_destroy(struct mmu * const mmu)
 {
   int retval;
 
-  /* destroy mmu lock */
-  retval = __lock_free(&(__mmu->lock));
+  /* Destroy mmu lock. */
+  retval = __lock_free(&(mmu->lock));
   ERRCHK(RETURN, 0 != retval);
 
   RETURN:
   return retval;
-
-  if (NULL == __mmu) {}
 }
 SBMA_EXPORT(internal, int
-__mmu_destroy(struct mmu * const __mmu));
+mmu_destroy(struct mmu * const mmu));
 
 
+/*****************************************************************************/
+/*  MT-Safe                                                                  */
+/*****************************************************************************/
 SBMA_EXTERN int
-__mmu_insert_ate(struct mmu * const __mmu, struct ate * const __ate)
+mmu_insert_ate(struct mmu * const mmu, struct ate * const ate)
 {
   int retval;
 
-  /* Acquire lock */
-  retval = __lock_get(&(__mmu->lock));
+  /* Acquire mmu lock. */
+  retval = __lock_get(&(mmu->lock));
   ERRCHK(RETURN, 0 != retval);
 
-  /* Insert at beginning of doubly linked list */
-  if (NULL == __mmu->a_tbl) {
-    __mmu->a_tbl = __ate;
-    __ate->prev  = NULL;
-    __ate->next  = NULL;
+  /* Insert at beginning of doubly linked list. */
+  if (NULL == mmu->a_tbl) {
+    mmu->a_tbl = ate;
+    ate->prev  = NULL;
+    ate->next  = NULL;
   }
   else {
-    __ate->prev        = __mmu->a_tbl->prev;
-    __ate->next        = __mmu->a_tbl;
-    __mmu->a_tbl->prev = __ate;
-    __mmu->a_tbl       = __ate;
+    ate->prev        = mmu->a_tbl->prev;
+    ate->next        = mmu->a_tbl;
+    mmu->a_tbl->prev = ate;
+    mmu->a_tbl       = ate;
   }
 
-  /* Release lock */
-  retval = __lock_let(&(__mmu->lock));
+  /* Release mmu lock. */
+  retval = __lock_let(&(mmu->lock));
   ERRCHK(FATAL, 0 != retval);
 
-  /**************************************************************************/
+  /***************************************************************************/
   /* Successful exit -- return 0. */
-  /**************************************************************************/
+  /***************************************************************************/
   goto RETURN;
 
-  /**************************************************************************/
+  /***************************************************************************/
   /* Return point -- return. */
-  /**************************************************************************/
+  /***************************************************************************/
   RETURN:
   return retval;
 
-  /**************************************************************************/
+  /***************************************************************************/
   /* Fatal error -- an unrecoverable error has occured, the runtime state
    * cannot be reverted to its state before this function was called. */
-  /**************************************************************************/
+  /***************************************************************************/
   FATAL:
   FATAL_ABORT(retval);
 }
 SBMA_EXPORT(internal, int
-__mmu_insert_ate(struct mmu * const __mmu, struct ate * const __ate));
+mmu_insert_ate(struct mmu * const mmu, struct ate * const ate));
 
 
+/*****************************************************************************/
+/*  MT-Safe                                                                  */
+/*****************************************************************************/
 SBMA_EXTERN int
-__mmu_invalidate_ate(struct mmu * const __mmu, struct ate * const __ate)
+mmu_invalidate_ate(struct mmu * const mmu, struct ate * const ate)
 {
   int retval;
 
-  /* Acquire lock */
-  retval = __lock_get(&(__mmu->lock));
+  /* Acquire mmu lock. */
+  retval = __lock_get(&(mmu->lock));
   ERRCHK(RETURN, 0 != retval);
 
   /* Remove from doubly linked list. */
-  if (NULL == __ate->prev)
-    __mmu->a_tbl = __ate->next;
+  if (NULL == ate->prev)
+    mmu->a_tbl = ate->next;
   else
-    __ate->prev->next = __ate->next;
-  if (NULL != __ate->next)
-    __ate->next->prev = __ate->prev;
+    ate->prev->next = ate->next;
+  if (NULL != ate->next)
+    ate->next->prev = ate->prev;
 
-  /* Release lock */
-  retval = __lock_let(&(__mmu->lock));
+  /* Release mmu lock. */
+  retval = __lock_let(&(mmu->lock));
   ERRCHK(FATAL, 0 != retval);
 
-  /**************************************************************************/
+  /***************************************************************************/
   /* Successful exit -- return 0. */
-  /**************************************************************************/
+  /***************************************************************************/
   goto RETURN;
 
-  /**************************************************************************/
+  /***************************************************************************/
   /* Return point -- return. */
-  /**************************************************************************/
+  /***************************************************************************/
   RETURN:
   return retval;
 
-  /**************************************************************************/
+  /***************************************************************************/
   /* Fatal error -- an unrecoverable error has occured, the runtime state
    * cannot be reverted to its state before this function was called. */
-  /**************************************************************************/
+  /***************************************************************************/
   FATAL:
   FATAL_ABORT(retval);
 }
 SBMA_EXPORT(internal, int
-__mmu_invalidate_ate(struct mmu * const __mmu, struct ate * const __ate));
+mmu_invalidate_ate(struct mmu * const mmu, struct ate * const ate));
 
 
+/*****************************************************************************/
+/*  MT-Safe                                                                  */
+/*****************************************************************************/
 SBMA_EXTERN struct ate *
-__mmu_lookup_ate(struct mmu * const __mmu, void const * const __addr)
+mmu_lookup_ate(struct mmu * const mmu, void const * const addr)
 {
   int ret;
   size_t len;
@@ -178,53 +197,54 @@ __mmu_lookup_ate(struct mmu * const __mmu, void const * const __addr)
   /* Default return value. */
   retval = (struct ate*)-1;
 
-  /* Acquire lock. */
-  ret = __lock_get(&(__mmu->lock));
+  /* Acquire mmu lock. */
+  ret = __lock_get(&(mmu->lock));
   ERRCHK(RETURN, 0 != ret);
 
-  /* Search doubly linked list for a ate which contains __addr. */
-  for (ate=__mmu->a_tbl; NULL!=ate; ate=ate->next) {
-    len  = ate->n_pages*__mmu->page_size;
+  /* Search doubly linked list for a ate which contains addr. */
+  for (ate=mmu->a_tbl; NULL!=ate; ate=ate->next) {
+    len  = ate->n_pages*mmu->page_size;
     addr = (void*)ate->base;
-    if (addr <= __addr && __addr < (void*)((uintptr_t)addr+len))
+    if (addr <= addr && addr < (void*)((uintptr_t)addr+len))
       break;
   }
 
-  /* Lock ate. */
+  /* Acquire ate lock. */
   if (NULL != ate) {
     ret = __lock_get(&(ate->lock));
     ERRCHK(REVERT, 0 != ret);
   }
 
-  /* Release lock. */
-  ret = __lock_let(&(__mmu->lock));
+  /* Release mmu lock. */
+  ret = __lock_let(&(mmu->lock));
   ERRCHK(FATAL, 0 != ret);
 
-  /**************************************************************************/
-  /* Successful exit -- return pointer to ate containing __addr. */
-  /**************************************************************************/
+  /***************************************************************************/
+  /* Successful exit -- return pointer to ate containing addr. */
+  /***************************************************************************/
   retval = ate;
   goto RETURN;
 
-  /**************************************************************************/
+  /***************************************************************************/
   /* Error exit -- revert changes to runtime state and return. */
-  /**************************************************************************/
+  /***************************************************************************/
   REVERT:
-  ret = __lock_let(&(__mmu->lock));
+  /* Release mmu lock. */
+  ret = __lock_let(&(mmu->lock));
   ERRCHK(FATAL, 0 != ret);
 
-  /**************************************************************************/
+  /***************************************************************************/
   /* Return point -- return. */
-  /**************************************************************************/
+  /***************************************************************************/
   RETURN:
   return retval;
 
-  /**************************************************************************/
+  /***************************************************************************/
   /* Fatal error -- an unrecoverable error has occured, the runtime state
    * cannot be reverted to its state before this function was called. */
-  /**************************************************************************/
+  /***************************************************************************/
   FATAL:
   FATAL_ABORT(ret);
 }
 SBMA_EXPORT(internal, struct ate *
-__mmu_lookup_ate(struct mmu * const __mmu, void const * const __addr));
+mmu_lookup_ate(struct mmu * const mmu, void const * const addr));
