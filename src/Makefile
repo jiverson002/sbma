@@ -1,6 +1,6 @@
-#--------------------------------------------------------------------------
+#------------------------------------------------------------------------------
 # COPYRIGHT NOTICE
-#--------------------------------------------------------------------------
+#------------------------------------------------------------------------------
 #{{{1
 # Copyright (c) 2015 Jeremy Iverson
 #
@@ -28,13 +28,11 @@
 .SILENT: help show
 
 
-#--------------------------------------------------------------------------
+#------------------------------------------------------------------------------
 # CACHE VARIABLES
-#--------------------------------------------------------------------------
+#------------------------------------------------------------------------------
 #{{{1
 # Program variables
-AR = ar
-ARFLAGS = -cr
 RANLIB = ranlib
 RM = rm -f
 ECHO = echo
@@ -43,7 +41,6 @@ INSTALL = install -CDv --mode=0644
 INSTALLLOG = InstallManifest.txt
 
 # Config parameters
-build = debug
 includedir = $(prefix)/include
 libdir = $(exec_prefix)/lib
 exec_prefix = $(prefix)
@@ -54,28 +51,28 @@ CC = c99
 LD = c99
 CFLAGS = -I. $(AUTOFLAGS)
 LDFLAGS = -I. $(AUTOFLAGS)
-LDLIBS = 
+LDLIBS =
 #}}}1
 
 
-#==========================================================================
+#==============================================================================
 # DO NOT CHANGE ANYTHING BELOW HERE
-#==========================================================================
+#==============================================================================
 
 
-#--------------------------------------------------------------------------
+#------------------------------------------------------------------------------
 # INTERNAL VARIABLES
-#--------------------------------------------------------------------------
+#------------------------------------------------------------------------------
 #{{{1
 # Version information
 PROJECT = "SBMalloc"
-DATE = "`date`"
-COMMIT = "`git rev-parse --short HEAD`"
-VERSION = "`grep -e '^\#define SBMA_MAJOR' -e '^\#define SBMA_MINOR' -e '^\#define SBMA_PATCH' -e '^\#define SBMA_RCAND' sbma.h | awk '{print $$3}' | paste -d ' ' - - - - | awk '{printf \"%d.%d.%d%s\", $$1,$$2,$$3,$$4}'`"
+DATE = `date`
+COMMIT = `git rev-parse --short HEAD`
+VERSION = `grep -e '^\#define SBMA_MAJOR' -e '^\#define SBMA_MINOR' -e '^\#define SBMA_PATCH' -e '^\#define SBMA_RCAND' sbma.h | awk '{print $$3}' | paste -d ' ' - - - - | awk '{printf \"%d.%d.%d%s\", $$1,$$2,$$3,$$4}'`
 
 AUTOFLAGS = \
  -O0 -g -Wall -Wextra -pedantic\
- -DVERSION=$(VERSION) -DDATE=$(DATE) -DCOMMIT=$(COMMIT)\
+ -DVERSION="$(VERSION)" -DDATE="$(DATE)" -DCOMMIT="$(COMMIT)"
 
 # Up-to-date file -- this file is used to ensure that any time the Makefile
 # is manually updated, libraries and targets will be rebuilt. This is done
@@ -84,9 +81,9 @@ UTD = .UTD
 #}}}1
 
 
-#--------------------------------------------------------------------------
+#------------------------------------------------------------------------------
 # COMPILE TARGETS
-#--------------------------------------------------------------------------
+#------------------------------------------------------------------------------
 #{{{1
 libsbma.a: $(UTD) libsbma.a(hooks.o) libsbma.a(ipc.o) libsbma.a(klmalloc.o) libsbma.a(lock.o) libsbma.a(malloc.o) libsbma.a(mcntrl.o) libsbma.a(mextra.o) libsbma.a(mmu.o) libsbma.a(mstate.o) libsbma.a(vmm.o)
 	$(RANLIB) $@
@@ -97,17 +94,20 @@ $(UTD): Makefile
 #}}}1
 
 
-#--------------------------------------------------------------------------
+#------------------------------------------------------------------------------
 # SYSTEM TARGETS
-#--------------------------------------------------------------------------
+#------------------------------------------------------------------------------
 #{{{1
 install: libsbma.a
 	@$(ECHO) $(libdir)/libsbma.a > $(INSTALLLOG)
 	$(INSTALL) libsbma.a $(libdir)
 
 show:
-	$(ECHO) "$(PROJECT) v$(VERSION) configured with: configure"
-	$(ECHO) "build=$(build) includedir=$(includedir) libdir=$(libdir) exec_prefix=$(exec_prefix) prefix=$(prefix) with-pthread=no with-libc=no with-mmap=no with-memalign=no with-profile=no with-openmp=no with-sbma=no "
+	$(ECHO) "$(PROJECT) v$(VERSION) ($(COMMIT)) on $(DATE)"
+	$(ECHO) "  includedir=$(includedir)"
+	$(ECHO) "  libdir=$(libdir)"
+	$(ECHO) "  exec_prefix=$(exec_prefix)"
+	$(ECHO) "  prefix=$(prefix)"
 
 clean:
 	$(RM) libsbma.a $(UTD)
