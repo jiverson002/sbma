@@ -1,5 +1,4 @@
 *.o
 .UTD
 .svn
-Makefile
 build
