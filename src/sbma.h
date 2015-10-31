@@ -29,8 +29,8 @@ THE SOFTWARE.
 
 
 #define SBMA_MAJOR   0
-#define SBMA_MINOR   2
-#define SBMA_PATCH   6
+#define SBMA_MINOR   3
+#define SBMA_PATCH   0
 #define SBMA_RCAND   -pre
 #define SBMA_VERSION (SBMA_MAJOR*10000+SBMA_MINOR*100+SBMA_PATCH)
 

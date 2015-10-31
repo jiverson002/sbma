@@ -686,7 +686,7 @@ __sbma_mtouchall(void));
 SBMA_EXTERN ssize_t
 __sbma_mclear(void * const __addr, size_t const __len)
 {
-  size_t beg, end, page_size, c_pages, d_pages;
+  size_t d_pages;
   ssize_t ret;
   struct ate * ate;
 

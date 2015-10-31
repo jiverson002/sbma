@@ -404,7 +404,6 @@ ipc_madmit(struct ipc * const ipc, size_t const value, int const admitd)
   int retval, ret, i, ii, id, n_procs;
   size_t mx_c_mem, mx_d_mem, s_mem;
   int * pid;
-  volatile uint8_t * flags;
   volatile size_t * c_mem, * d_mem;
 
   /* Default return value is success. */
@@ -419,7 +418,6 @@ ipc_madmit(struct ipc * const ipc, size_t const value, int const admitd)
   c_mem   = ipc->c_mem;
   d_mem   = ipc->d_mem;
   pid     = ipc->pid;
-  flags   = ipc->flags;
 
   /*=========================================================================*/
   IPC_INTER_CRITICAL_SECTION_BEG(ipc);
@@ -514,8 +512,6 @@ ipc_madmit(struct ipc * const ipc, size_t const value, int const admitd));
 SBMA_EXTERN int
 ipc_mevict(struct ipc * const ipc, size_t const c_pages, size_t const d_pages)
 {
-  int ret;
-
   if (0 == c_pages && 0 == d_pages)
     return 0;
 
@@ -560,7 +556,7 @@ ipc_mdirty(struct ipc * const ipc, ssize_t const value)
   /*=========================================================================*/
 
   if (value < 0) {
-    ASSERT(ipc->d_mem[ipc->id] >= value);
+    ASSERT(ipc->d_mem[ipc->id] >= (size_t)(-value));
   }
 
   ipc->d_mem[ipc->id] += value;
