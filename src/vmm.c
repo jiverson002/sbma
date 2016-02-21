@@ -467,8 +467,10 @@ vmm_swap_o(struct ate * const ate, size_t const beg, size_t const num)
   /* Shortcut if no pages in range. */
   if (0 == num)
     goto RETURN;
-  /* Shortcut if there are no dirty pages. */
-  if (0 == ate->d_pages)
+  /* Shortcut if there are no resident pages pages - must execute this even if
+   * there are no dirty pages, since resident+clean pages must also be evicted.
+   * */
+  if (0 == ate->l_pages)
     goto RETURN;
 
   /* Setup local variables. */
@@ -602,9 +604,7 @@ vmm_swap_x(struct ate * const ate, size_t const beg, size_t const num)
   /* Shortcut if no pages in range. */
   if (0 == num)
     goto RETURN;
-  /* Shortcut if there are no dirty pages. */
-  if (0 == ate->d_pages)
-    goto RETURN;
+  /* TODO Shortcut if there are no dirty pages AND no pages stored on disk. */
 
   /* Setup local variables. */
   page_size = vmm.page_size;

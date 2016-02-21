@@ -163,32 +163,9 @@ __sbma_mevict_int(struct ate * const __ate, void * const __addr,
   beg = ((uintptr_t)__addr-__ate->base)/page_size;
   end = 1+(((uintptr_t)__addr+__len-__ate->base-1)/page_size);
 
-#if 0
-  printf("mevict: %zu %zu\n", beg, end);
-  printf("  %zu %zu %zu %zu\n", __ate->n_pages, __ate->l_pages, __ate->c_pages,
-    __ate->d_pages);
-
-  size_t ip;
-  size_t l_pages = 0;
-  size_t c_pages = 0;
-  size_t d_pages = 0;
-  for (ip=beg; ip<end; ++ip) {
-    c_pages += (MMU_CHRGD != (__ate->flags[ip]&MMU_CHRGD)); /* is charged */
-    l_pages += (MMU_RSDNT != (__ate->flags[ip]&MMU_RSDNT)); /* is resident */
-    d_pages += (MMU_DIRTY == (__ate->flags[ip]&MMU_DIRTY)); /* is dirty */
-  }
-
-  printf("  %zu %zu %zu %zu\n", end-beg, l_pages, c_pages, d_pages);
-#endif
-
   numwr = vmm_swap_o(__ate, beg, end-beg);
   if (-1 == numwr)
     return -1;
-
-#if 0
-  printf("  %zu %zu %zu %zu\n", __ate->n_pages, __ate->l_pages, __ate->c_pages,
-    __ate->d_pages);
-#endif
 
   return VMM_TO_SYS(numwr);
 }
