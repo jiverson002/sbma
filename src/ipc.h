@@ -25,6 +25,11 @@ THE SOFTWARE.
 #define SBMA_IPC_H 1
 
 
+#ifndef _GNU_SOURCE
+# define _GNU_SOURCE 1
+#endif
+
+
 #include <pthread.h>   /* pthread library */
 #include <semaphore.h> /* semaphore library */
 #include <stdint.h>    /* uint8_t */

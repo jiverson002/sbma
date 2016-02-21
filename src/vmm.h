@@ -25,6 +25,11 @@ THE SOFTWARE.
 #define SBMA_VMM_H 1
 
 
+#ifndef _GNU_SOURCE
+# define _GNU_SOURCE 1
+#endif
+
+
 #include <signal.h>    /* struct sigaction, siginfo_t, sigemptyset, sigaction */
 #include <stddef.h>    /* size_t */
 #include <stdio.h>     /* FILENAME_MAX */

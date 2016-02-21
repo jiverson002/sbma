@@ -21,6 +21,11 @@ THE SOFTWARE.
 */
 
 
+#ifndef _GNU_SOURCE
+# define _GNU_SOURCE 1
+#endif
+
+
 #ifndef SBAM_MMU_H
 #define SBAM_MMU_H 1
 
