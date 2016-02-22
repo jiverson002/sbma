@@ -57,3 +57,14 @@ mmu_init(struct mmu * const mmu, size_t const page_size)
   RETURN:
   return retval;
 }
+
+
+#ifdef TEST
+int
+main(int argc, char * argv[])
+{
+  if (0 == argc || NULL == argv) {}
+
+  return 0;
+}
+#endif

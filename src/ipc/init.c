@@ -151,3 +151,14 @@ ipc_init(struct ipc * const ipc, int const uniq, int const n_procs,
 
   return 0;
 }
+
+
+#ifdef TEST
+int
+main(int argc, char * argv[])
+{
+  if (0 == argc || NULL == argv) {}
+
+  return 0;
+}
+#endif

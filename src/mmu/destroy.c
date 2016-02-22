@@ -52,3 +52,14 @@ mmu_destroy(struct mmu * const mmu)
 
   if (mmu) {} /* suppress unused parameter warning if not threaded */
 }
+
+
+#ifdef TEST
+int
+main(int argc, char * argv[])
+{
+  if (0 == argc || NULL == argv) {}
+
+  return 0;
+}
+#endif

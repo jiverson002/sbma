@@ -1,3 +1,11 @@
-*.o
-*.d
+# Libraries
 *.a
+
+# Object files
+*.o
+
+# Dependency files
+*.d
+
+# Test files
+*_t

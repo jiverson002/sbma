@@ -83,3 +83,14 @@ mmu_insert_ate(struct mmu * const mmu, struct ate * const ate)
   FATAL:
   FATAL_ABORT(retval);
 }
+
+
+#ifdef TEST
+int
+main(int argc, char * argv[])
+{
+  if (0 == argc || NULL == argv) {}
+
+  return 0;
+}
+#endif

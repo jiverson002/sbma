@@ -42,3 +42,14 @@ ipc_sigoff(struct ipc * const ipc)
 {
   ipc->flags[ipc->id] &= ~IPC_SIGON;
 }
+
+
+#ifdef TEST
+int
+main(int argc, char * argv[])
+{
+  if (0 == argc || NULL == argv) {}
+
+  return 0;
+}
+#endif

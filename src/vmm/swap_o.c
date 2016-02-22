@@ -216,3 +216,14 @@ vmm_swap_o(struct ate * const ate, size_t const beg, size_t const num)
   RETURN:
   return retval;
 }
+
+
+#ifdef TEST
+int
+main(int argc, char * argv[])
+{
+  if (0 == argc || NULL == argv) {}
+
+  return 0;
+}
+#endif

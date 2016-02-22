@@ -254,3 +254,14 @@ sbma_sigoff(void)
   ipc_sigoff(&(_vmm_.ipc));
   return 0;
 }
+
+
+#ifdef TEST
+int
+main(int argc, char * argv[])
+{
+  if (0 == argc || NULL == argv) {}
+
+  return 0;
+}
+#endif

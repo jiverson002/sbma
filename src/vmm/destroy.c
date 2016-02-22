@@ -88,3 +88,14 @@ vmm_destroy(struct vmm * const vmm)
   FATAL:
   FATAL_ABORT(errno);
 }
+
+
+#ifdef TEST
+int
+main(int argc, char * argv[])
+{
+  if (0 == argc || NULL == argv) {}
+
+  return 0;
+}
+#endif

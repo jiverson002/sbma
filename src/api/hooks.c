@@ -733,3 +733,14 @@ msync(void * const addr, size_t const len, int const flags)
 
 
 #pragma GCC pop_options
+
+
+#ifdef TEST
+int
+main(int argc, char * argv[])
+{
+  if (0 == argc || NULL == argv) {}
+
+  return 0;
+}
+#endif

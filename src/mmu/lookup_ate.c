@@ -100,3 +100,14 @@ mmu_lookup_ate(struct mmu * const mmu, void const * const addr)
   FATAL:
   FATAL_ABORT(ret);
 }
+
+
+#ifdef TEST
+int
+main(int argc, char * argv[])
+{
+  if (0 == argc || NULL == argv) {}
+
+  return 0;
+}
+#endif

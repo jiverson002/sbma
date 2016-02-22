@@ -277,3 +277,14 @@ vmm_init(struct vmm * const vmm, char const * const fstem, int const uniq,
   FATAL:
   FATAL_ABORT(errno);
 }
+
+
+#ifdef TEST
+int
+main(int argc, char * argv[])
+{
+  if (0 == argc || NULL == argv) {}
+
+  return 0;
+}
+#endif

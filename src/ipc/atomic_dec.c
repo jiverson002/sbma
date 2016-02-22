@@ -67,3 +67,14 @@ ipc_atomic_dec(struct ipc * const ipc, size_t const c_pages,
   IPC_INTRA_CRITICAL_SECTION_END(ipc);
   /*=========================================================================*/
 }
+
+
+#ifdef TEST
+int
+main(int argc, char * argv[])
+{
+  if (0 == argc || NULL == argv) {}
+
+  return 0;
+}
+#endif

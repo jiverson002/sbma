@@ -22,8 +22,8 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 #}}}1
-.SILENT: help show
-.PHONY: clean help install show todolist
+.SILENT: check help show todolist
+.PHONY: check clean help install show todolist
 
 
 LIB = libsbma.a
@@ -81,19 +81,21 @@ prefix = /usr/local
 #-------------------------------------------------------------------------------
 #{{{1
 # This is a list of all non-source files that are part of the distribution.
-AUXFILES := AUTHORS ChangeLog COPYING Makefile NEWS README.md
+AUXFILES    := AUTHORS ChangeLog COPYING Makefile NEWS README.md
 
 # Subdirectories holding the actual sources
-PROJDIRS := src/api src/include src/ipc src/klmalloc src/lock src/mmu src/vmm
+PROJDIRS    := src/api src/include src/ipc src/klmalloc src/lock src/mmu src/vmm
 
-SRCFILES := $(shell find $(PROJDIRS) -type f -name "*.c")
-HDRFILES := $(shell find $(PROJDIRS) -type f -name "*.h")
+SRCFILES    := $(shell find $(PROJDIRS) -type f -name "*.c")
+HDRFILES    := $(shell find $(PROJDIRS) -type f -name "*.h")
 
-OBJFILES := $(patsubst %.c,%.o,$(SRCFILES))
+OBJFILES    := $(patsubst %.c,%.o,$(SRCFILES))
+TSTFILES    := $(patsubst %.c,%_t,$(SRCFILES))
 
-DEPFILES := $(patsubst %.c,%.d,$(SRCFILES))
+DEPFILES    := $(patsubst %.c,%.d,$(SRCFILES))
+TSTDEPFILES := $(patsubst %,%.d,$(TSTFILES))
 
-ALLFILES := $(SRCFILES) $(HDRFILES) $(AUXFILES)
+ALLFILES    := $(SRCFILES) $(HDRFILES) $(AUXFILES)
 #}}}1
 
 
@@ -123,13 +125,19 @@ $(LIB): $(OBJFILES)
 	@echo "  RANLIB   $@"
 	@$(AR) $(ARFLAGS) $@ $?
 
--include $(DEPFILES)
+-include $(DEPFILES) $(TSTDEPFILES)
 
 %.o: %.c Makefile
 	@echo "  CC       $@"
 	@$(CC) $(CFLAGS) -MMD -MP -Isrc/include \
          -DVERSION="$(VERSION)" -DDATE="$(DATE)" -DCOMMIT="$(COMMIT)" \
          -c $< -o $@
+
+%_t: %.c Makefile $(LIB)
+	@echo "  CC       $@"
+	@$(CC) $(CFLAGS) -MMD -MP -Isrc/include -pthread -DTEST \
+         -DVERSION="$(VERSION)" -DDATE="$(DATE)" -DCOMMIT="$(COMMIT)" \
+         $< $(LIB) -o $@ -lrt -ldl
 #}}}1
 
 
@@ -137,16 +145,27 @@ $(LIB): $(OBJFILES)
 # PHONY TARGETS
 #-------------------------------------------------------------------------------
 #{{{1
+check: $(TSTFILES)
+	-rc=0; count=0; \
+    for file in $(TSTFILES); do \
+      echo "  TEST     $$file"; ./$$file; \
+      rc=`expr $$rc + $$?`; count=`expr $$count + 1`; \
+    done; \
+    echo; \
+    echo "Tests executed: $$count  Tests failed: $$rc"
+
 clean:
-	$(RM) $(LIB) $(OBJFILES) $(DEPFILES)
+	-$(RM) $(wildcard $(OBJFILES) $(DEPFILES) $(TSTFILES) $(TSTDEPFILES) $(LIB) $(DIST))
 
 help:
 	$(ECHO) "The following are valid targets for this Makefile:"
 	$(ECHO) "... $(LIB) (the default if no target is provided)"
-	$(ECHO) "... install"
-	$(ECHO) "... show"
+	$(ECHO) "... check"
 	$(ECHO) "... clean"
 	$(ECHO) "... help"
+	$(ECHO) "... install"
+	$(ECHO) "... show"
+	$(ECHO) "... todolist"
 
 install: $(LIB)
 	@$(ECHO) $(libdir)/$(LIB) > $(INSTALLLOG)
@@ -160,7 +179,7 @@ show:
 	$(ECHO) "  prefix=$(prefix)"
 
 todolist:
-	-@for file in $(ALLFILES:Makefile=); do grep -H -e TODO -e FIXME $$file; done; true
+	-for file in $(ALLFILES:Makefile=); do grep -H -e TODO -e FIXME $$file; done; true
 #}}}1
 
 

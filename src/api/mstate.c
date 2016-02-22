@@ -956,3 +956,14 @@ sbma_mexist(void const * const __addr)
   ASSERT(-1 != ret);
   return -1;
 }
+
+
+#ifdef TEST
+int
+main(int argc, char * argv[])
+{
+  if (0 == argc || NULL == argv) {}
+
+  return 0;
+}
+#endif

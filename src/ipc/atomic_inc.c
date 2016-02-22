@@ -51,3 +51,14 @@ ipc_atomic_inc(struct ipc * const ipc, size_t const value)
   if (ipc->c_mem[ipc->id] > ipc->maxpages)
     ipc->maxpages = ipc->c_mem[ipc->id];
 }
+
+
+#ifdef TEST
+int
+main(int argc, char * argv[])
+{
+  if (0 == argc || NULL == argv) {}
+
+  return 0;
+}
+#endif

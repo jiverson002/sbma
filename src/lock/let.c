@@ -64,3 +64,17 @@ lock_let_int(char const * const func, int const line,
  * translation unit. */
 typedef int make_iso_compilers_happy;
 #endif
+
+
+#ifdef TEST
+#include <stddef.h> /* NULL */
+
+
+int
+main(int argc, char * argv[])
+{
+  if (0 == argc || NULL == argv) {}
+
+  return 0;
+}
+#endif

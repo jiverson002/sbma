@@ -57,3 +57,17 @@ lock_free(pthread_mutex_t * const lock)
  * translation unit. */
 typedef int make_iso_compilers_happy;
 #endif
+
+
+#ifdef TEST
+#include <stddef.h> /* NULL */
+
+
+int
+main(int argc, char * argv[])
+{
+  if (0 == argc || NULL == argv) {}
+
+  return 0;
+}
+#endif

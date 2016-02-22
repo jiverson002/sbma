@@ -54,3 +54,14 @@ ipc_is_eligible(struct ipc * const ipc, int const id)
 
   return eligible;
 }
+
+
+#ifdef TEST
+int
+main(int argc, char * argv[])
+{
+  if (0 == argc || NULL == argv) {}
+
+  return 0;
+}
+#endif

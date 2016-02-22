@@ -737,3 +737,14 @@ sbma_remap(void * const __nbase, void * const __obase, size_t const __size)
 
   return 0;
 }
+
+
+#ifdef TEST
+int
+main(int argc, char * argv[])
+{
+  if (0 == argc || NULL == argv) {}
+
+  return 0;
+}
+#endif

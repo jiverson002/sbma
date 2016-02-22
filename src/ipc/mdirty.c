@@ -67,3 +67,14 @@ ipc_mdirty(struct ipc * const ipc, ssize_t const value)
 
   return 0;
 }
+
+
+#ifdef TEST
+int
+main(int argc, char * argv[])
+{
+  if (0 == argc || NULL == argv) {}
+
+  return 0;
+}
+#endif
