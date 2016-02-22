@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2015 Jeremy Iverson
+Copyright (c) 2015,2016 Jeremy Iverson
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -21,13 +21,13 @@ THE SOFTWARE.
 */
 
 
+#ifndef SBAM_MMU_H
+#define SBAM_MMU_H 1
+
+
 #ifndef _GNU_SOURCE
 # define _GNU_SOURCE 1
 #endif
-
-
-#ifndef SBAM_MMU_H
-#define SBAM_MMU_H 1
 
 
 #include <stdint.h> /* uint8_t, uintptr_t */
