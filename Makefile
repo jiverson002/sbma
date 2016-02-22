@@ -138,7 +138,7 @@ $(LIB): $(OBJFILES)
 #-------------------------------------------------------------------------------
 #{{{1
 clean:
-	$(RM) $(LIB) $(OBJFILES)
+	$(RM) $(LIB) $(OBJFILES) $(DEPFILES)
 
 help:
 	$(ECHO) "The following are valid targets for this Makefile:"

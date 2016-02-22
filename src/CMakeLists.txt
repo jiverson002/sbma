@@ -5,8 +5,13 @@ option (USE_THREAD "Enable thread-safety components of SBMA library" OFF)
 
 add_library (
   sbma
-  api/hooks.c api/malloc.c api/mcntrl.c api/mextra.c api/mstate.c ipc/ipc.c
-  klmalloc/klmalloc.c lock/lock.c mmu/mmu.c vmm/vmm.c
+  api/hooks.c api/malloc.c api/mcntrl.c api/mextra.c api/mstate.c
+  ipc/atomic_dec.c ipc/atomic_inc.c ipc/destroy.c ipc/init.c ipc/is_eligible.c
+  ipc/madmit.c ipc/mdirty.c ipc/mevict.c ipc/sigoff.c ipc/sigon.c
+  klmalloc/klmalloc.c
+  lock/free.c lock/get.c lock/init.c lock/let.c
+  mmu/destroy.c mmu/init.c mmu/insert_ate.c mmu/invalidate_ate.c mmu/lookup_ate.c
+  vmm/destroy.c vmm/init.c vmm/swap_i.c vmm/swap_o.c vmm/swap_x.c
 )
 
 if (USE_THREAD)

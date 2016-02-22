@@ -42,6 +42,14 @@ THE SOFTWARE.
 # define lock_get(LOCK) lock_get_int(__func__, __LINE__, #LOCK, LOCK)
 # define lock_let(LOCK) lock_let_int(__func__, __LINE__, #LOCK, LOCK)
 
+# if defined(DEADLOCK) && DEADLOCK > 0
+#   include <stdio.h> /* printf */
+#   define DL_PRINTF(...) do { printf(__VA_ARGS__); fflush(stdout); } while (0)
+# else
+#   define DL_PRINTF(...) (void)0
+# endif
+
+
 # ifdef __cplusplus
 extern "C" {
 # endif
@@ -49,23 +57,24 @@ extern "C" {
 /*****************************************************************************/
 /*  Initialize pthread lock. */
 /*****************************************************************************/
-int
-lock_init(pthread_mutex_t * const lock);
+SBMA_EXPORT(internal, int
+lock_init(pthread_mutex_t * const lock));
 
 
 /*****************************************************************************/
 /*  Destroy pthread lock. */
 /*****************************************************************************/
-int
-lock_free(pthread_mutex_t * const lock);
+SBMA_EXPORT(internal, int
+lock_free(pthread_mutex_t * const lock));
 
 
 /*****************************************************************************/
 /*  Lock pthread lock. */
 /*****************************************************************************/
-int
+SBMA_EXPORT(internal, int
 lock_get_int(char const * const func, int const line,
-             char const * const lock_str, pthread_mutex_t * const lock);
+             char const * const lock_str,
+             pthread_mutex_t * const lock));
 
 
 /*****************************************************************************/

@@ -34,12 +34,73 @@ THE SOFTWARE.
 #include <semaphore.h> /* semaphore library */
 #include <stdint.h>    /* uint8_t */
 #include <stddef.h>    /* size_t */
+#include "common.h"
+#include "sbma.h"
+
+
+/* TODO Change int to pid_t for storing process IDs */
 
 
 /*****************************************************************************/
 /*  Signal used to tell other processes to release memory. */
 /*****************************************************************************/
 #define SIGIPC (SIGRTMIN+0)
+
+
+/*****************************************************************************/
+/* Length of the IPC shared memory region. */
+/*****************************************************************************/
+#define IPC_LEN(N_PROCS)\
+  (sizeof(size_t)+(N_PROCS)*(sizeof(int)+sizeof(size_t)+sizeof(size_t)+\
+    sizeof(uint8_t))+sizeof(int))
+
+
+/*****************************************************************************/
+/* X Macro list. */
+/*****************************************************************************/
+#define LIST_OF_SEMAPHORES \
+do {\
+  X(inter_mtx, 1)\
+  X(done, 0)\
+  X(sid, 1)\
+  X(sig, 0)\
+} while (0);
+
+
+/*****************************************************************************/
+/* Constructs which implement an inter-process critical section. */
+/*****************************************************************************/
+#define IPC_INTER_CRITICAL_SECTION_BEG(IPC)\
+do {\
+  int _ret;\
+  _ret = sem_wait((IPC)->inter_mtx);\
+  ASSERT(0 == _ret);\
+} while (0)
+
+#define IPC_INTER_CRITICAL_SECTION_END(IPC)\
+do {\
+  int _ret;\
+  _ret = sem_post((IPC)->inter_mtx);\
+  ASSERT(0 == _ret);\
+} while (0)
+
+
+/*****************************************************************************/
+/* Constructs which implement an intra-process critical section. */
+/*****************************************************************************/
+#define IPC_INTRA_CRITICAL_SECTION_BEG(IPC)\
+do {\
+  int ret;\
+  ret = pthread_mutex_lock(&((IPC)->intra_mtx));\
+  ASSERT(0 == ret);\
+} while (0)
+
+#define IPC_INTRA_CRITICAL_SECTION_END(IPC)\
+do {\
+  int ret;\
+  ret = pthread_mutex_unlock(&((IPC)->intra_mtx));\
+  ASSERT(0 == ret);\
+} while (0)
 
 
 /*****************************************************************************/

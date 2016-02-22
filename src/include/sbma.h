@@ -30,6 +30,7 @@ THE SOFTWARE.
 #endif
 
 
+#include <stdarg.h>    /* va_list */
 #include <sys/types.h> /* ssize_t */
 
 
