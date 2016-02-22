@@ -30,6 +30,7 @@ THE SOFTWARE.
 #include <stddef.h> /* size_t */
 #include "common.h"
 #include "lock.h"
+#include "sbma.h"
 #include "vmm.h"
 
 
@@ -44,22 +45,22 @@ static pthread_mutex_t init_lock=PTHREAD_MUTEX_INITIALIZER;
 /****************************************************************************/
 /*! The single instance of vmm per process. */
 /****************************************************************************/
-struct vmm vmm={.init=0, .ipc.init=0};
+struct vmm _vmm_={.init=0, .ipc.init=0};
 
 
 /****************************************************************************/
 /*! Initialize the sbma environment. */
 /****************************************************************************/
 SBMA_EXTERN int
-__sbma_init(char const * const __fstem, int const __uniq,
-            size_t const __page_size, int const __n_procs,
-            size_t const __max_mem, int const __opts)
+sbma_init(char const * const __fstem, int const __uniq,
+          size_t const __page_size, int const __n_procs,
+          size_t const __max_mem, int const __opts)
 {
   /* acquire init lock */
   if (-1 == lock_get(&init_lock))
     return -1;
 
-  if (-1 == vmm_init(&vmm, __fstem, __uniq, __page_size, __n_procs,\
+  if (-1 == vmm_init(&_vmm_, __fstem, __uniq, __page_size, __n_procs,\
       __max_mem, __opts))
   {
     (void)lock_let(&init_lock);
@@ -72,17 +73,13 @@ __sbma_init(char const * const __fstem, int const __uniq,
 
   return 0;
 }
-SBMA_EXPORT(internal, int
-__sbma_init(char const * const __fstem, int const __uniq,
-            size_t const __page_size, int const __n_procs,
-            size_t const __max_mem, int const __opts));
 
 
 /****************************************************************************/
 /*! Initialize the sbma environment from a va_list. */
 /****************************************************************************/
 SBMA_EXTERN int
-__sbma_vinit(va_list args)
+sbma_vinit(va_list args)
 {
   char const * fstem     = va_arg(args, char const *);
   int const uniq         = va_arg(args, int);
@@ -90,23 +87,21 @@ __sbma_vinit(va_list args)
   int const n_procs      = va_arg(args, int);
   size_t const max_mem   = va_arg(args, size_t);
   int const opts         = va_arg(args, int);
-  return __sbma_init(fstem, uniq, page_size, n_procs, max_mem, opts);
+  return sbma_init(fstem, uniq, page_size, n_procs, max_mem, opts);
 }
-SBMA_EXPORT(internal, int
-__sbma_vinit(va_list args));
 
 
 /****************************************************************************/
 /*! Destroy the sbma environment. */
 /****************************************************************************/
 SBMA_EXTERN int
-__sbma_destroy(void)
+sbma_destroy(void)
 {
   /* acquire init lock */
   if (-1 == lock_get(&init_lock))
     return -1;
 
-  if (-1 == vmm_destroy(&vmm)) {
+  if (-1 == vmm_destroy(&_vmm_)) {
     (void)lock_let(&init_lock);
     return -1;
   }
@@ -117,5 +112,3 @@ __sbma_destroy(void)
 
   return 0;
 }
-SBMA_EXPORT(internal, int
-__sbma_destroy(void));

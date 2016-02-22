@@ -59,8 +59,6 @@ mmu_init(struct mmu * const mmu, size_t const page_size)
   RETURN:
   return retval;
 }
-SBMA_EXPORT(internal, int
-mmu_init(struct mmu * const mmu, size_t const page_size));
 
 
 /*****************************************************************************/
@@ -81,9 +79,9 @@ mmu_destroy(struct mmu * const mmu)
 
   RETURN:
   return retval;
+
+  if (mmu) {} /* suppress unused parameter warning */
 }
-SBMA_EXPORT(internal, int
-mmu_destroy(struct mmu * const mmu));
 
 
 /*****************************************************************************/
@@ -137,8 +135,6 @@ mmu_insert_ate(struct mmu * const mmu, struct ate * const ate)
   FATAL:
   FATAL_ABORT(retval);
 }
-SBMA_EXPORT(internal, int
-mmu_insert_ate(struct mmu * const mmu, struct ate * const ate));
 
 
 /*****************************************************************************/
@@ -187,8 +183,6 @@ mmu_invalidate_ate(struct mmu * const mmu, struct ate * const ate)
   FATAL:
   FATAL_ABORT(retval);
 }
-SBMA_EXPORT(internal, int
-mmu_invalidate_ate(struct mmu * const mmu, struct ate * const ate));
 
 
 /*****************************************************************************/
@@ -258,5 +252,3 @@ mmu_lookup_ate(struct mmu * const mmu, void const * const addr)
   FATAL:
   FATAL_ABORT(ret);
 }
-SBMA_EXPORT(internal, struct ate *
-mmu_lookup_ate(struct mmu * const mmu, void const * const addr));

@@ -46,11 +46,24 @@ THE SOFTWARE.
 #define SBMA_ATOMIC_MAX 256
 #define SBMA_ATOMIC_END ((void*)-1)
 
+/****************************************************************************/
+/*! Function attributes. */
+/****************************************************************************/
+/* If we're not using GNU C, omit __attribute__ */
+#ifndef __GNUC__
+# define  __attribute__(x)
+#endif
+
+#define SBMA_EXTERN extern
+#define SBMA_STATIC static
+#define SBMA_EXPORT(__VISIBILITY, __DECL)\
+  SBMA_EXTERN __DECL __attribute__((__visibility__(#__VISIBILITY)))
+
 
 /*****************************************************************************/
 /*  Mallopt parameters. */
 /*****************************************************************************/
-enum __sbma_mallopt_params
+enum sbma_mallopt_params
 {
   M_VMMOPTS = 0 /*!< vmm option parameter for mallopt */
 };
@@ -162,7 +175,7 @@ enum __sbma_mallopt_params
  *    evict,lzyrd,admitr,noaggch,noghost,merge,nometach,nomlock,nocheck,noosvmm
  */
 /*****************************************************************************/
-enum __sbma_vmm_opt_code
+enum sbma_vmm_opt_code
 {
   VMM_RSDNT  = 1 << 0,
   VMM_LZYRD  = 1 << 1,
@@ -198,32 +211,113 @@ struct sbma_timeinfo
 extern "C" {
 #endif
 
+
 /* klmalloc.c */
-int    KL_init(void *, ...);
-int    KL_destroy(void);
-void * KL_malloc(size_t const);
-void * KL_calloc(size_t const, size_t const);
-void * KL_realloc(void * const, size_t const);
-int    KL_free(void * const);
+SBMA_EXPORT(default, int
+KL_init(void *, ...));
+
+SBMA_EXPORT(default, int
+KL_mallopt(int const, int const));
+
+SBMA_EXPORT(default, struct mallinfo
+KL_mallinfo(void));
+
+SBMA_EXPORT(default, int
+KL_destroy(void));
+
+SBMA_EXPORT(default, void *
+KL_malloc(size_t const));
+
+SBMA_EXPORT(default, void *
+KL_calloc(size_t const, size_t const));
+
+SBMA_EXPORT(default, void *
+KL_realloc(void * const, size_t const));
+
+SBMA_EXPORT(default, int
+KL_free(void * const));
+
+
+/* malloc.c */
+SBMA_EXPORT(internal, void *
+sbma_malloc(size_t const));
+
+SBMA_EXPORT(internal, void *
+sbma_calloc(size_t const, size_t const));
+
+SBMA_EXPORT(internal, int
+sbma_free(void * const));
+
+SBMA_EXPORT(internal, void *
+sbma_realloc(void * const, size_t const));
+
+SBMA_EXPORT(internal, int
+sbma_remap(void * const, void * const, size_t const));
+
+
+/* mcntrl.c */
+SBMA_EXPORT(internal, int
+sbma_init(char const * const, int const, size_t const, int const, size_t const,
+          int const));
+
+SBMA_EXPORT(internal, int
+sbma_vinit(va_list));
+
+SBMA_EXPORT(internal, int
+sbma_destroy(void));
+
 
 /* mextra.c */
-int                  __sbma_mallopt(int const, int const);
-int                  __sbma_parse_optstr(char const * const);
-struct mallinfo      __sbma_mallinfo(void);
-struct sbma_timeinfo __sbma_timeinfo(void);
-int                  __sbma_sigon(void);
-int                  __sbma_sigoff(void);
+SBMA_EXPORT(default, int
+sbma_mallopt(int const, int const));
+
+SBMA_EXPORT(default, int
+sbma_parse_optstr(char const * const));
+
+SBMA_EXPORT(default, struct mallinfo
+sbma_mallinfo(void));
+
+SBMA_EXPORT(default, struct sbma_timeinfo
+sbma_timeinfo(void));
+
+SBMA_EXPORT(default, int
+sbma_sigon(void));
+
+SBMA_EXPORT(default, int
+sbma_sigoff(void));
+
 
 /* mstate.c */
-int     __sbma_check(char const * const, int const);
-ssize_t __sbma_mtouch(void * const, void * const, size_t const);
-ssize_t __sbma_mtouch_atomic(void * const, size_t const, ...);
-ssize_t __sbma_mtouchall(void);
-ssize_t __sbma_mclear(void * const, size_t const);
-ssize_t __sbma_mclearall(void);
-ssize_t __sbma_mevict(void * const, size_t const);
-ssize_t __sbma_mevictall(void);
-int     __sbma_mexist(void const * const);
+SBMA_EXPORT(internal, int
+sbma_check(char const * const, int const));
+
+SBMA_EXPORT(internal, ssize_t
+sbma_mtouch(void * const, void * const, size_t const));
+
+SBMA_EXPORT(internal, ssize_t
+sbma_mtouch_atomic(void * const, size_t const, ...));
+
+SBMA_EXPORT(internal, ssize_t
+sbma_mtouchall(void));
+
+SBMA_EXPORT(internal, ssize_t
+sbma_mclear(void * const, size_t const));
+
+SBMA_EXPORT(internal, ssize_t
+sbma_mclearall(void));
+
+SBMA_EXPORT(internal, ssize_t
+sbma_mevict(void * const, size_t const));
+
+SBMA_EXPORT(internal, int
+sbma_mevictall_int(size_t * const, size_t * const, size_t * const));
+
+SBMA_EXPORT(internal, ssize_t
+sbma_mevictall(void));
+
+SBMA_EXPORT(internal, int
+sbma_mexist(void const * const));
+
 
 #ifdef __cplusplus
 }
@@ -239,22 +333,22 @@ int     __sbma_mexist(void const * const);
 #define SBMA_free               KL_free
 
 /* mextra.c */
-#define SBMA_mallopt            __sbma_mallopt
-#define SBMA_parse_optstr       __sbma_parse_optstr
-#define SBMA_mallinfo           __sbma_mallinfo
-#define SBMA_sigon              __sbma_sigon
-#define SBMA_sigoff             __sbma_sigoff
-#define SBMA_timeinfo           __sbma_timeinfo
+#define SBMA_mallopt            sbma_mallopt
+#define SBMA_parse_optstr       sbma_parse_optstr
+#define SBMA_mallinfo           sbma_mallinfo
+#define SBMA_sigon              sbma_sigon
+#define SBMA_sigoff             sbma_sigoff
+#define SBMA_timeinfo           sbma_timeinfo
 
 /* mstate.c */
-#define SBMA_mtouch(...)        __sbma_mtouch(NULL, __VA_ARGS__)
-#define SBMA_mtouch_atomic(...) __sbma_mtouch_atomic(__VA_ARGS__, SBMA_ATOMIC_END)
-#define SBMA_mtouchall          __sbma_mtouchall
-#define SBMA_mclear             __sbma_mclear
-#define SBMA_mclearall          __sbma_mclearall
-#define SBMA_mevict             __sbma_mevict
-#define SBMA_mevictall          __sbma_mevictall
-#define SBMA_mexist             __sbma_mexist
+#define SBMA_mtouch(...)        sbma_mtouch(NULL, __VA_ARGS__)
+#define SBMA_mtouch_atomic(...) sbma_mtouch_atomic(__VA_ARGS__, SBMA_ATOMIC_END)
+#define SBMA_mtouchall          sbma_mtouchall
+#define SBMA_mclear             sbma_mclear
+#define SBMA_mclearall          sbma_mclearall
+#define SBMA_mevict             sbma_mevict
+#define SBMA_mevictall          sbma_mevictall
+#define SBMA_mexist             sbma_mexist
 
 
 #endif /* SBMA_H */

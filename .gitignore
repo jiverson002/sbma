@@ -1,4 +1,3 @@
 *.o
-.UTD
-.svn
-build
+*.d
+*.a

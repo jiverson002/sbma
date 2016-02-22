@@ -43,6 +43,10 @@ THE SOFTWARE.
  *    bit 3 ==    0: page has been charged   1: page is uncharged
  */
 /*****************************************************************************/
+/*#define MMU_ZFILL ((uint8_t)(1<<0))
+#define MMU_RSDNT ((uint8_t)(1<<1))
+#define MMU_DIRTY ((uint8_t)(1<<2))
+#define MMU_CHRGD ((uint8_t)(1<<3))*/
 enum mmu_status_code
 {
   MMU_ZFILL = 1 << 0,
@@ -88,39 +92,41 @@ struct mmu
 extern "C" {
 #endif
 
+
 /*****************************************************************************/
 /*  Initialize the memory management unit. */
 /*****************************************************************************/
-int
-mmu_init(struct mmu * const mmu, size_t const page_size);
+SBMA_EXPORT(internal, int
+mmu_init(struct mmu * const mmu, size_t const page_size));
 
 
 /*****************************************************************************/
 /*  Destroy the memory management unit. */
 /*****************************************************************************/
-int
-mmu_destroy(struct mmu * const mmu);
+SBMA_EXPORT(internal, int
+mmu_destroy(struct mmu * const mmu));
 
 
 /*****************************************************************************/
 /*  Insert ate into mmu. */
 /*****************************************************************************/
-int
-mmu_insert_ate(struct mmu * const mmu, struct ate * const ate);
+SBMA_EXPORT(internal, int
+mmu_insert_ate(struct mmu * const mmu, struct ate * const ate));
 
 
 /*****************************************************************************/
 /*  Invalidate ate. */
 /*****************************************************************************/
-int
-mmu_invalidate_ate(struct mmu * const mmu, struct ate * const ate);
+SBMA_EXPORT(internal, int
+mmu_invalidate_ate(struct mmu * const mmu, struct ate * const ate));
 
 
 /*****************************************************************************/
 /*  Find the ate, if one exists, that contains addr. */
 /*****************************************************************************/
-struct ate *
-mmu_lookup_ate(struct mmu * const mmu, void const * const addr);
+SBMA_EXPORT(internal, struct ate *
+mmu_lookup_ate(struct mmu * const mmu, void const * const addr));
+
 
 #ifdef __cplusplus
 }

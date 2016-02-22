@@ -44,6 +44,7 @@ THE SOFTWARE.
 #include <stddef.h>    /* size_t */
 #include <stdio.h>     /* FILE */
 #include <string.h>    /* memset, memcpy */
+#include <sys/mman.h>  /* mlock, munlock */
 #include <sys/stat.h>  /* stat, open */
 #include <sys/types.h> /* stat, open */
 #include <unistd.h>    /* ssize_t, stat */
@@ -101,6 +102,8 @@ internal_calloc(size_t const num, size_t const size)
 /*************************************************************************/
 /*! Hook: libc malloc */
 /*************************************************************************/
+SBMA_EXPORT(internal, void *
+libc_malloc(size_t const size));
 SBMA_EXTERN void *
 libc_malloc(size_t const size)
 {
@@ -110,13 +113,13 @@ libc_malloc(size_t const size)
 
   return _libc_malloc(size);
 }
-SBMA_EXPORT(internal, void *
-libc_malloc(size_t const size));
 
 
 /*************************************************************************/
 /*! Hook: libc calloc */
 /*************************************************************************/
+SBMA_EXPORT(internal, void *
+libc_calloc(size_t const num, size_t const size));
 SBMA_EXTERN void *
 libc_calloc(size_t const num, size_t const size)
 {
@@ -124,13 +127,13 @@ libc_calloc(size_t const num, size_t const size)
 
   return _libc_calloc(num, size);
 }
-SBMA_EXPORT(internal, void *
-libc_calloc(size_t const num, size_t const size));
 
 
 /*************************************************************************/
 /*! Hook: libc realloc */
 /*************************************************************************/
+SBMA_EXPORT(internal, void *
+libc_realloc(void * const ptr, size_t const size));
 SBMA_EXTERN void *
 libc_realloc(void * const ptr, size_t const size)
 {
@@ -140,13 +143,13 @@ libc_realloc(void * const ptr, size_t const size)
 
   return _libc_realloc(ptr, size);
 }
-SBMA_EXPORT(internal, void *
-libc_realloc(void * const ptr, size_t const size));
 
 
 /*************************************************************************/
 /*! Hook: libc free */
 /*************************************************************************/
+SBMA_EXPORT(internal, void
+libc_free(void * const ptr));
 SBMA_EXTERN void
 libc_free(void * const ptr)
 {
@@ -156,8 +159,6 @@ libc_free(void * const ptr)
 
   _libc_free(ptr);
 }
-SBMA_EXPORT(internal, void
-libc_free(void * const ptr));
 
 
 /*************************************************************************/
@@ -172,8 +173,6 @@ libc_memcpy(void * const dst, void const * const src, size_t const num)
 
   return _libc_memcpy(dst, src, num);
 }
-SBMA_EXPORT(internal, void *
-libc_memcpy(void * const dst, void const * const src, size_t const num));
 
 
 /*************************************************************************/
@@ -188,8 +187,6 @@ libc_memmove(void * const dst, void const * const src, size_t const num)
 
   return _libc_memmove(dst, src, num);
 }
-SBMA_EXPORT(internal, void *
-libc_memmove(void * const dst, void const * const src, size_t const num));
 
 
 /*************************************************************************/
@@ -198,14 +195,12 @@ libc_memmove(void * const dst, void const * const src, size_t const num));
 SBMA_EXTERN int
 libc_stat(char const * path, struct stat * buf)
 {
-  static ssize_t (*_libc_stat)(char const*, struct stat*)=NULL;
+  static int (*_libc_stat)(char const*, struct stat*)=NULL;
 
   HOOK_INIT(stat);
 
   return _libc_stat(path, buf);
 }
-SBMA_EXPORT(internal, int
-libc_stat(char const * path, struct stat * buf));
 
 
 /*************************************************************************/
@@ -214,14 +209,12 @@ libc_stat(char const * path, struct stat * buf));
 SBMA_EXTERN int
 libc___xstat(int ver, char const * path, struct stat * buf)
 {
-  static ssize_t (*_libc___xstat)(int, char const*, struct stat*)=NULL;
+  static int (*_libc___xstat)(int, char const*, struct stat*)=NULL;
 
   HOOK_INIT(__xstat);
 
   return _libc___xstat(ver, path, buf);
 }
-SBMA_EXPORT(internal, int
-libc___xstat(int ver, char const * path, struct stat * buf));
 
 
 /*************************************************************************/
@@ -261,7 +254,7 @@ libc___xstat64(int ver, char const * path, struct stat * buf));
 SBMA_EXTERN int
 libc_open(char const * path, int flags, ...)
 {
-  static ssize_t (*_libc_open)(char const*, int, ...)=NULL;
+  static int (*_libc_open)(char const*, int, ...)=NULL;
   va_list list;
   mode_t mode=0;
 
@@ -274,8 +267,6 @@ libc_open(char const * path, int flags, ...)
 
   return _libc_open(path, flags, mode);
 }
-SBMA_EXPORT(internal, int
-libc_open(char const * path, int flags, ...));
 
 
 /*************************************************************************/
@@ -290,8 +281,6 @@ libc_read(int const fd, void * const buf, size_t const count)
 
   return _libc_read(fd, buf, count);
 }
-SBMA_EXPORT(internal, ssize_t
-libc_read(int const fd, void * const buf, size_t const count));
 
 
 /*************************************************************************/
@@ -306,8 +295,6 @@ libc_write(int const fd, void const * const buf, size_t const count)
 
   return _libc_write(fd, buf, count);
 }
-SBMA_EXPORT(internal, ssize_t
-libc_write(int const fd, void const * const buf, size_t const count));
 
 
 /*************************************************************************/
@@ -323,9 +310,6 @@ libc_fread(void * const buf, size_t const size, size_t const num,
 
   return _libc_fread(buf, size, num, stream);
 }
-SBMA_EXPORT(internal, size_t
-libc_fread(void * const buf, size_t const size, size_t const num,
-           FILE * const stream));
 
 
 /*************************************************************************/
@@ -341,9 +325,6 @@ libc_fwrite(void const * const buf, size_t const size, size_t const num,
 
   return _libc_fwrite(buf, size, num, stream);
 }
-SBMA_EXPORT(internal, size_t
-libc_fwrite(void const * const buf, size_t const size, size_t const num,
-            FILE * const stream));
 
 
 /*************************************************************************/
@@ -358,8 +339,6 @@ libc_mlock(void const * const addr, size_t const len)
 
   return _libc_mlock(addr, len);
 }
-SBMA_EXPORT(internal, int
-libc_mlock(void const * const addr, size_t const len));
 
 
 /*************************************************************************/
@@ -374,8 +353,6 @@ libc_mlockall(int flags)
 
   return _libc_mlockall(flags);
 }
-SBMA_EXPORT(internal, int
-libc_mlockall(int flags));
 
 
 /****************************************************************************/
@@ -390,8 +367,6 @@ libc_msync(void * const addr, size_t const len, int const flags)
 
   return _libc_msync(addr, len, flags);
 }
-SBMA_EXPORT(internal, int
-libc_msync(void * const addr, size_t const len, int const flags));
 
 
 /****************************************************************************/
@@ -402,13 +377,11 @@ malloc(size_t const size)
 {
   HOOK_INIT(calloc);
 
-  if (VMM_OSVMM == (vmm.opts&VMM_OSVMM))
+  if (VMM_OSVMM == (_vmm_.opts&VMM_OSVMM))
     return libc_malloc(size);
   else
     return SBMA_malloc(size);
 }
-SBMA_EXPORT(default, void *
-malloc(size_t const size));
 
 
 /*************************************************************************/
@@ -422,13 +395,11 @@ calloc(size_t const num, size_t const size)
   if (internal_calloc == _libc_calloc)
     return internal_calloc(num, size);
 
-  if (VMM_OSVMM == (vmm.opts&VMM_OSVMM))
+  if (VMM_OSVMM == (_vmm_.opts&VMM_OSVMM))
     return libc_calloc(num, size);
   else
     return SBMA_calloc(num, size);
 }
-SBMA_EXPORT(default, void *
-calloc(size_t const num, size_t const size));
 
 
 /*************************************************************************/
@@ -440,19 +411,17 @@ realloc(void * const ptr, size_t const size)
   HOOK_INIT(calloc);
 
   if (NULL == ptr) {
-    if (VMM_OSVMM == (vmm.opts&VMM_OSVMM))
+    if (VMM_OSVMM == (_vmm_.opts&VMM_OSVMM))
       return libc_malloc(size);
     else
       return SBMA_malloc(size);
   }
 
-  if (VMM_OSVMM == (vmm.opts&VMM_OSVMM))
+  if (VMM_OSVMM == (_vmm_.opts&VMM_OSVMM))
     return libc_realloc(ptr, size);
   else
     return SBMA_realloc(ptr, size);
 }
-SBMA_EXPORT(default, void *
-realloc(void * const ptr, size_t const size));
 
 
 /*************************************************************************/
@@ -473,13 +442,11 @@ free(void * const ptr)
     return;
   }
 
-  if (VMM_OSVMM == (vmm.opts&VMM_OSVMM))
+  if (VMM_OSVMM == (_vmm_.opts&VMM_OSVMM))
     libc_free(ptr);
   else
     SBMA_free(ptr);
 }
-SBMA_EXPORT(default, void
-free(void * const ptr));
 
 
 /*************************************************************************/
@@ -488,7 +455,7 @@ free(void * const ptr));
 SBMA_EXTERN void *
 memcpy(void * const dst, void const * const src, size_t const num)
 {
-  int ret;
+  ssize_t ret;
 
   HOOK_INIT(calloc); /* Why is this here? */
 
@@ -509,8 +476,6 @@ memcpy(void * const dst, void const * const src, size_t const num)
 
   return libc_memcpy(dst, src, num);
 }
-SBMA_EXPORT(default, void *
-memcpy(void * const dst, void const * const src, size_t const num));
 
 
 /*************************************************************************/
@@ -519,7 +484,7 @@ memcpy(void * const dst, void const * const src, size_t const num));
 SBMA_EXTERN void *
 memmove(void * const dst, void const * const src, size_t const num)
 {
-  int ret;
+  ssize_t ret;
 
   HOOK_INIT(calloc); /* Why is this here? */
 
@@ -540,8 +505,6 @@ memmove(void * const dst, void const * const src, size_t const num)
 
   return libc_memmove(dst, src, num);
 }
-SBMA_EXPORT(default, void *
-memmove(void * const dst, void const * const src, size_t const num));
 
 
 /*************************************************************************/
@@ -554,8 +517,6 @@ mallinfo(void)
 
   return SBMA_mallinfo();
 }
-SBMA_EXPORT(default, struct mallinfo
-mallinfo(void));
 
 
 /*************************************************************************/
@@ -564,7 +525,7 @@ mallinfo(void));
 SBMA_EXTERN int
 stat(char const * path, struct stat * buf)
 {
-  int ret;
+  ssize_t ret;
 
   if (1 == SBMA_mexist(path)) {
     ret = SBMA_mtouch((void*)path, strlen(path));
@@ -577,8 +538,6 @@ stat(char const * path, struct stat * buf)
 
   return libc_stat(path, buf);
 }
-SBMA_EXPORT(default, int
-stat(char const * path, struct stat * buf));
 
 
 /*************************************************************************/
@@ -587,7 +546,7 @@ stat(char const * path, struct stat * buf));
 SBMA_EXTERN int
 __xstat(int ver, const char * path, struct stat * buf)
 {
-  int ret;
+  ssize_t ret;
 
   if (1 == SBMA_mexist(path)) {
     ret = SBMA_mtouch((void*)path, strlen(path));
@@ -600,8 +559,6 @@ __xstat(int ver, const char * path, struct stat * buf)
 
   return libc___xstat(ver, path, buf);
 }
-SBMA_EXPORT(default, int
-__xstat(int ver, const char * path, struct stat * buf));
 
 
 /*************************************************************************/
@@ -629,7 +586,7 @@ __xstat64(int ver, const char * path, struct stat64 * buf));
 SBMA_EXTERN int
 open(char const * path, int flags, ...)
 {
-  int ret;
+  ssize_t ret;
   va_list list;
   mode_t mode=0;
 
@@ -645,8 +602,6 @@ open(char const * path, int flags, ...)
 
   return libc_open(path, flags, mode);
 }
-SBMA_EXPORT(default, int
-open(char const * path, int flags, ...));
 
 
 /*************************************************************************/
@@ -655,7 +610,7 @@ open(char const * path, int flags, ...));
 SBMA_EXTERN ssize_t
 read(int const fd, void * const buf, size_t const count)
 {
-  int ret;
+  ssize_t ret;
 
   /* NOTE: Consider the following execution sequence. During the call to
    * memset, the first n pages of buf are loaded, then the process must wait
@@ -680,8 +635,6 @@ read(int const fd, void * const buf, size_t const count)
 
   return libc_read(fd, buf, count);
 }
-SBMA_EXPORT(default, ssize_t
-read(int const fd, void * const buf, size_t const count));
 
 
 /*************************************************************************/
@@ -690,7 +643,7 @@ read(int const fd, void * const buf, size_t const count));
 SBMA_EXTERN ssize_t
 write(int const fd, void const * const buf, size_t const count)
 {
-  int ret;
+  ssize_t ret;
 
   if (1 == SBMA_mexist(buf)) {
     ret = SBMA_mtouch((void*)buf, count);
@@ -699,8 +652,6 @@ write(int const fd, void const * const buf, size_t const count)
 
   return libc_write(fd, buf, count);
 }
-SBMA_EXPORT(default, ssize_t
-write(int const fd, void const * const buf, size_t const count));
 
 
 /*************************************************************************/
@@ -710,7 +661,7 @@ SBMA_EXTERN size_t
 fread(void * const buf, size_t const size, size_t const num,
       FILE * const stream)
 {
-  int ret;
+  ssize_t ret;
 
   if (1 == SBMA_mexist(buf)) {
     /* NOTE: For an explaination of why memset() must be used instead of
@@ -722,9 +673,6 @@ fread(void * const buf, size_t const size, size_t const num,
 
   return libc_fread(buf, size, num, stream);
 }
-SBMA_EXPORT(default, size_t
-fread(void * const buf, size_t const size, size_t const num,
-      FILE * const stream));
 
 
 /*************************************************************************/
@@ -734,7 +682,7 @@ SBMA_EXTERN size_t
 fwrite(void const * const buf, size_t const size, size_t const num,
        FILE * const stream)
 {
-  int ret;
+  ssize_t ret;
 
   if (1 == SBMA_mexist(buf)) {
     ret = SBMA_mtouch((void*)buf, size);
@@ -743,9 +691,6 @@ fwrite(void const * const buf, size_t const size, size_t const num,
 
   return libc_fwrite(buf, size, num, stream);
 }
-SBMA_EXPORT(default, size_t
-fwrite(void const * const buf, size_t const size, size_t const num,
-       FILE * const stream));
 
 
 /*************************************************************************/
@@ -754,13 +699,11 @@ fwrite(void const * const buf, size_t const size, size_t const num,
 SBMA_EXTERN int
 mlock(void const * const addr, size_t const len)
 {
-  int ret;
+  ssize_t ret;
   ret = SBMA_mtouch((void*)addr, len);
   ASSERT(-1 != ret);
   return libc_mlock(addr, len);
 }
-SBMA_EXPORT(default, int
-mlock(void const * const addr, size_t const len));
 
 
 /*************************************************************************/
@@ -769,13 +712,11 @@ mlock(void const * const addr, size_t const len));
 SBMA_EXTERN int
 mlockall(int flags)
 {
-  int ret;
+  ssize_t ret;
   ret = SBMA_mtouchall();
   ASSERT(-1 != ret);
   return libc_mlockall(flags);
 }
-SBMA_EXPORT(default, int
-mlockall(int flags));
 
 
 /****************************************************************************/
@@ -787,10 +728,8 @@ msync(void * const addr, size_t const len, int const flags)
   if (0 == SBMA_mexist(addr))
     return libc_msync(addr, len, flags);
   else
-    return SBMA_mevict(addr, len);
+    return (-1 == SBMA_mevict(addr, len) ? -1 : 0);
 }
-SBMA_EXPORT(default, int
-msync(void * const addr, size_t const len, int const flags));
 
 
 #pragma GCC pop_options

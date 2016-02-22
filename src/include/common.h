@@ -34,6 +34,7 @@ THE SOFTWARE.
 #include <stdio.h>      /* fprintf */
 #include <stdlib.h>     /* abort, stderr */
 #include <string.h>     /* basename */
+#include <sys/stat.h>   /* stat, open */
 #include <sys/types.h>  /* ssize_t */
 #include <time.h>       /* struct timespec, nanosleep */
 #include <unistd.h>     /* getpid */
@@ -60,7 +61,7 @@ THE SOFTWARE.
 
 #define SBMA_MMAP_FLAG\
   (MAP_PRIVATE|MAP_ANONYMOUS|MAP_NORESERVE|\
-    (VMM_MLOCK == (vmm.opts&VMM_MLOCK) ? MAP_LOCKED : 0))
+    (VMM_MLOCK == (_vmm_.opts&VMM_MLOCK) ? MAP_LOCKED : 0))
 
 
 /****************************************************************************/
@@ -68,8 +69,8 @@ THE SOFTWARE.
 /****************************************************************************/
 # define SBMA_STATE_CHECK()\
 do {\
-  int ret = __sbma_check(__func__, __LINE__);\
-  ASSERT(-1 != ret);\
+  int _ret = sbma_check(__func__, __LINE__);\
+  ASSERT(-1 != _ret);\
 } while (0)
 
 
@@ -144,12 +145,39 @@ do {\
 /****************************************************************************/
 /*! Function prototypes for libc hooks. */
 /****************************************************************************/
-void *  libc_memcpy(void * const, void const * const, size_t const);
-void *  libc_memmove(void * const, void const * const, size_t const);
-int     libc_open(char const *, int, ...);
-ssize_t libc_read(int const, void * const, size_t const);
-ssize_t libc_write(int const, void const * const, size_t const);
-int     libc_mlock(void const * const, size_t const);
-int     libc_msync(void * const, size_t const, int const);
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+
+SBMA_EXPORT(internal, void *
+  libc_memcpy(void * const dst, void const * const src, size_t const num));
+SBMA_EXPORT(internal, void *
+  libc_memmove(void * const dst, void const * const src, size_t const num));
+SBMA_EXPORT(internal, int libc_stat(char const * path, struct stat * buf));
+SBMA_EXPORT(internal, int
+  libc___xstat(int ver, char const * path, struct stat * buf));
+SBMA_EXPORT(internal, int libc_open(char const * path, int flags, ...));
+SBMA_EXPORT(internal, ssize_t
+  libc_read(int const fd, void * const buf, size_t const count));
+SBMA_EXPORT(internal, ssize_t
+  libc_write(int const fd, void const * const buf, size_t const count));
+SBMA_EXPORT(internal, size_t
+  libc_fread(void * const buf, size_t const size, size_t const num,
+             FILE * const stream));
+SBMA_EXPORT(internal, size_t
+  libc_fwrite(void const * const buf, size_t const size, size_t const num,
+              FILE * const stream));
+SBMA_EXPORT(internal, int
+  libc_mlock(void const * const addr, size_t const len));
+SBMA_EXPORT(internal, int libc_mlockall(int flags));
+SBMA_EXPORT(internal, int
+  libc_msync(void * const addr, size_t const len, int const flags));
+
+
+#ifdef __cplusplus
+}
+#endif
+
 
 #endif /* SBMA_COMMON_H */

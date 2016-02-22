@@ -89,77 +89,80 @@ struct ipc
 extern "C" {
 #endif
 
+
 /*****************************************************************************/
 /*  Initialize the interprocess environment. */
 /*****************************************************************************/
-int
+SBMA_EXPORT(internal, int
 ipc_init(struct ipc * const ipc, int const uniq, int const n_procs,
-         size_t const max_mem);
+         size_t const max_mem));
 
 
 /*****************************************************************************/
 /*  Destroy the interprocess environment. */
 /*****************************************************************************/
-int
-ipc_destroy(struct ipc * const ipc);
+SBMA_EXPORT(internal, int
+ipc_destroy(struct ipc * const ipc));
 
 
 /*****************************************************************************/
 /*  Allow signals to be sent to process. */
 /*****************************************************************************/
-void
-ipc_sigon(struct ipc * const ipc);
+SBMA_EXPORT(internal, void
+ipc_sigon(struct ipc * const ipc));
 
 
 /*****************************************************************************/
 /*  Disallow signals to be sent to process. */
 /*****************************************************************************/
-void
-ipc_sigoff(struct ipc * const ipc);
+SBMA_EXPORT(internal, void
+ipc_sigoff(struct ipc * const ipc));
 
 
 /*****************************************************************************/
 /*  Check if process is eligible for eviction. */
 /*****************************************************************************/
-int
-ipc_is_eligible(struct ipc * const ipc, int const id);
+SBMA_EXPORT(internal, int
+ipc_is_eligible(struct ipc * const ipc, int const id));
 
 
 /*****************************************************************************/
 /*  Increment process resident memory. */
 /*****************************************************************************/
-void
-ipc_atomic_inc(struct ipc * const ipc, size_t const value);
+SBMA_EXPORT(internal, void
+ipc_atomic_inc(struct ipc * const ipc, size_t const value));
 
 
 /*****************************************************************************/
 /*  Decrement process resident memory. */
 /*****************************************************************************/
-void
+SBMA_EXPORT(internal, void
 ipc_atomic_dec(struct ipc * const ipc, size_t const c_pages,
-               size_t const d_pages);
+               size_t const d_pages));
 
 
 /*****************************************************************************/
 /*  Account for resident memory before admission. Check to see if the system
  *  can support the addition of value bytes of memory. */
 /*****************************************************************************/
-int
-ipc_madmit(struct ipc * const ipc, size_t const value, int const admitd);
+SBMA_EXPORT(internal, int
+ipc_madmit(struct ipc * const ipc, size_t const value, int const admitd));
 
 
 /*****************************************************************************/
 /*  Account for loaded memory after eviction. */
 /*****************************************************************************/
-int
-ipc_mevict(struct ipc * const ipc, size_t const c_pages, size_t const d_pages);
+SBMA_EXPORT(internal, int
+ipc_mevict(struct ipc * const ipc, size_t const c_pages,
+           size_t const d_pages));
 
 
 /*****************************************************************************/
 /*  Account for dirty memory. */
 /*****************************************************************************/
-int
-ipc_mdirty(struct ipc * const ipc, ssize_t const value);
+SBMA_EXPORT(internal, int
+ipc_mdirty(struct ipc * const ipc, ssize_t const value));
+
 
 #ifdef __cplusplus
 }

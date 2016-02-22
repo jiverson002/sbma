@@ -79,14 +79,14 @@ struct vmm
 /*****************************************************************************/
 /*  One instance of vmm per process. */
 /*****************************************************************************/
-extern struct vmm vmm;
+extern struct vmm _vmm_;
 
 
 /*****************************************************************************/
 /*  Converts pages to system pages. */
 /*****************************************************************************/
 #define VMM_TO_SYS(N_PAGES)\
-  ((N_PAGES)*vmm.page_size/sysconf(_SC_PAGESIZE))
+  ((size_t)(N_PAGES)*_vmm_.page_size/(size_t)sysconf(_SC_PAGESIZE))
 
 
 /*****************************************************************************/
@@ -94,16 +94,16 @@ extern struct vmm vmm;
 /*****************************************************************************/
 #define VMM_INTRA_CRITICAL_SECTION_BEG(VMM)\
 do {\
-  int ret;\
-  ret = lock_get(&((VMM)->lock));\
-  ASSERT(0 == ret);\
+  int _ret;\
+  _ret = lock_get(&((VMM)->lock));\
+  ASSERT(0 == _ret);\
 } while (0)
 
 #define VMM_INTRA_CRITICAL_SECTION_END(VMM)\
 do {\
-  int ret;\
-  ret = lock_let(&((VMM)->lock));\
-  ASSERT(0 == ret);\
+  int _ret;\
+  _ret = lock_let(&((VMM)->lock));\
+  ASSERT(0 == _ret);\
 } while (0)
 
 
@@ -120,45 +120,47 @@ do {\
 extern "C" {
 #endif
 
+
 /*****************************************************************************/
 /*  Swaps the supplied range of pages in, reading any necessary pages from
  *  disk. */
 /*****************************************************************************/
-ssize_t
+SBMA_EXPORT(internal, ssize_t
 vmm_swap_i(struct ate * const ate, size_t const beg, size_t const num,
-           int const ghost);
+           int const ghost));
 
 
 /*****************************************************************************/
 /*  Swaps the supplied range of pages out, writing any dirty pages to
  *  disk. */
 /*****************************************************************************/
-ssize_t
-vmm_swap_o(struct ate * const ate, size_t const beg, size_t const num);
+SBMA_EXPORT(internal, ssize_t
+vmm_swap_o(struct ate * const ate, size_t const beg, size_t const num));
 
 
 /*****************************************************************************/
 /*  Clear the MMU_DIRTY and set the MMU_ZFILL flags for the supplied range of
  *  pages */
 /*****************************************************************************/
-ssize_t
-vmm_swap_x(struct ate * const ate, size_t const beg, size_t const num);
+SBMA_EXPORT(internal, ssize_t
+vmm_swap_x(struct ate * const ate, size_t const beg, size_t const num));
 
 
 /*****************************************************************************/
 /*  Initializes the sbmalloc subsystem. */
 /*****************************************************************************/
-int
+SBMA_EXPORT(internal, int
 vmm_init(struct vmm * const vmm, char const * const fstem, int const uniq,
          size_t const page_size, int const n_procs, size_t const max_mem,
-         int const opts);
+         int const opts));
 
 
 /*****************************************************************************/
 /*  Shuts down the sbmalloc subsystem. */
 /*****************************************************************************/
-int
-vmm_destroy(struct vmm * const vmm);
+SBMA_EXPORT(internal, int
+vmm_destroy(struct vmm * const vmm));
+
 
 #ifdef __cplusplus
 }

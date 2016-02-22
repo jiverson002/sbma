@@ -48,11 +48,11 @@ THE SOFTWARE.
 /*! Set parameters for the sbmalloc subsystem. */
 /****************************************************************************/
 SBMA_EXTERN int
-__sbma_mallopt(int const __param, int const __value)
+sbma_mallopt(int const __param, int const __value)
 {
   int ret;
 
-  ret = lock_get(&(vmm.lock));
+  ret = lock_get(&(_vmm_.lock));
   if (-1 == ret)
     return -1;
 
@@ -60,33 +60,31 @@ __sbma_mallopt(int const __param, int const __value)
     case M_VMMOPTS:
     if (VMM_INVLD == (__value&VMM_INVLD))
       goto CLEANUP;
-    vmm.opts = __value;
+    _vmm_.opts = __value;
     break;
 
     default:
     goto CLEANUP;
   }
 
-  ret = lock_let(&(vmm.lock));
+  ret = lock_let(&(_vmm_.lock));
   if (-1 == ret)
     goto CLEANUP;
 
   return 0;
 
   CLEANUP:
-  ret = lock_let(&(vmm.lock));
+  ret = lock_let(&(_vmm_.lock));
   ASSERT(-1 != ret);
   return -1;
 }
-SBMA_EXPORT(default, int
-__sbma_mallopt(int const __param, int const __value));
 
 
 /****************************************************************************/
 /*! Parse a string into options. */
 /****************************************************************************/
 SBMA_EXTERN int
-__sbma_parse_optstr(char const * const __opt_str)
+sbma_parse_optstr(char const * const __opt_str)
 {
   int opts=0, seen=0;
   int all=(VMM_RSDNT|VMM_LZYRD|VMM_AGGCH|VMM_GHOST|VMM_MERGE|VMM_METACH|\
@@ -184,83 +182,75 @@ __sbma_parse_optstr(char const * const __opt_str)
   RETURN:
   return opts;
 }
-SBMA_EXPORT(default, int
-__sbma_parse_optstr(char const * const __opt_str));
 
 
 /****************************************************************************/
 /*! Return some memory statistics */
 /****************************************************************************/
 SBMA_EXTERN struct mallinfo
-__sbma_mallinfo(void)
+sbma_mallinfo(void)
 {
   struct mallinfo mi;
 
   memset(&mi, 0, sizeof(struct mallinfo));
 
-  mi.smblks   = vmm.numipc;  /* received SIGIPC faults */
-  mi.ordblks  = vmm.numhipc; /* honored SIGIPC faults */
+  mi.smblks   = _vmm_.numipc;  /* received SIGIPC faults */
+  mi.ordblks  = _vmm_.numhipc; /* honored SIGIPC faults */
 
-  mi.usmblks  = vmm.numrd; /* syspages read from disk */
-  mi.fsmblks  = vmm.numwr; /* syspages wrote to disk */
-  mi.uordblks = vmm.numrf; /* read faults */
-  mi.fordblks = vmm.numwf; /* write faults */
+  mi.usmblks  = _vmm_.numrd; /* syspages read from disk */
+  mi.fsmblks  = _vmm_.numwr; /* syspages wrote to disk */
+  mi.uordblks = _vmm_.numrf; /* read faults */
+  mi.fordblks = _vmm_.numwf; /* write faults */
 
-  if (0 == vmm.ipc.init)
-    mi.hblks = vmm.ipc.curpages;  /* syspages loaded */
-  else
-    mi.hblks = vmm.ipc.c_mem[vmm.ipc.id]; /* ... */
-  mi.hblkhd   = vmm.ipc.maxpages; /* high water mark for loaded syspages */
-  mi.keepcost = vmm.numpages;     /* syspages allocated */
+  if (0 == _vmm_.ipc.init) {
+    mi.hblks = _vmm_.ipc.curpages;  /* syspages loaded */
+  }
+  else {
+    mi.hblks = _vmm_.ipc.c_mem[_vmm_.ipc.id]; /* ... */
+  }
+  mi.hblkhd   = _vmm_.ipc.maxpages; /* high water mark for loaded syspages */
+  mi.keepcost = _vmm_.numpages;     /* syspages allocated */
 
   return mi;
 }
-SBMA_EXPORT(default, struct mallinfo
-__sbma_mallinfo(void));
 
 
 /****************************************************************************/
 /*! Return some timing statistics */
 /****************************************************************************/
 SBMA_EXTERN struct sbma_timeinfo
-__sbma_timeinfo(void)
+sbma_timeinfo(void)
 {
   struct sbma_timeinfo ti;
 
   memset(&ti, 0, sizeof(struct sbma_timeinfo));
 
-  ti.tv_rd = vmm.tmrrd;
-  ti.tv_wr = vmm.tmrwr;
-  //ti.tv_ad = vmm.tmrad;
-  //ti.tv_ev = vmm.tmrev;
+  ti.tv_rd = _vmm_.tmrrd;
+  ti.tv_wr = _vmm_.tmrwr;
+  //ti.tv_ad = _vmm_.tmrad;
+  //ti.tv_ev = _vmm_.tmrev;
 
   return ti;
 }
-SBMA_EXPORT(default, struct sbma_timeinfo
-__sbma_timeinfo(void));
 
 
 /****************************************************************************/
 /*! Inform runtime to allow signals to be received. */
 /****************************************************************************/
 SBMA_EXTERN int
-__sbma_sigon(void)
+sbma_sigon(void)
 {
-  ipc_sigon(&(vmm.ipc));
+  ipc_sigon(&(_vmm_.ipc));
   return 0;
 }
-SBMA_EXPORT(default, int
-__sbma_release(void));
 
 
 /****************************************************************************/
 /*! Inform runtime to disallow signals from being received. */
 /****************************************************************************/
 SBMA_EXTERN int
-__sbma_sigoff(void)
+sbma_sigoff(void)
 {
-  ipc_sigoff(&(vmm.ipc));
+  ipc_sigoff(&(_vmm_.ipc));
   return 0;
 }
-SBMA_EXPORT(default, int
-__sbma_release(void));

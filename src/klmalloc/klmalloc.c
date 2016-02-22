@@ -318,19 +318,14 @@ do {                                                                        \
 #endif
 #ifdef USE_SBMA
 # include <stdarg.h>
-int    __sbma_vinit(va_list args);
-int    __sbma_destroy(void);
-void * __sbma_malloc(size_t const size);
-void * __sbma_realloc(void * const ptr, size_t const size);
-int    __sbma_free(void * const ptr);
-int    __sbma_remap(void * const nptr, void * const ptr, size_t const num);
+# include "sbma.h"
 # define SYS_ALLOC_FAIL NULL
-# define CALL_SYS_INIT(L)          __sbma_vinit(L)
-# define CALL_SYS_DESTROY()        __sbma_destroy()
-# define CALL_SYS_ALLOC(P,S)       ((P)=__sbma_malloc(S))
-# define CALL_SYS_REALLOC(N,O,S,F) ((N)=__sbma_realloc(O,F))
-# define CALL_SYS_REMAP(N,O,S)     __sbma_remap(N,O,S)
-# define CALL_SYS_FREE(P,S)        __sbma_free(P)
+# define CALL_SYS_INIT(L)          sbma_vinit(L)
+# define CALL_SYS_DESTROY()        sbma_destroy()
+# define CALL_SYS_ALLOC(P,S)       ((P)=sbma_malloc(S))
+# define CALL_SYS_REALLOC(N,O,S,F) ((N)=sbma_realloc(O,F))
+# define CALL_SYS_REMAP(N,O,S)     sbma_remap(N,O,S)
+# define CALL_SYS_FREE(P,S)        sbma_free(P)
 # define CALL_SYS_BZERO(P,S)
 #endif
 
@@ -1055,13 +1050,16 @@ typedef struct kl_mem
 #endif
 } kl_mem_t;
 
-static kl_mem_t mem={
+
+static kl_mem_t _mem_=
+{
 #ifdef USE_THREAD
   .init_lock = PTHREAD_MUTEX_INITIALIZER,
 #endif
   .init = 0,
   .enabled = M_ENABLED_OFF
 };
+
 
 static int
 kl_mem_init(kl_mem_t * const mem, ...)
@@ -1754,7 +1752,7 @@ kl_chunk_solo(kl_mem_t * const mem, size_t const size)
 /****************************************************************************/
 /* Return max size of brick. */
 /****************************************************************************/
-KL_EXPORT size_t
+static size_t
 KL_brick_max_size(void)
 {
   return BRICK_MAX_SIZE;
@@ -1764,21 +1762,25 @@ KL_brick_max_size(void)
 /****************************************************************************/
 /* Return max size of fixed size chunk. */
 /****************************************************************************/
-KL_EXPORT size_t
+#if 0
+static size_t
 KL_chunk_max_size(void)
 {
   return FIXED_MAX_SIZE;
 }
+#endif
 
 
 /****************************************************************************/
 /* Return max size of solo chunk. */
 /****************************************************************************/
-KL_EXPORT size_t
+#if 0
+static size_t
 KL_solo_max_size(void)
 {
   return CHUNK_MAX_SIZE;
 }
+#endif
 
 
 /****************************************************************************/
@@ -1812,24 +1814,24 @@ KL_malloc(size_t const size)
   */
 
   /* Enabled check. */
-  GET_LOCK(&(mem.init_lock));
-  if (M_ENABLED_ON != mem.enabled) {
-    LET_LOCK(&(mem.init_lock));
+  GET_LOCK(&(_mem_.init_lock));
+  if (M_ENABLED_ON != _mem_.enabled) {
+    LET_LOCK(&(_mem_.init_lock));
     return libc_malloc(size);
   }
-  LET_LOCK(&(mem.init_lock));
+  LET_LOCK(&(_mem_.init_lock));
 
   if (size > ALLOC_MAX_SIZE)
     return NULL;
 
-  if (NULL != (brick=kl_brick_get(&mem, size))) {
+  if (NULL != (brick=kl_brick_get(&_mem_, size))) {
     ptr = BRICK_PTR(brick);
 
     assert(size <= BRICK_MAX_SIZE);
     assert(KL_BRICK_SIZE(size) <= KL_G_SIZE(brick));
     assert(KL_BRICK == KL_TYPEOF(brick));
   }
-  else if (NULL != (chunk=kl_chunk_get(&mem, size))) {
+  else if (NULL != (chunk=kl_chunk_get(&_mem_, size))) {
     ptr = CHUNK_PTR(chunk);
 
     assert(size <= FIXED_MAX_SIZE);
@@ -1837,7 +1839,7 @@ KL_malloc(size_t const size)
     assert(KL_CHUNK_SIZE(size) <= KL_G_SIZE(chunk));
     assert(KL_CHUNK == KL_TYPEOF(chunk));
   }
-  else if (NULL != (chunk=kl_chunk_solo(&mem, size))) {
+  else if (NULL != (chunk=kl_chunk_solo(&_mem_, size))) {
     ptr = CHUNK_PTR(chunk);
 
     assert(size > FIXED_MAX_SIZE);
@@ -1863,12 +1865,12 @@ KL_calloc(size_t const num, size_t const size)
   void * ptr;
 
   /* Enabled check. */
-  GET_LOCK(&(mem.init_lock));
-  if (M_ENABLED_ON != mem.enabled) {
-    LET_LOCK(&(mem.init_lock));
+  GET_LOCK(&(_mem_.init_lock));
+  if (M_ENABLED_ON != _mem_.enabled) {
+    LET_LOCK(&(_mem_.init_lock));
     return libc_calloc(num, size);
   }
-  LET_LOCK(&(mem.init_lock));
+  LET_LOCK(&(_mem_.init_lock));
 
   if (NULL == (ptr=KL_malloc(num*size)))
     return NULL;
@@ -1889,22 +1891,22 @@ KL_free(void * const ptr)
   kl_alloc_t * alloc;
 
   /* Enabled check. */
-  GET_LOCK(&(mem.init_lock));
-  if (M_ENABLED_ON != mem.enabled) {
-    LET_LOCK(&(mem.init_lock));
+  GET_LOCK(&(_mem_.init_lock));
+  if (M_ENABLED_ON != _mem_.enabled) {
+    LET_LOCK(&(_mem_.init_lock));
     libc_free(ptr);
     return 0;
   }
-  LET_LOCK(&(mem.init_lock));
+  LET_LOCK(&(_mem_.init_lock));
 
   alloc = KL_G_ALLOC(ptr);
 
   switch (KL_TYPEOF(alloc)) {
     case KL_BRICK:
-      kl_brick_put(&mem, (kl_brick_t*)alloc);
+      kl_brick_put(&_mem_, (kl_brick_t*)alloc);
       break;
     case KL_CHUNK:
-      kl_chunk_put(&mem, (kl_chunk_t*)alloc);
+      kl_chunk_put(&_mem_, (kl_chunk_t*)alloc);
       break;
   }
 
@@ -1925,12 +1927,12 @@ KL_realloc(void * const ptr, size_t const size)
   kl_var_block_t * block, * oblock;
 
   /* Enabled check. */
-  GET_LOCK(&(mem.init_lock));
-  if (M_ENABLED_ON != mem.enabled) {
-    LET_LOCK(&(mem.init_lock));
+  GET_LOCK(&(_mem_.init_lock));
+  if (M_ENABLED_ON != _mem_.enabled) {
+    LET_LOCK(&(_mem_.init_lock));
     return libc_realloc(ptr, size);
   }
-  LET_LOCK(&(mem.init_lock));
+  LET_LOCK(&(_mem_.init_lock));
 
   chunk = (kl_chunk_t*)KL_G_ALLOC(ptr);
   osize = KL_G_SIZE(chunk);
@@ -1954,12 +1956,12 @@ KL_realloc(void * const ptr, size_t const size)
     block_size = KL_BLOCK_SIZE(KL_CHUNK_SIZE(size));
     assert(block_size > BLOCK_DEFAULT_SIZE);
 
-    block = (kl_var_block_t*)kl_block_realloc(&mem, block,\
+    block = (kl_var_block_t*)kl_block_realloc(&_mem_, block,\
       KL_BLOCK_SIZE(osize), block_size);
     if (NULL == block)
       goto MALLOC;
 
-    chunk = kl_chunk_hdr(&mem, block, size);
+    chunk = kl_chunk_hdr(&_mem_, block, size);
     nptr  = CHUNK_PTR(chunk);
 
     assert(KL_CHUNK_SIZE(size) == KL_G_SIZE(chunk));
@@ -1992,14 +1994,14 @@ KL_realloc(void * const ptr, size_t const size)
 
     /* Need to re-establish the chunk after remapping, since CALL_SYS_REMAP
      * can re-initialize the entire allocation. */
-    chunk = kl_chunk_hdr(&mem, block, size);
+    chunk = kl_chunk_hdr(&_mem_, block, size);
     if (nptr != CHUNK_PTR(chunk))
       return NULL;
 
-    GET_LOCK(&(mem.lock));
+    GET_LOCK(&(_mem_.lock));
     /* Accounting. */
-    mem.mem_total -= obsize;
-    LET_LOCK(&(mem.lock));
+    _mem_.mem_total -= obsize;
+    LET_LOCK(&(_mem_.lock));
 
     /* Release old memory region. */
     CALL_SYS_FREE(oblock, obsize);
@@ -2041,21 +2043,21 @@ KL_mallopt(int const param, int const value)
     case M_ENABLED:
       switch (value) {
         case M_ENABLED_OFF:
-          GET_LOCK(&(mem.init_lock));
-          mem.enabled = M_ENABLED_OFF;
-          LET_LOCK(&(mem.init_lock));
-          kl_mem_destroy(&mem);
+          GET_LOCK(&(_mem_.init_lock));
+          _mem_.enabled = M_ENABLED_OFF;
+          LET_LOCK(&(_mem_.init_lock));
+          kl_mem_destroy(&_mem_);
           break;
         case M_ENABLED_ON:
-          kl_mem_init(&mem);
-          GET_LOCK(&(mem.init_lock));
-          mem.enabled = M_ENABLED_ON;
-          LET_LOCK(&(mem.init_lock));
+          kl_mem_init(&_mem_);
+          GET_LOCK(&(_mem_.init_lock));
+          _mem_.enabled = M_ENABLED_ON;
+          LET_LOCK(&(_mem_.init_lock));
           break;
         case M_ENABLED_PAUSE:
-          GET_LOCK(&(mem.init_lock));
-          mem.enabled = M_ENABLED_PAUSE;
-          LET_LOCK(&(mem.init_lock));
+          GET_LOCK(&(_mem_.init_lock));
+          _mem_.enabled = M_ENABLED_PAUSE;
+          LET_LOCK(&(_mem_.init_lock));
           break;
       }
       break;
@@ -2073,22 +2075,22 @@ KL_mallinfo(void)
 {
   struct mallinfo mi;
 
-  mi.arena = mem.mem_max; /* maximum concurrent memory allocated */
+  mi.arena = _mem_.mem_max; /* maximum concurrent memory allocated */
 
   /* ----- UNIMPLEMENTED ----- */
   mi.smblks  = 0; /* total number of bricks */
   mi.ordblks = 0; /* total number of chunks */
   mi.hblks   = 0; /* total number of solo chunks (by definition, all in use) */
 
-  mi.usmblks  = mem.mem_brick_cur;                   /* bytes used by bricks */
-  mi.fsmblks  = mem.mem_brick_tot-mem.mem_brick_tot; /* bytes available for bricks */
-  mi.uordblks = mem.mem_chunk_cur;                   /* bytes used by chunks */
-  mi.fordblks = mem.mem_chunk_tot-mem.mem_chunk_tot; /* bytes available for chunks */
+  mi.usmblks  = _mem_.mem_brick_cur;                     /* bytes used by bricks */
+  mi.fsmblks  = _mem_.mem_brick_tot-_mem_.mem_brick_tot; /* bytes available for bricks */
+  mi.uordblks = _mem_.mem_chunk_cur;                     /* bytes used by chunks */
+  mi.fordblks = _mem_.mem_chunk_tot-_mem_.mem_chunk_tot; /* bytes available for chunks */
   /* ------------------------- */
 
-  mi.hblkhd = mem.sys_ctr; /* calls to system allocator */
+  mi.hblkhd = _mem_.sys_ctr; /* calls to system allocator */
 
-  mi.keepcost = mem.num_undes*BLOCK_DEFAULT_SIZE; /* bytes of undesignated blocks */
+  mi.keepcost = _mem_.num_undes*BLOCK_DEFAULT_SIZE; /* bytes of undesignated blocks */
 
   return mi;
 }

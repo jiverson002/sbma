@@ -66,16 +66,16 @@ do {\
 /*****************************************************************************/
 #define IPC_INTER_CRITICAL_SECTION_BEG(IPC)\
 do {\
-  int ret;\
-  ret = sem_wait((IPC)->inter_mtx);\
-  ASSERT(0 == ret);\
+  int _ret;\
+  _ret = sem_wait((IPC)->inter_mtx);\
+  ASSERT(0 == _ret);\
 } while (0)
 
 #define IPC_INTER_CRITICAL_SECTION_END(IPC)\
 do {\
-  int ret;\
-  ret = sem_post((IPC)->inter_mtx);\
-  ASSERT(0 == ret);\
+  int _ret;\
+  _ret = sem_post((IPC)->inter_mtx);\
+  ASSERT(0 == _ret);\
 } while (0)
 
 
@@ -208,9 +208,6 @@ ipc_init(struct ipc * const ipc, int const uniq, int const n_procs,
 
   return 0;
 }
-SBMA_EXPORT(internal, int
-ipc_init(struct ipc * const ipc, int const uniq, int const n_procs,
-         size_t const max_mem));
 
 
 /*****************************************************************************/
@@ -260,8 +257,6 @@ ipc_destroy(struct ipc * const ipc)
 
   return 0;
 }
-SBMA_EXPORT(internal, int
-ipc_destroy(struct ipc * const ipc));
 
 
 /*****************************************************************************/
@@ -278,8 +273,6 @@ ipc_sigon(struct ipc * const ipc)
 {
   ipc->flags[ipc->id] |= IPC_SIGON;
 }
-SBMA_EXPORT(internal, void
-ipc_sigon(struct ipc * const ipc));
 
 
 /*****************************************************************************/
@@ -294,8 +287,6 @@ ipc_sigoff(struct ipc * const ipc)
 {
   ipc->flags[ipc->id] &= ~IPC_SIGON;
 }
-SBMA_EXPORT(internal, void
-ipc_sigoff(struct ipc * const ipc));
 
 
 /*****************************************************************************/
@@ -322,8 +313,6 @@ ipc_is_eligible(struct ipc * const ipc, int const id)
 
   return eligible;
 }
-SBMA_EXPORT(internal, int
-ipc_is_eligible(struct ipc * const ipc, int const id));
 
 
 /*****************************************************************************/
@@ -345,8 +334,6 @@ ipc_atomic_inc(struct ipc * const ipc, size_t const value)
   if (ipc->c_mem[ipc->id] > ipc->maxpages)
     ipc->maxpages = ipc->c_mem[ipc->id];
 }
-SBMA_EXPORT(internal, void
-ipc_atomic_inc(struct ipc * const ipc, size_t const value));
 
 
 /*****************************************************************************/
@@ -384,9 +371,6 @@ ipc_atomic_dec(struct ipc * const ipc, size_t const c_pages,
   IPC_INTRA_CRITICAL_SECTION_END(ipc);
   /*=========================================================================*/
 }
-SBMA_EXPORT(internal, void
-ipc_atomic_dec(struct ipc * const ipc, size_t const c_pages,
-               size_t const d_pages));
 
 
 /*****************************************************************************/
@@ -501,8 +485,6 @@ ipc_madmit(struct ipc * const ipc, size_t const value, int const admitd)
   RETURN:
   return retval;
 }
-SBMA_EXPORT(internal, int
-ipc_madmit(struct ipc * const ipc, size_t const value, int const admitd));
 
 
 /*****************************************************************************/
@@ -527,9 +509,6 @@ ipc_mevict(struct ipc * const ipc, size_t const c_pages, size_t const d_pages)
 
   return 0;
 }
-SBMA_EXPORT(internal, int
-ipc_mevict(struct ipc * const ipc, size_t const c_pages,
-           size_t const d_pages));
 
 
 /*****************************************************************************/
@@ -567,5 +546,3 @@ ipc_mdirty(struct ipc * const ipc, ssize_t const value)
 
   return 0;
 }
-SBMA_EXPORT(internal, int
-ipc_mdirty(struct ipc * const ipc, ssize_t const value));

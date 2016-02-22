@@ -44,12 +44,6 @@ THE SOFTWARE.
 
 
 /*****************************************************************************/
-/*  Required function prototypes. */
-/*****************************************************************************/
-int __sbma_mevictall_int(size_t * const, size_t * const, size_t * const);
-
-
-/*****************************************************************************/
 /*  Read data from file.                                                     */
 /*                                                                           */
 /*  MT-Unsafe race:buf                                                       */
@@ -148,11 +142,11 @@ vmm_sigsegv(int const sig, siginfo_t * const si, void * const ctx)
   ASSERT(SIGSEGV == sig);
 
   /* setup local variables */
-  page_size = vmm.page_size;
+  page_size = _vmm_.page_size;
   addr      = (uintptr_t)si->si_addr;
 
   /* lookup allocation table entry */
-  ate = mmu_lookup_ate(&(vmm.mmu), (void*)addr);
+  ate = mmu_lookup_ate(&(_vmm_.mmu), (void*)addr);
   ASSERT((struct ate*)-1 != ate);
   ASSERT(NULL != ate);
 
@@ -160,7 +154,7 @@ vmm_sigsegv(int const sig, siginfo_t * const si, void * const ctx)
   flags = ate->flags;
 
   if (MMU_RSDNT == (flags[ip]&MMU_RSDNT)) {
-    if (VMM_LZYRD == (vmm.opts&VMM_LZYRD)) {
+    if (VMM_LZYRD == (_vmm_.opts&VMM_LZYRD)) {
       _addr = (void*)(ate->base+ip*page_size);
       _len  = page_size;
     }
@@ -169,15 +163,15 @@ vmm_sigsegv(int const sig, siginfo_t * const si, void * const ctx)
       _len  = ate->n_pages*page_size;
     }
 
-    ret = __sbma_mtouch(ate, _addr, _len);
+    ret = sbma_mtouch(ate, _addr, _len);
     ASSERT(-1 != ret);
 
     ret = lock_let(&(ate->lock));
     ASSERT(-1 != ret);
 
-    VMM_INTRA_CRITICAL_SECTION_BEG(&vmm);
-    VMM_TRACK(&vmm, numrf, 1);
-    VMM_INTRA_CRITICAL_SECTION_END(&vmm);
+    VMM_INTRA_CRITICAL_SECTION_BEG(&_vmm_);
+    VMM_TRACK(&_vmm_, numrf, 1);
+    VMM_INTRA_CRITICAL_SECTION_END(&_vmm_);
   }
   else {
     /* sanity check */
@@ -197,12 +191,12 @@ vmm_sigsegv(int const sig, siginfo_t * const si, void * const ctx)
 
     /* increase count of dirty pages */
     ate->d_pages++;
-    ret = ipc_mdirty(&(vmm.ipc), VMM_TO_SYS(1));
+    ret = ipc_mdirty(&(_vmm_.ipc), VMM_TO_SYS(1));
     ASSERT(-1 != ret);
 
-    VMM_INTRA_CRITICAL_SECTION_BEG(&vmm);
-    VMM_TRACK(&vmm, numwf, 1);
-    VMM_INTRA_CRITICAL_SECTION_END(&vmm);
+    VMM_INTRA_CRITICAL_SECTION_BEG(&_vmm_);
+    VMM_TRACK(&_vmm_, numwf, 1);
+    VMM_INTRA_CRITICAL_SECTION_END(&_vmm_);
   }
 
   if (NULL == ctx) {} /* suppress unused warning */
@@ -226,7 +220,7 @@ vmm_sigipc(int const sig, siginfo_t * const si, void * const ctx)
   ASSERT(SIGIPC == sig);
 
   /* Only honor the SIGIPC if my status is still eligible. */
-  if (ipc_is_eligible(&(vmm.ipc), vmm.ipc.id)) {
+  if (ipc_is_eligible(&(_vmm_.ipc), _vmm_.ipc.id)) {
     /* XXX Is it possible / what happens / does it matter if the process
      * receives a SIGIPC at this point in the execution of the signal handler?
      * */
@@ -240,11 +234,11 @@ vmm_sigipc(int const sig, siginfo_t * const si, void * const ctx)
     /*=======================================================================*/
 
     /* Evict all memory. */
-    ret = __sbma_mevictall_int(&c_pages, &d_pages, &numwr);
+    ret = sbma_mevictall_int(&c_pages, &d_pages, &numwr);
     ASSERT(-1 != ret);
 
     /* Update ipc memory statistics. */
-    ipc_atomic_dec(&(vmm.ipc), c_pages, d_pages);
+    ipc_atomic_dec(&(_vmm_.ipc), c_pages, d_pages);
 
     /*=======================================================================*/
     TIMER_STOP(&(tmr));
@@ -252,21 +246,21 @@ vmm_sigipc(int const sig, siginfo_t * const si, void * const ctx)
 
     /* Track number of number of syspages written to disk, time taken for
      * writing, and number of SIGIPC honored. */
-    VMM_INTRA_CRITICAL_SECTION_BEG(&vmm);
-    VMM_TRACK(&vmm, numwr, numwr);
-    VMM_TRACK(&vmm, tmrwr, (double)tmr.tv_sec+(double)tmr.tv_nsec/1000000000.0);
-    VMM_TRACK(&vmm, numhipc, 1);
-    VMM_INTRA_CRITICAL_SECTION_END(&vmm);
+    VMM_INTRA_CRITICAL_SECTION_BEG(&_vmm_);
+    VMM_TRACK(&_vmm_, numwr, numwr);
+    VMM_TRACK(&_vmm_, tmrwr, (double)tmr.tv_sec+(double)tmr.tv_nsec/1000000000.0);
+    VMM_TRACK(&_vmm_, numhipc, 1);
+    VMM_INTRA_CRITICAL_SECTION_END(&_vmm_);
   }
 
   /* Signal to the waiting process that the memory has been released. */
-  ret = sem_post(vmm.ipc.done);
+  ret = sem_post(_vmm_.ipc.done);
   ASSERT(-1 != ret);
 
   /* Track the number of SIGIPC received. */
-  VMM_INTRA_CRITICAL_SECTION_BEG(&vmm);
-  VMM_TRACK(&vmm, numipc, 1);
-  VMM_INTRA_CRITICAL_SECTION_END(&vmm);
+  VMM_INTRA_CRITICAL_SECTION_BEG(&_vmm_);
+  VMM_TRACK(&_vmm_, numipc, 1);
+  VMM_INTRA_CRITICAL_SECTION_END(&_vmm_);
 
   if (NULL == si || NULL == ctx) {}
 }
@@ -310,7 +304,7 @@ vmm_swap_i(struct ate * const ate, size_t const beg, size_t const num,
   }
 
   /* Setup local variables. */
-  page_size = vmm.page_size;
+  page_size = _vmm_.page_size;
   flags     = ate->flags;
   end       = beg+num;
 
@@ -327,7 +321,7 @@ vmm_swap_i(struct ate * const ate, size_t const beg, size_t const num,
   }
 
   /* Compute file name. */
-  ret = snprintf(fname, FILENAME_MAX, "%s%d-%zx", vmm.fstem, (int)getpid(),\
+  ret = snprintf(fname, FILENAME_MAX, "%s%d-%zx", _vmm_.fstem, (int)getpid(),\
     (uintptr_t)ate);
   ERRCHK(ERREXIT, 0 > ret);
   /* Open the file for reading. */
@@ -432,9 +426,6 @@ vmm_swap_i(struct ate * const ate, size_t const beg, size_t const num,
   return retval;
 
 }
-SBMA_EXPORT(internal, ssize_t
-vmm_swap_i(struct ate * const ate, size_t const beg, size_t const num,
-           int const ghost));
 
 
 /*****************************************************************************/
@@ -474,13 +465,13 @@ vmm_swap_o(struct ate * const ate, size_t const beg, size_t const num)
     goto RETURN;
 
   /* Setup local variables. */
-  page_size = vmm.page_size;
+  page_size = _vmm_.page_size;
   addr      = ate->base;
   flags     = ate->flags;
   end       = beg+num;
 
   /* Generate file name. */
-  ret = snprintf(fname, FILENAME_MAX, "%s%d-%zx", vmm.fstem, (int)getpid(),\
+  ret = snprintf(fname, FILENAME_MAX, "%s%d-%zx", _vmm_.fstem, (int)getpid(),\
     (uintptr_t)ate);
   ERRCHK(ERREXIT, 0 > ret);
   /* Open the file for writing. */
@@ -539,7 +530,7 @@ vmm_swap_o(struct ate * const ate, size_t const beg, size_t const num)
   ret = close(fd);
   ERRCHK(ERREXIT, -1 == ret);
 
-  if (VMM_MLOCK == (vmm.opts&VMM_MLOCK)) {
+  if (VMM_MLOCK == (_vmm_.opts&VMM_MLOCK)) {
     /* unlock the memory from RAM */
     ret = munlock((void*)(addr+(beg*page_size)), num*page_size);
     ERRCHK(ERREXIT, -1 == ret);
@@ -573,8 +564,6 @@ vmm_swap_o(struct ate * const ate, size_t const beg, size_t const num)
   RETURN:
   return retval;
 }
-SBMA_EXPORT(internal, ssize_t
-vmm_swap_o(struct ate * const ate, size_t const beg, size_t const num));
 
 
 /*****************************************************************************/
@@ -607,7 +596,7 @@ vmm_swap_x(struct ate * const ate, size_t const beg, size_t const num)
   /* TODO Shortcut if there are no dirty pages AND no pages stored on disk. */
 
   /* Setup local variables. */
-  page_size = vmm.page_size;
+  page_size = _vmm_.page_size;
   flags     = ate->flags;
   end       = beg+num;
 
@@ -644,8 +633,6 @@ vmm_swap_x(struct ate * const ate, size_t const beg, size_t const num)
   RETURN:
   return retval;
 }
-SBMA_EXPORT(internal, ssize_t
-vmm_swap_x(struct ate * const ate, size_t const beg, size_t const num));
 
 
 SBMA_EXTERN int
@@ -740,10 +727,6 @@ vmm_init(struct vmm * const vmm, char const * const fstem, int const uniq,
   FATAL:
   FATAL_ABORT(errno);
 }
-SBMA_EXPORT(internal, int
-vmm_init(struct vmm * const vmm, char const * const fstem, int const uniq,
-         size_t const page_size, int const n_procs, size_t const max_mem,
-         int const opts));
 
 
 SBMA_EXTERN int
@@ -798,5 +781,3 @@ vmm_destroy(struct vmm * const vmm)
   FATAL:
   FATAL_ABORT(errno);
 }
-SBMA_EXPORT(internal, int
-vmm_destroy(struct vmm * const vmm));
