@@ -23,7 +23,7 @@
 # THE SOFTWARE.
 #}}}1
 .SILENT: help show
-.PHONY: clean help install show
+.PHONY: clean help install show todolist
 
 
 LIB = libsbma.a
@@ -158,6 +158,9 @@ show:
 	$(ECHO) "  libdir=$(libdir)"
 	$(ECHO) "  exec_prefix=$(exec_prefix)"
 	$(ECHO) "  prefix=$(prefix)"
+
+todolist:
+	-@for file in $(ALLFILES:Makefile=); do grep -H -e TODO -e FIXME $$file; done; true
 #}}}1
 
 
