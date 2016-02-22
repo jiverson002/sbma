@@ -154,17 +154,6 @@ vmm_sigsegv(int const sig, siginfo_t * const si, void * const ctx)
   /* lookup allocation table entry */
   ate = mmu_lookup_ate(&(vmm.mmu), (void*)addr);
   ASSERT((struct ate*)-1 != ate);
-  if (NULL == ate) {
-    printf("%zu not found\n", addr);
-    /* Search doubly linked list for a ate which contains addr. */
-    for (ate=vmm.mmu.a_tbl; NULL!=ate; ate=ate->next) {
-      size_t len  = ate->n_pages*vmm.mmu.page_size;
-      void * addr_ = (void*)ate->base;
-      printf("  %zu %zu\n", ate->base, ate->base+ate->n_pages*vmm.mmu.page_size);
-      if (addr_ <= (void*)addr && (void*)addr < (void*)((uintptr_t)addr_+len))
-        break;
-    }
-  }
   ASSERT(NULL != ate);
 
   ip    = (addr-ate->base)/page_size;
@@ -320,8 +309,6 @@ vmm_swap_i(struct ate * const ate, size_t const beg, size_t const num,
     goto RETURN;
   }
 
-  ASSERT(0);
-
   /* Setup local variables. */
   page_size = vmm.page_size;
   flags     = ate->flags;
@@ -469,8 +456,6 @@ vmm_swap_o(struct ate * const ate, size_t const beg, size_t const num)
   volatile uint8_t * flags;
   char fname[FILENAME_MAX];
 
-  ASSERT(0);
-
   /* Sanity check input values. */
   ASSERT(NULL != ate);
   ASSERT(num <= ate->n_pages);
@@ -607,8 +592,6 @@ vmm_swap_x(struct ate * const ate, size_t const beg, size_t const num)
   int retval, ret;
   size_t ip, end, page_size;
   volatile uint8_t * flags;
-
-  ASSERT(0);
 
   /* Sanity check input values. */
   ASSERT(NULL != ate);

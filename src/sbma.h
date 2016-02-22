@@ -25,11 +25,6 @@ THE SOFTWARE.
 #define SBMA_H 1
 
 
-#ifndef _GNU_SOURCE
-# define _GNU_SOURCE 1
-#endif
-
-
 #include <sys/types.h> /* ssize_t */
 
 

@@ -93,7 +93,6 @@ __sbma_mtouch_int(struct ate * const __ate, void * const __addr,
   if (((VMM_AGGCH|VMM_LZYRD) == (vmm.opts&(VMM_AGGCH|VMM_LZYRD))) &&\
       (0 == __ate->c_pages))
   {
-    ASSERT(0);
     for (i=0; i<__ate->n_pages; ++i) {
       /* flag: 0*** */
       __ate->flags[i] &= ~MMU_CHRGD;
@@ -594,8 +593,6 @@ __sbma_mtouchall(void)
   struct timespec tmr;
   struct ate * ate, * start=NULL, * stop=NULL;
 
-  ASSERT(0);
-
   /*========================================================================*/
   SBMA_STATE_CHECK();
   TIMER_START(&(tmr));
@@ -695,7 +692,6 @@ __sbma_mclear(void * const __addr, size_t const __len)
   ssize_t ret;
   struct ate * ate;
 
-#if 0
   SBMA_STATE_CHECK();
 
   ate = mmu_lookup_ate(&(vmm.mmu), __addr);
@@ -725,16 +721,13 @@ __sbma_mclear(void * const __addr, size_t const __len)
     goto CLEANUP;
 
   SBMA_STATE_CHECK();
-#endif
   return 0;
 
-#if 0
   CLEANUP:
   ret = lock_let(&(ate->lock));
   ASSERT(-1 != ret);
   ERREXIT:
   return -1;
-#endif
 }
 SBMA_EXPORT(internal, ssize_t
 __sbma_mclear(void * const __addr, size_t const __len));
@@ -749,8 +742,6 @@ __sbma_mclearall(void)
   size_t d_pages=0;
   ssize_t ret;
   struct ate * ate;
-
-  ASSERT(0);
 
   SBMA_STATE_CHECK();
 
@@ -800,8 +791,6 @@ __sbma_mevict(void * const __addr, size_t const __len)
   ssize_t numwr;
   struct timespec tmr;
   struct ate * ate;
-
-  ASSERT(0);
 
   /*========================================================================*/
   SBMA_STATE_CHECK();
@@ -866,8 +855,6 @@ __sbma_mevictall_int(size_t * const __c_pages, size_t * const __d_pages,
   size_t c_pages=0, d_pages=0, numwr=0;
   ssize_t ret;
   struct ate * ate;
-
-  ASSERT(0);
 
   ret = lock_get(&(vmm.lock));
   if (-1 == ret)
