@@ -56,5 +56,3 @@ slave process blocks due to a communication operation and informs the OS that
 the associated address space does not need to be saved in the swap file, and
 modifies the memory protection of the associated pages to remove read/write
 permissions.
-
-**TODO**: Explain how the usage of memory protection and signal handling works.
