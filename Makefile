@@ -23,7 +23,7 @@
 # THE SOFTWARE.
 #}}}1
 .SILENT: check help show todolist
-.PHONY: check clean help install show todolist
+.PHONY: check clean dist distclean help install show todolist
 
 
 LIB = libsbma.a
@@ -54,7 +54,7 @@ WARNING := -Wall -Wextra -pedantic -Wshadow -Wpointer-arith -Wcast-align \
            -Wwrite-strings -Wmissing-prototypes -Wmissing-declarations \
            -Wredundant-decls -Wnested-externs -Winline -Wno-long-long \
            -Wuninitialized -Wstrict-prototypes
-CFLAGS  := -std=c99 -O0 -g $(WARNING)
+CFLAGS  := -O0 -g $(WARNING)
 LDFLAGS :=
 ARFLAGS := crsP
 #}}}1
@@ -80,8 +80,8 @@ prefix = /usr/local
 # FILES
 #-------------------------------------------------------------------------------
 #{{{1
-# This is a list of all non-source files that are part of the distribution.
-AUXFILES    := AUTHORS ChangeLog COPYING Makefile NEWS README.md
+# This is a list of all non-source files/directories that are part of the distribution.
+AUXFILES    := AUTHORS ChangeLog COPYING Makefile NEWS README.md doc refs bench
 
 # Subdirectories holding the actual sources
 PROJDIRS    := src/api src/include src/ipc src/klmalloc src/lock src/mmu src/vmm
@@ -113,6 +113,7 @@ VERSION := $(shell grep -e '^\#define SBMA_MAJOR' -e '^\#define SBMA_MINOR' \
                  | awk '{print $$3}' \
                  | paste -d ' ' - - - - \
                  | awk '{printf "%d.%d.%d%s", $$1,$$2,$$3,$$4}')
+DIST    := sbma-$(VERSION).tar.gz
 #}}}1
 
 
@@ -138,6 +139,11 @@ $(LIB): $(OBJFILES)
 	@$(CC) $(CFLAGS) -MMD -MP -Isrc/include -pthread -DTEST \
          -DVERSION="$(VERSION)" -DDATE="$(DATE)" -DCOMMIT="$(COMMIT)" \
          $< $(LIB) -o $@ -lrt -ldl
+
+# FIXME This will not update distribution if a file in a directory included in
+# ALLFILES is updated/added.
+$(DIST): $(ALLFILES)
+	-tar czf $(DIST) $(ALLFILES)
 #}}}1
 
 
@@ -162,13 +168,20 @@ check: $(TSTFILES)
     echo "Tests executed: $$count  Tests failed: $$rc"
 
 clean:
-	-$(RM) $(wildcard $(OBJFILES) $(DEPFILES) $(TSTFILES) $(TSTDEPFILES) $(LIB) $(DIST))
+	-$(RM) $(wildcard $(OBJFILES) $(DEPFILES) $(TSTFILES) $(TSTDEPFILES) $(LIB))
+
+dist: $(DIST)
+
+distclean: clean
+	-$(RM) $(wildcard $(DIST))
 
 help:
 	$(ECHO) "The following are valid targets for this Makefile:"
 	$(ECHO) "... $(LIB) (the default if no target is provided)"
 	$(ECHO) "... check"
 	$(ECHO) "... clean"
+	$(ECHO) "... dist"
+	$(ECHO) "... distclean"
 	$(ECHO) "... help"
 	$(ECHO) "... install"
 	$(ECHO) "... show"
