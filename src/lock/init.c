@@ -50,6 +50,7 @@ lock_init(pthread_mutex_t * const lock)
   retval = pthread_mutexattr_init(&attr);
   ERRCHK(RETURN, 0 != retval);
 
+  /* FIXME Does this need to be a recursive lock? */
   retval = pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE);
   ERRCHK(RETURN, 0 != retval);
 
@@ -68,6 +69,8 @@ typedef int make_iso_compilers_happy;
 
 #ifdef TEST
 #include <stddef.h> /* NULL */
+#include "common.h"
+#include "lock.h"
 
 
 int
@@ -75,6 +78,14 @@ main(int argc, char * argv[])
 {
   if (0 == argc || NULL == argv) {}
 
+  int ret;
+
+  ret = lock_init(&lock);
+  ERRCHK(FAILURE, 0 != ret);
+
   return 0;
+
+  FAILURE:
+  return 1;
 }
 #endif
