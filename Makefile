@@ -189,7 +189,9 @@ help:
 
 install: $(LIB)
 	@$(ECHO) $(libdir)/$(LIB) > $(INSTALLLOG)
-	$(INSTALL) $(LIB) $(libdir)
+	$(INSTALL) $(LIB) $(libdir)/$(LIB)
+	@$(ECHO) $(includedir)/sbma.h >> $(INSTALLLOG)
+	$(INSTALL) src/include/sbma.h $(includedir)/sbma.h
 
 show:
 	$(ECHO) "$(PROJECT) v$(VERSION) ($(COMMIT)) on $(DATE)"
