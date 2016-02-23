@@ -56,7 +56,7 @@ WARNING := -Wall -Wextra -pedantic -Wshadow -Wpointer-arith -Wcast-align \
            -Wuninitialized -Wstrict-prototypes
 CFLAGS  := -std=c99 -O0 -g $(WARNING)
 LDFLAGS :=
-ARFLAGS := crs
+ARFLAGS := crsP
 #}}}1
 
 
@@ -122,33 +122,20 @@ VERSION := $(shell grep -e '^\#define SBMA_MAJOR' -e '^\#define SBMA_MINOR' \
 #{{{1
 $(LIB): $(OBJFILES)
 	@echo "  AR       $@"
+	@$(AR) $(ARFLAGS) $@ $?
 	@echo "  RANLIB   $@"
-	$(AR) $(ARFLAGS) $@ $?
 
 -include $(DEPFILES) $(TSTDEPFILES)
 
 %.o: %.c Makefile
-	#@echo "  CC       $@"
-	$(CC) $(CFLAGS) -MMD -MP -Isrc/include \
+	@echo "  CC       $@"
+	@$(CC) $(CFLAGS) -MMD -MP -Isrc/include \
          -DVERSION="$(VERSION)" -DDATE="$(DATE)" -DCOMMIT="$(COMMIT)" \
          -c $< -o $@
 
-# TODO When compiling after changing a files, i.e., not a from build, linking
-# against the library fails somehow with the following error:
-#
-#   CC       src/api/mextra_t
-# libsbma.a(init.o): In function `vmm_init':
-# /home/jeremy/local/git/sbma/src/vmm/init.c:247: undefined reference to
-# `ipc_init'
-# /usr/bin/ld: src/api/mextra_t: internal symbol `ipc_init' isn't defined
-# /usr/bin/ld: final link failed: Bad value
-# collect2: error: ld returned 1 exit status
-# Makefile:137: recipe for target 'src/api/mextra_t' failed
-# make: *** [src/api/mextra_t] Error 1
-
 %_t: %.c Makefile $(LIB)
-	#@echo "  CC       $@"
-	$(CC) $(CFLAGS) -MMD -MP -Isrc/include -pthread -DTEST \
+	@echo "  CC       $@"
+	@$(CC) $(CFLAGS) -MMD -MP -Isrc/include -pthread -DTEST \
          -DVERSION="$(VERSION)" -DDATE="$(DATE)" -DCOMMIT="$(COMMIT)" \
          $< $(LIB) -o $@ -lrt -ldl
 #}}}1
