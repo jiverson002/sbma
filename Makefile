@@ -1,29 +1,3 @@
-#-------------------------------------------------------------------------------
-# COPYRIGHT NOTICE
-#-------------------------------------------------------------------------------
-#{{{1
-# Copyright (c) 2015,2016 Jeremy Iverson
-#
-# Permission is hereby granted, free of charge, to any person obtaining a copy
-# of this software and associated documentation files (the "Software"), to deal
-# in the Software without restriction, including without limitation the rights
-# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-# copies of the Software, and to permit persons to whom the Software is
-# furnished to do so, subject to the following conditions:
-#
-# The above copyright notice and this permission notice shall be included in all
-# copies or substantial portions of the Software.
-#
-# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-# SOFTWARE.
-#}}}1
-
-
 # Name of project
 PROJECT := SBMA
 
@@ -36,6 +10,12 @@ LIBRARY := sbma
 #   following macros: $(PROJECT)_MAJOR, $(PROJECT)_MINOR, $(PROJECT)_PATCH, and
 #   optionally $(PROJECT)_RCAND.
 INCLUDE := src/include
+
+# Sub-directories holding the actual sources
+PROJDIRS := src/api src/include src/ipc src/klmalloc src/lock src/mmu src/vmm
+
+# List of all non-source files/directories that are part of the distribution
+AUXFILES := AUTHORS ChangeLog COPYING Makefile NEWS README.md doc refs bench
 
 
 #-------------------------------------------------------------------------------
@@ -59,6 +39,7 @@ LD := cc
 #-------------------------------------------------------------------------------
 #{{{1
 # TODO Add -Wconversion
+ARFLAGS  := crsP
 WARNING  := -Wall -Wextra -pedantic -Wshadow -Wpointer-arith -Wcast-align \
             -Wwrite-strings -Wmissing-prototypes -Wmissing-declarations \
             -Wredundant-decls -Wnested-externs -Winline -Wno-long-long \
@@ -66,7 +47,6 @@ WARNING  := -Wall -Wextra -pedantic -Wshadow -Wpointer-arith -Wcast-align \
 OPTIMIZE := -O0 -g
 CFLAGS   := $(OPTIMIZE) $(WARNING)
 LDFLAGS  := -pthread
-ARFLAGS  := crsP
 TESTLIBS := -lrt -ldl
 #}}}1
 
@@ -79,18 +59,6 @@ includedir = $(prefix)/include
 libdir = $(exec_prefix)/lib
 exec_prefix = $(prefix)
 prefix = /usr/local
-#}}}1
-
-
-#-------------------------------------------------------------------------------
-# FILES/DIRECTORIES
-#-------------------------------------------------------------------------------
-#{{{1
-# This is a list of all non-source files/directories that are part of the distribution.
-AUXFILES := AUTHORS ChangeLog COPYING Makefile NEWS README.md doc refs bench
-
-# Subdirectories holding the actual sources
-PROJDIRS := src/api src/include src/ipc src/klmalloc src/lock src/mmu src/vmm
 #}}}1
 
 
@@ -148,7 +116,6 @@ $(LIB): $(OBJFILES)
 
 -include $(DEPFILES) $(TSTDEPFILES)
 
-# TODO Remove hard-coded paths (-Isrc/include)
 %.o: %.c Makefile
 	@echo "  CC       $@"
 	@$(CC) $(CFLAGS) -MMD -MP -I$(INCLUDE) \
