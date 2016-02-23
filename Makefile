@@ -123,19 +123,32 @@ VERSION := $(shell grep -e '^\#define SBMA_MAJOR' -e '^\#define SBMA_MINOR' \
 $(LIB): $(OBJFILES)
 	@echo "  AR       $@"
 	@echo "  RANLIB   $@"
-	@$(AR) $(ARFLAGS) $@ $?
+	$(AR) $(ARFLAGS) $@ $?
 
 -include $(DEPFILES) $(TSTDEPFILES)
 
 %.o: %.c Makefile
-	@echo "  CC       $@"
-	@$(CC) $(CFLAGS) -MMD -MP -Isrc/include \
+	#@echo "  CC       $@"
+	$(CC) $(CFLAGS) -MMD -MP -Isrc/include \
          -DVERSION="$(VERSION)" -DDATE="$(DATE)" -DCOMMIT="$(COMMIT)" \
          -c $< -o $@
 
+# TODO When compiling after changing a files, i.e., not a from build, linking
+# against the library fails somehow with the following error:
+#
+#   CC       src/api/mextra_t
+# libsbma.a(init.o): In function `vmm_init':
+# /home/jeremy/local/git/sbma/src/vmm/init.c:247: undefined reference to
+# `ipc_init'
+# /usr/bin/ld: src/api/mextra_t: internal symbol `ipc_init' isn't defined
+# /usr/bin/ld: final link failed: Bad value
+# collect2: error: ld returned 1 exit status
+# Makefile:137: recipe for target 'src/api/mextra_t' failed
+# make: *** [src/api/mextra_t] Error 1
+
 %_t: %.c Makefile $(LIB)
-	@echo "  CC       $@"
-	@$(CC) $(CFLAGS) -MMD -MP -Isrc/include -pthread -DTEST \
+	#@echo "  CC       $@"
+	$(CC) $(CFLAGS) -MMD -MP -Isrc/include -pthread -DTEST \
          -DVERSION="$(VERSION)" -DDATE="$(DATE)" -DCOMMIT="$(COMMIT)" \
          $< $(LIB) -o $@ -lrt -ldl
 #}}}1
@@ -148,8 +161,15 @@ $(LIB): $(OBJFILES)
 check: $(TSTFILES)
 	-rc=0; count=0; \
     for file in $(TSTFILES); do \
-      echo "  TEST     $$file"; ./$$file; \
-      rc=`expr $$rc + $$?`; count=`expr $$count + 1`; \
+      ./$$file; \
+      ret=$$?; \
+      rc=`expr $$rc + $$ret`; count=`expr $$count + 1`; \
+      if [ $$ret -eq 0 ] ; then \
+        echo -n "  PASS"; \
+      else \
+        echo -n "  FAIL"; \
+      fi; \
+      echo "     $$file"; ./$$file; \
     done; \
     echo; \
     echo "Tests executed: $$count  Tests failed: $$rc"
