@@ -26,46 +26,32 @@ THE SOFTWARE.
 #endif
 
 
-/****************************************************************************/
-/*! Pthread configurations. */
-/****************************************************************************/
-#ifdef USE_THREAD
-# include <pthread.h>     /* pthread library */
-# include <sys/syscall.h> /* SYS_gettid */
-# include <unistd.h>      /* syscall */
-# include "common.h"
-# include "lock.h"
+#include <string.h> /* memset */
+#include "common.h"
+#include "sbma.h"
+#include "vmm.h"
 
 
-/*****************************************************************************/
-/*  MT-Safe                                                                  */
-/*****************************************************************************/
-SBMA_EXTERN int
-lock_let_int(char const * const func, int const line,
-             char const * const lock_str, pthread_mutex_t * const lock)
+/****************************************************************************/
+/*! Return some timing statistics */
+/****************************************************************************/
+SBMA_EXTERN struct sbma_timeinfo
+sbma_timeinfo(void)
 {
-  int retval;
+  struct sbma_timeinfo ti;
 
-  retval = pthread_mutex_unlock(lock);
-  ERRCHK(RETURN, 0 != retval);
+  memset(&ti, 0, sizeof(struct sbma_timeinfo));
 
-  DL_PRINTF("[%5d] mtx let %s:%d %s (%p)\n", (int)syscall(SYS_gettid), func,\
-    line, lock_str, (void*)(lock));
+  ti.tv_rd = _vmm_.tmrrd;
+  ti.tv_wr = _vmm_.tmrwr;
+  //ti.tv_ad = _vmm_.tmrad;
+  //ti.tv_ev = _vmm_.tmrev;
 
-  RETURN:
-  return retval;
+  return ti;
 }
-#else
-/* Required incase USE_THREAD is not defined, so that this is not an empty
- * translation unit. */
-typedef int make_iso_compilers_happy;
-#endif
 
 
 #ifdef TEST
-#include <stddef.h> /* NULL */
-
-
 int
 main(int argc, char * argv[])
 {

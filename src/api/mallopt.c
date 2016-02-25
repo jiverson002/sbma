@@ -26,46 +26,48 @@ THE SOFTWARE.
 #endif
 
 
-/****************************************************************************/
-/*! Pthread configurations. */
-/****************************************************************************/
-#ifdef USE_THREAD
-# include <pthread.h>     /* pthread library */
-# include <sys/syscall.h> /* SYS_gettid */
-# include <unistd.h>      /* syscall */
-# include "common.h"
-# include "lock.h"
+#include "lock.h"
+#include "sbma.h"
+#include "vmm.h"
 
 
-/*****************************************************************************/
-/*  MT-Safe                                                                  */
-/*****************************************************************************/
+/****************************************************************************/
+/*! Set parameters for the sbmalloc subsystem. */
+/****************************************************************************/
 SBMA_EXTERN int
-lock_let_int(char const * const func, int const line,
-             char const * const lock_str, pthread_mutex_t * const lock)
+sbma_mallopt(int const __param, int const __value)
 {
-  int retval;
+  int ret;
 
-  retval = pthread_mutex_unlock(lock);
-  ERRCHK(RETURN, 0 != retval);
+  ret = lock_get(&(_vmm_.lock));
+  if (-1 == ret)
+    return -1;
 
-  DL_PRINTF("[%5d] mtx let %s:%d %s (%p)\n", (int)syscall(SYS_gettid), func,\
-    line, lock_str, (void*)(lock));
+  switch (__param) {
+    case M_VMMOPTS:
+    if (VMM_INVLD == (__value&VMM_INVLD))
+      goto CLEANUP;
+    _vmm_.opts = __value;
+    break;
 
-  RETURN:
-  return retval;
+    default:
+    goto CLEANUP;
+  }
+
+  ret = lock_let(&(_vmm_.lock));
+  if (-1 == ret)
+    goto CLEANUP;
+
+  return 0;
+
+  CLEANUP:
+  ret = lock_let(&(_vmm_.lock));
+  ASSERT(-1 != ret);
+  return -1;
 }
-#else
-/* Required incase USE_THREAD is not defined, so that this is not an empty
- * translation unit. */
-typedef int make_iso_compilers_happy;
-#endif
 
 
 #ifdef TEST
-#include <stddef.h> /* NULL */
-
-
 int
 main(int argc, char * argv[])
 {

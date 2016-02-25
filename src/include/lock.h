@@ -35,6 +35,7 @@ THE SOFTWARE.
 /*****************************************************************************/
 #ifdef USE_THREAD
 # include <pthread.h> /* pthread library */
+# include "common.h"
 
 # define DEADLOCK 0   /* 0: no deadlock diagnostics, */
                       /* 1: deadlock diagnostics */
@@ -73,16 +74,15 @@ lock_free(pthread_mutex_t * const lock));
 /*****************************************************************************/
 SBMA_EXPORT(internal, int
 lock_get_int(char const * const func, int const line,
-             char const * const lock_str,
-             pthread_mutex_t * const lock));
+             char const * const lock_str, pthread_mutex_t * const lock));
 
 
 /*****************************************************************************/
 /*  Unlock pthread lock. */
 /*****************************************************************************/
-int
+SBMA_EXPORT(internal, int
 lock_let_int(char const * const func, int const line,
-             char const * const lock_str, pthread_mutex_t * const lock);
+             char const * const lock_str, pthread_mutex_t * const lock));
 
 # ifdef __cplusplus
 }

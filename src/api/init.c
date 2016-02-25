@@ -26,46 +26,54 @@ THE SOFTWARE.
 #endif
 
 
+#include <stddef.h> /* size_t */
+#include "lock.h"
+#include "sbma.h"
+#include "vmm.h"
+
+
 /****************************************************************************/
-/*! Pthread configurations. */
+/*! Initialization variables. */
 /****************************************************************************/
 #ifdef USE_THREAD
-# include <pthread.h>     /* pthread library */
-# include <sys/syscall.h> /* SYS_gettid */
-# include <unistd.h>      /* syscall */
-# include "common.h"
-# include "lock.h"
-
-
-/*****************************************************************************/
-/*  MT-Safe                                                                  */
-/*****************************************************************************/
-SBMA_EXTERN int
-lock_let_int(char const * const func, int const line,
-             char const * const lock_str, pthread_mutex_t * const lock)
-{
-  int retval;
-
-  retval = pthread_mutex_unlock(lock);
-  ERRCHK(RETURN, 0 != retval);
-
-  DL_PRINTF("[%5d] mtx let %s:%d %s (%p)\n", (int)syscall(SYS_gettid), func,\
-    line, lock_str, (void*)(lock));
-
-  RETURN:
-  return retval;
-}
-#else
-/* Required incase USE_THREAD is not defined, so that this is not an empty
- * translation unit. */
-typedef int make_iso_compilers_happy;
+pthread_mutex_t init_lock=PTHREAD_MUTEX_INITIALIZER;
 #endif
 
 
+/****************************************************************************/
+/*! The single instance of vmm per process. */
+/****************************************************************************/
+struct vmm _vmm_={.init=0, .ipc.init=0};
+
+
+/****************************************************************************/
+/*! Initialize the sbma environment. */
+/****************************************************************************/
+SBMA_EXTERN int
+sbma_init(char const * const __fstem, int const __uniq,
+          size_t const __page_size, int const __n_procs,
+          size_t const __max_mem, int const __opts)
+{
+  /* acquire init lock */
+  if (-1 == lock_get(&init_lock))
+    return -1;
+
+  if (-1 == vmm_init(&_vmm_, __fstem, __uniq, __page_size, __n_procs,\
+      __max_mem, __opts))
+  {
+    (void)lock_let(&init_lock);
+    return -1;
+  }
+
+  /* release init lock */
+  if (-1 == lock_let(&init_lock))
+    return -1;
+
+  return 0;
+}
+
+
 #ifdef TEST
-#include <stddef.h> /* NULL */
-
-
 int
 main(int argc, char * argv[])
 {

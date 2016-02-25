@@ -69,7 +69,7 @@ THE SOFTWARE.
 /****************************************************************************/
 # define SBMA_STATE_CHECK()\
 do {\
-  int _ret = sbma_check(__func__, __LINE__);\
+  int _ret = sbma_mcheck(__func__, __LINE__);\
   ASSERT(-1 != _ret);\
 } while (0)
 

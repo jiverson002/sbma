@@ -26,46 +26,46 @@ THE SOFTWARE.
 #endif
 
 
-/****************************************************************************/
-/*! Pthread configurations. */
-/****************************************************************************/
-#ifdef USE_THREAD
-# include <pthread.h>     /* pthread library */
-# include <sys/syscall.h> /* SYS_gettid */
-# include <unistd.h>      /* syscall */
-# include "common.h"
-# include "lock.h"
+#include <stddef.h>    /* NULL */
+#include "common.h"
+#include "lock.h"
+#include "mmu.h"
+#include "sbma.h"
+#include "vmm.h"
 
 
-/*****************************************************************************/
-/*  MT-Safe                                                                  */
-/*****************************************************************************/
+/****************************************************************************/
+/*! Check if __addr exists in an allocation table entry. */
+/****************************************************************************/
 SBMA_EXTERN int
-lock_let_int(char const * const func, int const line,
-             char const * const lock_str, pthread_mutex_t * const lock)
+sbma_mexist(void const * const __addr)
 {
-  int retval;
+  int ret;
+  struct ate * ate;
 
-  retval = pthread_mutex_unlock(lock);
-  ERRCHK(RETURN, 0 != retval);
+  if (0 == _vmm_.init)
+    return 0;
 
-  DL_PRINTF("[%5d] mtx let %s:%d %s (%p)\n", (int)syscall(SYS_gettid), func,\
-    line, lock_str, (void*)(lock));
+  ate = mmu_lookup_ate(&(_vmm_.mmu), __addr);
+  if ((struct ate*)-1 == ate)
+    return -1;
+  else if (NULL == ate)
+    return 0;
 
-  RETURN:
-  return retval;
+  ret = lock_let(&(ate->lock));
+  if (-1 == ret)
+    goto CLEANUP;
+
+  return 1;
+
+  CLEANUP:
+  ret = lock_let(&(ate->lock));
+  ASSERT(-1 != ret);
+  return -1;
 }
-#else
-/* Required incase USE_THREAD is not defined, so that this is not an empty
- * translation unit. */
-typedef int make_iso_compilers_happy;
-#endif
 
 
 #ifdef TEST
-#include <stddef.h> /* NULL */
-
-
 int
 main(int argc, char * argv[])
 {

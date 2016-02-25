@@ -26,46 +26,44 @@ THE SOFTWARE.
 #endif
 
 
-/****************************************************************************/
-/*! Pthread configurations. */
-/****************************************************************************/
-#ifdef USE_THREAD
-# include <pthread.h>     /* pthread library */
-# include <sys/syscall.h> /* SYS_gettid */
-# include <unistd.h>      /* syscall */
-# include "common.h"
-# include "lock.h"
+#include <malloc.h> /* struct mallinfo */
+#include <string.h> /* memset */
+#include "sbma.h"
+#include "vmm.h"
 
 
-/*****************************************************************************/
-/*  MT-Safe                                                                  */
-/*****************************************************************************/
-SBMA_EXTERN int
-lock_let_int(char const * const func, int const line,
-             char const * const lock_str, pthread_mutex_t * const lock)
+/****************************************************************************/
+/*! Return some memory statistics */
+/****************************************************************************/
+SBMA_EXTERN struct mallinfo
+sbma_mallinfo(void)
 {
-  int retval;
+  struct mallinfo mi;
 
-  retval = pthread_mutex_unlock(lock);
-  ERRCHK(RETURN, 0 != retval);
+  memset(&mi, 0, sizeof(struct mallinfo));
 
-  DL_PRINTF("[%5d] mtx let %s:%d %s (%p)\n", (int)syscall(SYS_gettid), func,\
-    line, lock_str, (void*)(lock));
+  mi.smblks   = _vmm_.numipc;  /* received SIGIPC faults */
+  mi.ordblks  = _vmm_.numhipc; /* honored SIGIPC faults */
 
-  RETURN:
-  return retval;
+  mi.usmblks  = _vmm_.numrd; /* syspages read from disk */
+  mi.fsmblks  = _vmm_.numwr; /* syspages wrote to disk */
+  mi.uordblks = _vmm_.numrf; /* read faults */
+  mi.fordblks = _vmm_.numwf; /* write faults */
+
+  if (0 == _vmm_.ipc.init) {
+    mi.hblks = _vmm_.ipc.curpages;  /* syspages loaded */
+  }
+  else {
+    mi.hblks = _vmm_.ipc.c_mem[_vmm_.ipc.id]; /* ... */
+  }
+  mi.hblkhd   = _vmm_.ipc.maxpages; /* high water mark for loaded syspages */
+  mi.keepcost = _vmm_.numpages;     /* syspages allocated */
+
+  return mi;
 }
-#else
-/* Required incase USE_THREAD is not defined, so that this is not an empty
- * translation unit. */
-typedef int make_iso_compilers_happy;
-#endif
 
 
 #ifdef TEST
-#include <stddef.h> /* NULL */
-
-
 int
 main(int argc, char * argv[])
 {

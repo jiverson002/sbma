@@ -290,7 +290,7 @@ sbma_sigoff(void));
 
 /* mstate.c */
 SBMA_EXPORT(internal, int
-sbma_check(char const * const, int const));
+sbma_mcheck(char const * const, int const));
 
 SBMA_EXPORT(internal, ssize_t
 sbma_mtouch(void * const, void * const, size_t const));

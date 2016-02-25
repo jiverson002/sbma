@@ -26,46 +26,21 @@ THE SOFTWARE.
 #endif
 
 
-/****************************************************************************/
-/*! Pthread configurations. */
-/****************************************************************************/
-#ifdef USE_THREAD
-# include <pthread.h>     /* pthread library */
-# include <sys/syscall.h> /* SYS_gettid */
-# include <unistd.h>      /* syscall */
-# include "common.h"
-# include "lock.h"
+#include <stddef.h> /* size_t */
+#include "sbma.h"
 
 
-/*****************************************************************************/
-/*  MT-Safe                                                                  */
-/*****************************************************************************/
-SBMA_EXTERN int
-lock_let_int(char const * const func, int const line,
-             char const * const lock_str, pthread_mutex_t * const lock)
+/****************************************************************************/
+/*! Function for API consistency, adds no additional functionality. */
+/****************************************************************************/
+SBMA_EXTERN void *
+sbma_calloc(size_t const __num, size_t const __size)
 {
-  int retval;
-
-  retval = pthread_mutex_unlock(lock);
-  ERRCHK(RETURN, 0 != retval);
-
-  DL_PRINTF("[%5d] mtx let %s:%d %s (%p)\n", (int)syscall(SYS_gettid), func,\
-    line, lock_str, (void*)(lock));
-
-  RETURN:
-  return retval;
+  return sbma_malloc(__num*__size);
 }
-#else
-/* Required incase USE_THREAD is not defined, so that this is not an empty
- * translation unit. */
-typedef int make_iso_compilers_happy;
-#endif
 
 
 #ifdef TEST
-#include <stddef.h> /* NULL */
-
-
 int
 main(int argc, char * argv[])
 {

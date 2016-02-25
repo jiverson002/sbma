@@ -43,7 +43,7 @@ THE SOFTWARE.
 /*****************************************************************************/
 SBMA_EXTERN int
 lock_get_int(char const * const func, int const line,
-               char const * const lock_str, pthread_mutex_t * const lock)
+             char const * const lock_str, pthread_mutex_t * const lock)
 {
   int retval;
 #if defined(DEADLOCK) && DEADLOCK > 0

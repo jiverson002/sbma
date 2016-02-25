@@ -26,13 +26,8 @@ THE SOFTWARE.
 #endif
 
 
-#include <malloc.h> /* struct mallinfo */
-#include <string.h> /* memset, strncmp */
-#include "common.h"
-#include "ipc.h"
-#include "lock.h"
+#include <string.h> /* strncmp */
 #include "sbma.h"
-#include "vmm.h"
 
 
 /****************************************************************************/
@@ -42,42 +37,6 @@ THE SOFTWARE.
   ((0 == strncmp(__TOK, __STR, __NUM)) &&\
    ('\0' == __TOK[__NUM]) &&\
    ((__OPT) == (((__SEEN)^=(__OPT))&(__OPT))))
-
-
-/****************************************************************************/
-/*! Set parameters for the sbmalloc subsystem. */
-/****************************************************************************/
-SBMA_EXTERN int
-sbma_mallopt(int const __param, int const __value)
-{
-  int ret;
-
-  ret = lock_get(&(_vmm_.lock));
-  if (-1 == ret)
-    return -1;
-
-  switch (__param) {
-    case M_VMMOPTS:
-    if (VMM_INVLD == (__value&VMM_INVLD))
-      goto CLEANUP;
-    _vmm_.opts = __value;
-    break;
-
-    default:
-    goto CLEANUP;
-  }
-
-  ret = lock_let(&(_vmm_.lock));
-  if (-1 == ret)
-    goto CLEANUP;
-
-  return 0;
-
-  CLEANUP:
-  ret = lock_let(&(_vmm_.lock));
-  ASSERT(-1 != ret);
-  return -1;
-}
 
 
 /****************************************************************************/
@@ -181,78 +140,6 @@ sbma_parse_optstr(char const * const __opt_str)
 
   RETURN:
   return opts;
-}
-
-
-/****************************************************************************/
-/*! Return some memory statistics */
-/****************************************************************************/
-SBMA_EXTERN struct mallinfo
-sbma_mallinfo(void)
-{
-  struct mallinfo mi;
-
-  memset(&mi, 0, sizeof(struct mallinfo));
-
-  mi.smblks   = _vmm_.numipc;  /* received SIGIPC faults */
-  mi.ordblks  = _vmm_.numhipc; /* honored SIGIPC faults */
-
-  mi.usmblks  = _vmm_.numrd; /* syspages read from disk */
-  mi.fsmblks  = _vmm_.numwr; /* syspages wrote to disk */
-  mi.uordblks = _vmm_.numrf; /* read faults */
-  mi.fordblks = _vmm_.numwf; /* write faults */
-
-  if (0 == _vmm_.ipc.init) {
-    mi.hblks = _vmm_.ipc.curpages;  /* syspages loaded */
-  }
-  else {
-    mi.hblks = _vmm_.ipc.c_mem[_vmm_.ipc.id]; /* ... */
-  }
-  mi.hblkhd   = _vmm_.ipc.maxpages; /* high water mark for loaded syspages */
-  mi.keepcost = _vmm_.numpages;     /* syspages allocated */
-
-  return mi;
-}
-
-
-/****************************************************************************/
-/*! Return some timing statistics */
-/****************************************************************************/
-SBMA_EXTERN struct sbma_timeinfo
-sbma_timeinfo(void)
-{
-  struct sbma_timeinfo ti;
-
-  memset(&ti, 0, sizeof(struct sbma_timeinfo));
-
-  ti.tv_rd = _vmm_.tmrrd;
-  ti.tv_wr = _vmm_.tmrwr;
-  //ti.tv_ad = _vmm_.tmrad;
-  //ti.tv_ev = _vmm_.tmrev;
-
-  return ti;
-}
-
-
-/****************************************************************************/
-/*! Inform runtime to allow signals to be received. */
-/****************************************************************************/
-SBMA_EXTERN int
-sbma_sigon(void)
-{
-  ipc_sigon(&(_vmm_.ipc));
-  return 0;
-}
-
-
-/****************************************************************************/
-/*! Inform runtime to disallow signals from being received. */
-/****************************************************************************/
-SBMA_EXTERN int
-sbma_sigoff(void)
-{
-  ipc_sigoff(&(_vmm_.ipc));
-  return 0;
 }
 
 

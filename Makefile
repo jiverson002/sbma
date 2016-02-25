@@ -45,7 +45,7 @@ WARNING  := -Wall -Wextra -pedantic -Wshadow -Wpointer-arith -Wcast-align \
             -Wredundant-decls -Wnested-externs -Winline -Wno-long-long \
             -Wuninitialized -Wstrict-prototypes
 OPTIMIZE := -O0 -g
-CFLAGS   := $(OPTIMIZE) $(WARNING)
+CFLAGS   := -std=c99 $(OPTIMIZE) $(WARNING)
 LDFLAGS  := -pthread
 TESTLIBS := -lrt -ldl
 #}}}1
